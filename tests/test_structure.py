@@ -95,7 +95,7 @@ class StructureTests(unittest.TestCase):
   for line in inv.read_text().splitlines():
    if line.strip() and not line.startswith('#'):
     digest,rel=line.split('  ',1); expected[rel]=digest
-  actual={str(p.relative_to(ROOT)) for p in ROOT.rglob('*') if p.is_file() and p!=inv and '__pycache__' not in p.parts and p.suffix!='.pyc'}
+  actual={str(p.relative_to(ROOT)) for p in ROOT.rglob('*') if p.is_file() and p!=inv and '.git' not in p.parts and '__pycache__' not in p.parts and p.suffix!='.pyc'}
   self.assertEqual(set(expected),actual)
   for rel,digest in expected.items(): self.assertEqual(hashlib.sha256((ROOT/rel).read_bytes()).hexdigest(),digest,rel)
  def test_consolidated_agent_index_covers_all_specs(self):
