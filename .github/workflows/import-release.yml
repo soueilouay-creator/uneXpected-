@@ -39,7 +39,7 @@ jobs:
           from pathlib import Path
           from zipfile import ZipFile
           import compileall, os, subprocess, sys, tempfile
-          archive = Path('release-source/uneXpected_v7.3.1_governed_runtime.zip').resolve()
+          archive = Path('uneXpected_v7.3.1_governed_runtime.zip').resolve()
           target = Path(tempfile.mkdtemp(prefix='unexpected-v731-'))
           with ZipFile(archive) as z:
               if z.testzip():
