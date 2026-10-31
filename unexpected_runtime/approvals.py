@@ -260,8 +260,10 @@ def approval_verifier_from_env() -> GitHubPullRequestApprovalVerifier | None:
     """Build the production verifier only when all required trust settings exist."""
     token = os.getenv('UNEXPECTED_GITHUB_APPROVAL_TOKEN', '').strip()
     repository = os.getenv('UNEXPECTED_GITHUB_APPROVAL_REPOSITORY', '').strip()
+    allowed_repositories = tuple(x.strip().lower() for x in os.getenv('UNEXPECTED_GITHUB_APPROVAL_ALLOWED_REPOSITORIES', '').split(',') if x.strip())
     reviewers = tuple(x.strip() for x in os.getenv('UNEXPECTED_GITHUB_APPROVAL_TRUSTED_REVIEWERS', '').split(',') if x.strip())
-    if not token or not repository or not reviewers:
+    if (not token or not repository or not reviewers or not allowed_repositories
+            or repository.lower() not in set(allowed_repositories)):
         return None
     try:
         max_age = int(os.getenv('UNEXPECTED_GITHUB_APPROVAL_MAX_AGE_SECONDS', '3600'))

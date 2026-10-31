@@ -266,6 +266,7 @@ class GitHubApprovalVerifierTests(unittest.TestCase):
             env = {
                 "UNEXPECTED_GITHUB_APPROVAL_TOKEN": "read-only-token",
                 "UNEXPECTED_GITHUB_APPROVAL_REPOSITORY": REPOSITORY,
+                "UNEXPECTED_GITHUB_APPROVAL_ALLOWED_REPOSITORIES": REPOSITORY,
                 "UNEXPECTED_GITHUB_APPROVAL_TRUSTED_REVIEWERS": REVIEWER,
                 "UNEXPECTED_GITHUB_APPROVAL_BASE_BRANCH": "main",
                 "UNEXPECTED_GITHUB_APPROVAL_MAX_AGE_SECONDS": "3600",
@@ -278,6 +279,31 @@ class GitHubApprovalVerifierTests(unittest.TestCase):
                 try:
                     self.assertIsInstance(coordinator.approval_verifier, GitHubPullRequestApprovalVerifier)
                     self.assertEqual(coordinator.status()["approval_verifier"], "github-pr-review")
+                finally:
+                    coordinator.close()
+
+    def test_coordinator_fails_closed_when_repository_is_not_allowlisted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env = {
+                "UNEXPECTED_GITHUB_APPROVAL_TOKEN": "read-only-token",
+                "UNEXPECTED_GITHUB_APPROVAL_REPOSITORY": REPOSITORY,
+                "UNEXPECTED_GITHUB_APPROVAL_ALLOWED_REPOSITORIES": "another-owner/another-repo",
+                "UNEXPECTED_GITHUB_APPROVAL_TRUSTED_REVIEWERS": REVIEWER,
+                "UNEXPECTED_GITHUB_APPROVAL_BASE_BRANCH": "main",
+                "UNEXPECTED_APPROVAL_LEDGER_PATH": str(Path(directory) / "approvals.sqlite3"),
+                "UNEXPECTED_STATE_DIR": directory,
+            }
+            with patch.dict(os.environ, env, clear=True):
+                coordinator = Coordinator(
+                    manifest_path=ROOT / "agent_manifest.json", state_dir=directory,
+                    provider=DeterministicMockProvider(),
+                )
+                try:
+                    self.assertIsNone(coordinator.approval_verifier)
+                    self.assertEqual(
+                        coordinator.status()["approval_verifier"],
+                        "not configured (privileged actions fail closed)",
+                    )
                 finally:
                     coordinator.close()
 

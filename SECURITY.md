@@ -2,7 +2,7 @@
 
 Privileged operations are denied unless the runtime verifies an action-bound approval through its configured host authority. The canonical production approval path is the GitHub pull-request verifier documented in `DEPLOY.md`.
 
-Do not report the approval authority as connected until a read-only fine-grained token is stored in the runtime host secret manager, the trusted reviewer and protected base branch are configured, the approval ledger is on persistent storage, and live positive, stale-review, revocation, wrong-digest and replay tests have passed.
+Do not report the approval authority as connected until a read-only fine-grained token is stored in the runtime host secret manager, the exact target repository is included in `UNEXPECTED_GITHUB_APPROVAL_ALLOWED_REPOSITORIES`, the trusted reviewer and protected base branch are configured, the approval ledger is on persistent storage, and live positive, stale-review, revocation, wrong-digest and replay tests have passed.
 
 Never commit credentials, token values, state databases, or approval ledger contents. Report security issues privately to the repository owner.
 
