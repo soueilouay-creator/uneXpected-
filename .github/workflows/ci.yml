@@ -1,0 +1,45 @@
+name: uneXpected runtime CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile runtime
+        run: python -m compileall -q unexpected_runtime
+      - name: Build package integrity fixture
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZIP_DEFLATED, ZipFile
+          root = Path.cwd()
+          target = Path(__import__('os').environ['RUNNER_TEMP']) / 'uneXpected_v7.3.1_governed_runtime.zip'
+          with ZipFile(target, 'w', ZIP_DEFLATED) as archive:
+              for path in sorted(root.rglob('*')):
+                  if not path.is_file() or '__pycache__' in path.parts or path.suffix == '.pyc':
+                      continue
+                  relative = path.relative_to(root)
+                  if relative.parts[0] == '.git':
+                      continue
+                  archive.write(path, Path('uneXpected_v7') / relative)
+          print(f'Built {target} ({target.stat().st_size} bytes)')
+          PY
+          echo "UNEXPECTED_PACKAGE_ZIP=$RUNNER_TEMP/uneXpected_v7.3.1_governed_runtime.zip" >> "$GITHUB_ENV"
+      - name: Run regression suite
+        run: python -m unittest discover -s tests -v
+      - name: CLI smoke tests
+        run: |
+          python -m unexpected_runtime.cli status
+          python -m unexpected_runtime.cli list
+          python -m unexpected_runtime.cli eval
