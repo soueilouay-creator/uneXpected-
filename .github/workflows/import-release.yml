@@ -1,0 +1,147 @@
+name: Import verified uneXpected v7.3.1 release
+
+on:
+  push:
+    branches:
+      - release/v7.3.1-trusted-approval-verifier
+    paths:
+      - release-source/READY
+
+permissions:
+  contents: read
+
+jobs:
+  verify-archive:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/v7.3.1-trusted-approval-verifier
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Reassemble and verify source archive
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import base64, hashlib, os, zipfile
+          parts = sorted(Path('release-source').glob('part-*.b64'))
+          if not parts:
+              raise SystemExit('No release archive parts found')
+          encoded = ''.join(p.read_text(encoding='ascii').strip() for p in parts)
+          archive = Path(os.environ['RUNNER_TEMP']) / 'uneXpected_v7.3.1_governed_runtime.zip'
+          archive.write_bytes(base64.b64decode(encoded, validate=True))
+          expected = Path('release-source/READY').read_text().strip()
+          actual = hashlib.sha256(archive.read_bytes()).hexdigest()
+          if actual != expected:
+              raise SystemExit(f'Archive checksum mismatch: {actual}')
+          with zipfile.ZipFile(archive) as z:
+              bad = z.testzip()
+              if bad:
+                  raise SystemExit(f'ZIP integrity failure: {bad}')
+              names = z.namelist()
+              if len(names) < 90 or 'uneXpected_v7/agent_manifest.json' not in names:
+                  raise SystemExit('Release archive inventory is incomplete')
+          print(f'Archive verified: {archive.stat().st_size} bytes; {len(names)} entries; SHA-256 {actual}')
+          PY
+      - name: Run full package regression suite
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import os, compileall, subprocess, sys
+          archive = Path(os.environ['RUNNER_TEMP']) / 'uneXpected_v7.3.1_governed_runtime.zip'
+          target = Path(os.environ['RUNNER_TEMP']) / 'package'
+          with ZipFile(archive) as z:
+              z.extractall(target)
+          root = target / 'uneXpected_v7'
+          env = dict(os.environ)
+          env['UNEXPECTED_PACKAGE_ZIP'] = str(archive)
+          if not compileall.compile_dir(str(root / 'unexpected_runtime'), quiet=1):
+              raise SystemExit('Runtime compilation failed')
+          result = subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-v'],
+                                  cwd=root, env=env)
+          if result.returncode:
+              raise SystemExit(result.returncode)
+          for command in (['status'], ['list'], ['eval']):
+              result = subprocess.run([sys.executable, '-m', 'unexpected_runtime.cli', *command],
+                                      cwd=root, env=env)
+              if result.returncode:
+                  raise SystemExit(result.returncode)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-uneXpected-v7.3.1-package
+          path: ${{ runner.temp }}/uneXpected_v7.3.1_governed_runtime.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  create-source-pull-request:
+    needs: verify-archive
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/download-artifact@v4
+        with:
+          name: verified-uneXpected-v7.3.1-package
+          path: ${{ runner.temp }}/verified-package
+      - name: Re-check artifact and populate integration branch
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import hashlib, shutil, os
+          archive = Path(os.environ['RUNNER_TEMP']) / 'verified-package' / 'uneXpected_v7.3.1_governed_runtime.zip'
+          expected = '4dad792982ac021a3c3e9337aad78ea46e134469410b4c0d05b9112ed0b00e1c'
+          if not archive.is_file() or hashlib.sha256(archive.read_bytes()).hexdigest() != expected:
+              raise SystemExit('Downloaded artifact SHA-256 does not match the reviewed release')
+          target = Path(os.environ['RUNNER_TEMP']) / 'unpacked'
+          with ZipFile(archive) as z:
+              if z.testzip():
+                  raise SystemExit('Downloaded package failed ZIP integrity check')
+              z.extractall(target)
+          source = target / 'uneXpected_v7'
+          if not (source / 'agent_manifest.json').is_file():
+              raise SystemExit('Extracted package does not contain agent_manifest.json')
+          workspace = Path.cwd()
+          for child in workspace.iterdir():
+              if child.name == '.git':
+                  continue
+              if child.is_dir():
+                  shutil.rmtree(child)
+              else:
+                  child.unlink()
+          shutil.copytree(source, workspace, dirs_exist_ok=True)
+          print(f'Imported {sum(1 for p in workspace.rglob("*") if p.is_file())} files')
+          PY
+      - name: Commit full v7.3.1 source tree
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c integration/v7.3.1-governed-runtime
+          git add -A
+          git commit -m "feat: integrate uneXpected v7.3.1 governed runtime"
+          git push origin HEAD:refs/heads/integration/v7.3.1-governed-runtime
+      - name: Open review pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr create \
+            --repo "${{ github.repository }}" \
+            --base main \
+            --head integration/v7.3.1-governed-runtime \
+            --title "Integrate uneXpected v7.3.1 governed runtime" \
+            --body "Imported from the checksum-verified v7.3.1 package. The isolated verification job runs the full suite, compilation and CLI smoke checks. This PR is for independent review only; it does not deploy or merge."
+      - name: Remove temporary archive transfer branch
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: git push origin --delete release/v7.3.1-trusted-approval-verifier
