@@ -2,7 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from typing import Any
-import json, os, time, uuid, hashlib
+import json, os, time, uuid, hashlib, math
 from .models import TaskRequest, AgentMessage, TaskResult, CancellationToken, ApprovalContext, PermissionDenied, CycleLimitError, BudgetExceeded, UnknownAgent
 from .registry import AgentRegistry
 from .providers import provider_from_env
@@ -39,7 +39,9 @@ class Coordinator:
     def enqueue(self, request:TaskRequest):
         self.registry.get(request.agent_id)
         if request.max_steps<1 or request.max_steps>12: raise BudgetExceeded('max_steps must be between 1 and 12.')
-        if request.deadline_seconds<=0 or request.deadline_seconds>600: raise ValueError('deadline_seconds must be >0 and <=600.')
+        if not math.isfinite(float(request.deadline_seconds)) or request.deadline_seconds<=0 or request.deadline_seconds>600: raise ValueError('deadline_seconds must be >0 and <=600.')
+        if len(set(request.required_permissions)) > 1:
+            raise PermissionDenied('A single action may request only one privileged permission scope; split and approve separate actions.')
         for scope in request.required_permissions: self.permissions.authorize(self.registry.get(request.agent_id),scope)
         self.store.enqueue(request); return request.task_id
     @staticmethod
@@ -57,9 +59,11 @@ class Coordinator:
                max_steps=6,idempotency_key=None,source_refs=(),token:CancellationToken|None=None,approval:ApprovalContext|None=None):
         spec=self.registry.get(agent_id)
         if max_steps<1 or max_steps>12: raise BudgetExceeded('max_steps must be between 1 and 12.')
-        if deadline_seconds<=0 or deadline_seconds>600: raise ValueError('deadline_seconds must be >0 and <=600.')
+        if not math.isfinite(float(deadline_seconds)) or deadline_seconds<=0 or deadline_seconds>600: raise ValueError('deadline_seconds must be >0 and <=600.')
         action_details=self.invoke_action_details(agent_id,objective,inputs,required_permissions=required_permissions,
                                                   deadline_seconds=deadline_seconds,max_steps=max_steps,source_refs=source_refs)
+        if len(set(required_permissions)) > 1:
+            raise PermissionDenied('A single action may request only one privileged permission scope; split and approve separate actions.')
         for scope in required_permissions: self.permissions.authorize(spec,scope,approval,action_details=action_details)
         request_hash=hashlib.sha256(json.dumps({'agent_id':agent_id,'objective':objective,'inputs':inputs or {},'required_permissions':list(required_permissions),'source_refs':list(source_refs)},sort_keys=True,ensure_ascii=False).encode()).hexdigest()
         if idempotency_key:
@@ -129,11 +133,17 @@ class Coordinator:
             except Exception as e:
                 error=f'{type(e).__name__}: provider invocation failed'
                 self.store.log_event('provider_error',req.task_id,spec.id,{'attempt':attempts,'error_type':type(e).__name__})
-                if attempt<self.max_retries and not token.cancelled:
+                if attempt<self.max_retries and bool(getattr(self.provider, 'retry_safe', False)) and not token.cancelled:
                     self.store.log_event('provider_retry',req.task_id,spec.id,{'attempt':attempts}); continue
                 break
         result=TaskResult(req.task_id,spec.id,status,output=output,provenance=tuple(req.source_refs),attempts=attempts,error=error,started_at=start,finished_at=time.time())
-        self.store.mark_task(req.task_id,status,result.to_dict()); self.store.log_event('task_'+status,req.task_id,spec.id,{'attempts':attempts,'output_length':len(output),'error':error})
+        persisted = self.store.mark_task(req.task_id,status,result.to_dict())
+        if not persisted:
+            row = self.store.get_task(req.task_id)
+            if row and row.get('result_json'):
+                return TaskResult.from_dict(json.loads(row['result_json']))
+            return result
+        self.store.log_event('task_'+status,req.task_id,spec.id,{'attempts':attempts,'output_length':len(output),'error':error})
         return result
     def run_queued(self, max_tasks:int=10)->list[TaskResult]:
         if max_tasks<1 or max_tasks>100: raise BudgetExceeded('max_tasks must be between 1 and 100.')

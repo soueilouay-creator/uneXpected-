@@ -11,6 +11,7 @@ class Provider(Protocol):
 class DeterministicMockProvider:
     name = "deterministic-mock"
     configured = True
+    retry_safe = True
     def __init__(self): self.calls = 0; self.requests = []
     def generate(self, *, system_prompt: str, user_prompt: str, agent_id: str, task_id: str, timeout: float) -> str:
         self.calls += 1
@@ -73,7 +74,9 @@ class AIStudioGatewayProvider:
         candidates={"openai":("openai","synthesis"),"claude":("anthropic","synthesis"),"both":("synthesis","openai","anthropic")}[self.mode]
         for key in candidates:
             item=data["results"].get(key)
-            if isinstance(item,dict) and isinstance(item.get("text"),str) and item["text"].strip() and "LIVE" in str(item.get("status","")).upper():
+            status = str(item.get("status", "")).strip().upper() if isinstance(item, dict) else ""
+            is_live = status.startswith("LIVE") and not any(marker in status for marker in ("MOCK", "FALLBACK", "DELIVERED", "NOT LIVE"))
+            if isinstance(item,dict) and isinstance(item.get("text"),str) and item["text"].strip() and is_live:
                 return f"[Live AI result: {item.get('label') or key}; model={item.get('model') or 'provider model'}]\n{item['text'].strip()}"
         raise ProviderError("Gateway returned no live provider response; simulated or failed output was rejected.")
 

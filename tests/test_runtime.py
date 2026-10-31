@@ -155,7 +155,13 @@ class RuntimeTests(unittest.TestCase):
 
     def test_timeout_returns_explicit_status(self):
         self.c.close(); self.c=Coordinator(manifest_path=ROOT/'agent_manifest.json',state_dir=self.root,provider=FlakyProvider(fail_count=0,delay=.25),max_workers=2,max_retries=0)
-        r=self.c.invoke('research-scout','timeout test',deadline_seconds=.03); self.assertIn(r.status,('timeout','cancelled'))
+        r=self.c.invoke('research-scout','timeout test',deadline_seconds=.03); self.assertEqual(r.status,'timeout')
+        time.sleep(.30)
+        row=self.c.store.get_task(r.task_id)
+        self.assertEqual(row['status'],'timeout')
+        stored=json.loads(row['result_json'])
+        self.assertEqual(stored['status'],'timeout')
+        self.assertEqual(stored['output'],'')
     def test_pre_cancelled_task_not_dispatched(self):
         t=CancellationToken(); t.cancel(); r=self.c.invoke('research-scout','cancel before start',token=t)
         self.assertEqual(r.status,'cancelled')

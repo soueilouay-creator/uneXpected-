@@ -1,5 +1,5 @@
 from __future__ import annotations
-import hmac, json, os, threading, time
+import hmac, json, os, threading, time, math
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlsplit
@@ -9,6 +9,8 @@ from .coordinator import Coordinator
 MAX_BODY_BYTES=64*1024
 MAX_OBJECTIVE_CHARS=16000
 RATE_LIMIT_PER_MINUTE=30
+SOCKET_TIMEOUT_SECONDS=10
+MAX_SOURCE_REF_CHARS=2048
 
 class _RateLimiter:
     def __init__(self): self.lock=threading.Lock(); self.entries={}
@@ -26,6 +28,9 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
     token=(os.getenv("UNEXPECTED_RUNTIME_API_TOKEN","") if api_token is None else str(api_token or "")).strip()
     limiter=_RateLimiter()
     class Handler(BaseHTTPRequestHandler):
+        def setup(self):
+            self.request.settimeout(SOCKET_TIMEOUT_SECONDS)
+            super().setup()
         server_version="uneXpectedRuntime/7"; sys_version=""
         def log_message(self, fmt, *args): return
         def send_json(self, code, obj):
@@ -78,8 +83,12 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             if len(objective)>MAX_OBJECTIVE_CHARS: return self.send_json(413,{"error":"Objective too large."})
             if not isinstance(inputs,dict) or isinstance(deadline,bool) or not isinstance(deadline,(int,float)) or isinstance(steps,bool) or not isinstance(steps,int):
                 return self.send_json(400,{"error":"Invalid inputs, deadline or max_steps."})
+            if not math.isfinite(float(deadline)) or not 0 < float(deadline) <= 600:
+                return self.send_json(400,{"error":"deadline_seconds must be finite and between 0 and 600."})
+            if not 1 <= steps <= 12:
+                return self.send_json(400,{"error":"max_steps must be between 1 and 12."})
             if idem is not None and (not isinstance(idem,str) or len(idem)>128): return self.send_json(400,{"error":"Invalid idempotency key."})
-            if not isinstance(refs,list) or len(refs)>32 or any(not isinstance(x,str) for x in refs): return self.send_json(400,{"error":"Invalid source_refs."})
+            if not isinstance(refs,list) or len(refs)>32 or any(not isinstance(x,str) or not x or len(x)>MAX_SOURCE_REF_CHARS for x in refs): return self.send_json(400,{"error":"Invalid source_refs."})
             try:
                 result=active.invoke(agent.strip(),objective,inputs,deadline_seconds=float(deadline),max_steps=steps,idempotency_key=idem,source_refs=tuple(refs)).to_dict()
                 return self.send_json(200 if result.get("status")=="completed" else 502,{"result":result})

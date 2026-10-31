@@ -90,6 +90,27 @@ class APITests(unittest.TestCase):
             c=http.client.HTTPConnection("127.0.0.1",s.server_address[1]); c.request("GET","/v1/status")
             r=c.getresponse(); self.assertEqual(r.status,503); c.close()
         finally: s.shutdown(); s.server_close(); t.join(timeout=2)
+    def test_http_rejects_objective_source_reference_deadline_and_step_limits(self):
+        self.assertEqual(self.request("POST","/v1/invoke",{"agent_id":"orchestrator","objective":"x"*16001})[0],413)
+        self.assertEqual(self.request("POST","/v1/invoke",{"agent_id":"orchestrator","objective":"x","source_refs":["r"]*33})[0],400)
+        self.assertEqual(self.request("POST","/v1/invoke",{"agent_id":"orchestrator","objective":"x","source_refs":["r"*2049]})[0],400)
+        self.assertEqual(self.request("POST","/v1/invoke",{"agent_id":"orchestrator","objective":"x","deadline_seconds":601})[0],400)
+        self.assertEqual(self.request("POST","/v1/invoke",{"agent_id":"orchestrator","objective":"x","deadline_seconds":float("nan")})[0],400)
+        self.assertEqual(self.request("POST","/v1/invoke",{"agent_id":"orchestrator","objective":"x","max_steps":13})[0],400)
+
+    def test_http_body_limit_is_enforced(self):
+        conn=http.client.HTTPConnection(self.host,self.port,timeout=8)
+        conn.request("POST","/v1/invoke",b" "*(64*1024+1),{"Authorization":"Bearer "+"a"*48,"Content-Type":"application/json"})
+        response=conn.getresponse(); response.read(); conn.close()
+        self.assertEqual(response.status,413)
+
+    def test_http_rate_limit_is_enforced(self):
+        with patch("unexpected_runtime.http_api.RATE_LIMIT_PER_MINUTE",1):
+            first=self.request("POST","/v1/invoke",{"agent_id":"orchestrator","objective":"rate limit test"})
+            second=self.request("POST","/v1/invoke",{"agent_id":"orchestrator","objective":"rate limit test"})
+        self.assertEqual(first[0],200)
+        self.assertEqual(second[0],429)
+
     def test_http_invocation_reaches_gateway_provider(self):
         op=Opener({"ok":True,"results":{"openai":{"status":"LIVE · verified response","text":"end-to-end live-shaped result","model":"gpt-4.1"}}})
         p=AIStudioGatewayProvider("https://gateway.example/orchestrate","g"*48,mode="openai")
