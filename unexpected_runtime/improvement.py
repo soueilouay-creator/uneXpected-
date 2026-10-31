@@ -28,6 +28,8 @@ class ImprovementGovernor:
 
     def set_baseline(self, agent_id: str, report: EvaluationReport):
         spec = self.registry.get(agent_id)
+        if not report.evaluation_valid:
+            raise ImprovementRejected('Baseline evaluation is incomplete or invalid; required checks, counts, provider mode and rubric must be fixed.')
         if not report.critical_pass:
             raise ImprovementRejected('Baseline cannot be accepted with failed critical checks.')
         if report.noncritical_total < 1:
@@ -49,8 +51,13 @@ class ImprovementGovernor:
         active = self.store.active_version(agent_id, spec.version, spec.instruction)
         if not candidate_instruction.strip() or not changes.strip():
             raise ValueError('Candidate instruction and change rationale are required.')
-        if not self.store.get_baseline(agent_id, benchmark_id):
+        baseline_data = self.store.get_baseline(agent_id, benchmark_id)
+        if not baseline_data:
             raise ImprovementRejected('Retrieve/record a fixed baseline before proposing a change.')
+        baseline_report = EvaluationReport.from_dict(baseline_data)
+        if not baseline_report.evaluation_valid or not baseline_report.critical_pass:
+            raise ImprovementRejected('Proposal baseline must contain a complete, valid evaluation context.')
+        evaluation_context = baseline_report.evaluation_context()
         fields = set(protected_fields or [])
         text_for_scan = (changes + ' ' + candidate_instruction).lower()
         protected_signals = ('safety policy', 'permission', 'provider', 'model', 'external tool', 'credential',
@@ -60,7 +67,8 @@ class ImprovementGovernor:
         proposal = {'proposal_id': str(uuid.uuid4()), 'agent_id': agent_id, 'base_version': active['version'],
                     'candidate_version': candidate_version, 'candidate_instruction': candidate_instruction,
                     'changes': changes, 'protected_change': protected, 'protected_fields': sorted(fields),
-                    'benchmark_id': benchmark_id, 'status': 'pending', 'evaluation': None}
+                    'benchmark_id': benchmark_id, 'status': 'pending', 'evaluation': None,
+                    'evaluation_context': evaluation_context}
         self.store.save_proposal(proposal)
         return proposal['proposal_id']
 
@@ -106,6 +114,7 @@ class ImprovementGovernor:
             'baseline_active_version': baseline_evidence['active_version'],
             'baseline_instruction_sha256': baseline_evidence['instruction_sha256'],
             'baseline_report_sha256': baseline_evidence['report_sha256'],
+            'evaluation_context': proposal.get('evaluation_context', {}),
             'scenario_ids': list(candidate.scenario_ids),
             'candidate_report_sha256': _digest(candidate.to_dict()),
             'required_permissions': list(required),
@@ -132,6 +141,10 @@ class ImprovementGovernor:
               or active['version'] != baseline_evidence['active_version']
               or _digest(active['instruction']) != baseline_evidence['instruction_sha256']):
             reasons.append('baseline is stale because the active version or instruction changed after baseline capture')
+        if (not baseline.evaluation_valid or not candidate.evaluation_valid
+                or baseline.evaluation_context() != proposal.get('evaluation_context', {})
+                or candidate.evaluation_context() != proposal.get('evaluation_context', {})):
+            reasons.append('baseline/candidate evaluation context is incomplete or differs (provider mode, scenario IDs, acceptance checks or rubric)')
         if candidate.benchmark_id != baseline.benchmark_id or candidate.scenario_ids != baseline.scenario_ids:
             reasons.append('baseline/candidate benchmark or scenario IDs differ')
         if not candidate.critical_pass:
@@ -143,6 +156,8 @@ class ImprovementGovernor:
         approval_verified = None
         approval_status = 'not_required' if not proposal['protected_change'] else 'not_evaluated'
         required_permissions = self._protected_permissions(proposal) if proposal['protected_change'] else ()
+        if proposal['protected_change'] and len(required_permissions) > 1:
+            reasons.append('the one-use approval verifier supports one privileged permission per action; split the change into separately approved actions')
         if proposal['protected_change'] and not reasons:
             approval_verified = False
             approval_status = 'rejected'

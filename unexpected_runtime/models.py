@@ -2,7 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from threading import Event
 from typing import Any
-import time, uuid
+import time, uuid, math
 
 class RuntimeErrorBase(Exception): pass
 class UnknownAgent(RuntimeErrorBase): pass
@@ -90,17 +90,87 @@ class EvaluationReport:
     noncritical_passed: int
     noncritical_total: int
     notes: str = ''
+    required_critical_check_ids: tuple[str, ...] = ()
+    acceptance_check_ids: tuple[str, ...] = ()
+    provider_mode: str = ''
+    rubric_id: str = ''
+    skipped_checks: tuple[str, ...] = ()
+
+    @property
+    def evaluation_valid(self) -> bool:
+        if not isinstance(self.critical_checks, dict):
+            return False
+        required = tuple(self.required_critical_check_ids)
+        accepted = tuple(self.acceptance_check_ids)
+        try:
+            score = float(self.score)
+        except (TypeError, ValueError, OverflowError):
+            return False
+        return bool(
+            self.benchmark_id
+            and self.scenario_ids
+            and len(set(self.scenario_ids)) == len(self.scenario_ids)
+            and required
+            and len(set(required)) == len(required)
+            and accepted
+            and len(set(accepted)) == len(accepted)
+            and set(required).issubset(set(accepted))
+            and set(self.critical_checks) == set(required)
+            and all(isinstance(key, str) and key for key in accepted)
+            and all(value is True or value is False for value in self.critical_checks.values())
+            and not isinstance(self.score, bool)
+            and math.isfinite(score)
+            and 0.0 <= score <= 1.0
+            and not isinstance(self.noncritical_passed, bool)
+            and isinstance(self.noncritical_passed, int)
+            and not isinstance(self.noncritical_total, bool)
+            and isinstance(self.noncritical_total, int)
+            and self.noncritical_total == len(set(accepted) - set(required))
+            and 0 <= self.noncritical_passed <= self.noncritical_total
+            and bool(self.provider_mode)
+            and bool(self.rubric_id)
+            and not self.skipped_checks
+        )
+
     @property
     def noncritical_rate(self) -> float:
-        return self.noncritical_passed / self.noncritical_total if self.noncritical_total else 0.0
+        if not self.evaluation_valid or self.noncritical_total <= 0:
+            return 0.0
+        return self.noncritical_passed / self.noncritical_total
+
     @property
     def critical_pass(self) -> bool:
-        return bool(self.critical_checks) and all(self.critical_checks.values())
+        return self.evaluation_valid and all(value is True for value in self.critical_checks.values())
+
+    def evaluation_context(self) -> dict[str, Any]:
+        return {
+            'benchmark_id': self.benchmark_id,
+            'scenario_ids': list(self.scenario_ids),
+            'required_critical_check_ids': list(self.required_critical_check_ids),
+            'acceptance_check_ids': list(self.acceptance_check_ids),
+            'provider_mode': self.provider_mode,
+            'rubric_id': self.rubric_id,
+            'skipped_checks': list(self.skipped_checks),
+        }
+
     def to_dict(self) -> dict[str, Any]:
-        return {'benchmark_id':self.benchmark_id,'scenario_ids':list(self.scenario_ids),'score':self.score,
-                'critical_checks':self.critical_checks,'noncritical_passed':self.noncritical_passed,
-                'noncritical_total':self.noncritical_total,'notes':self.notes}
+        return {
+            **self.evaluation_context(),
+            'score': self.score,
+            'critical_checks': dict(self.critical_checks),
+            'noncritical_passed': self.noncritical_passed,
+            'noncritical_total': self.noncritical_total,
+            'notes': self.notes,
+        }
+
     @classmethod
-    def from_dict(cls,d:dict[str,Any])->'EvaluationReport':
-        return cls(d['benchmark_id'],tuple(d['scenario_ids']),float(d['score']),dict(d['critical_checks']),
-                   int(d['noncritical_passed']),int(d['noncritical_total']),d.get('notes',''))
+    def from_dict(cls, d: dict[str, Any]) -> 'EvaluationReport':
+        return cls(
+            d['benchmark_id'], tuple(d['scenario_ids']), d['score'],
+            dict(d['critical_checks']), d['noncritical_passed'],
+            d['noncritical_total'], d.get('notes', ''),
+            tuple(d.get('required_critical_check_ids', ())),
+            tuple(d.get('acceptance_check_ids', ())),
+            str(d.get('provider_mode', '')), str(d.get('rubric_id', '')),
+            tuple(d.get('skipped_checks', ())),
+        )

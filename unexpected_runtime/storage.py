@@ -29,7 +29,7 @@ class StateStore:
             CREATE TABLE IF NOT EXISTS shared_knowledge(knowledge_id TEXT PRIMARY KEY, source TEXT NOT NULL, content TEXT NOT NULL, trust_status TEXT NOT NULL, reviewed_by TEXT, created_at REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS idempotency(idempotency_key TEXT PRIMARY KEY, request_hash TEXT NOT NULL, result_json TEXT NOT NULL, created_at REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS outcomes(outcome_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, task_id TEXT, success INTEGER NOT NULL, feedback TEXT NOT NULL, provenance_json TEXT NOT NULL, created_at REAL NOT NULL);
-            CREATE TABLE IF NOT EXISTS proposals(proposal_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, base_version TEXT NOT NULL, candidate_version TEXT NOT NULL, candidate_instruction TEXT NOT NULL, changes TEXT NOT NULL, protected_change INTEGER NOT NULL, benchmark_id TEXT NOT NULL, status TEXT NOT NULL, evaluation_json TEXT, created_at REAL NOT NULL, protected_fields_json TEXT NOT NULL DEFAULT '[]');
+            CREATE TABLE IF NOT EXISTS proposals(proposal_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, base_version TEXT NOT NULL, candidate_version TEXT NOT NULL, candidate_instruction TEXT NOT NULL, changes TEXT NOT NULL, protected_change INTEGER NOT NULL, benchmark_id TEXT NOT NULL, status TEXT NOT NULL, evaluation_json TEXT, created_at REAL NOT NULL, protected_fields_json TEXT NOT NULL DEFAULT '[]', evaluation_context_json TEXT NOT NULL DEFAULT '{}');
             CREATE TABLE IF NOT EXISTS agent_versions(agent_id TEXT NOT NULL, version TEXT NOT NULL, instruction TEXT NOT NULL, change_log TEXT NOT NULL, active INTEGER NOT NULL, created_at REAL NOT NULL, PRIMARY KEY(agent_id,version));
             CREATE TABLE IF NOT EXISTS baselines(agent_id TEXT NOT NULL, benchmark_id TEXT NOT NULL, report_json TEXT NOT NULL, created_at REAL NOT NULL, active_version TEXT, instruction_sha256 TEXT, report_sha256 TEXT, PRIMARY KEY(agent_id,benchmark_id));
             CREATE TABLE IF NOT EXISTS capabilities(capability_id TEXT PRIMARY KEY, status TEXT NOT NULL, record_json TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL);
@@ -42,6 +42,8 @@ class StateStore:
             proposal_columns={row['name'] for row in c.execute('PRAGMA table_info(proposals)').fetchall()}
             if 'protected_fields_json' not in proposal_columns:
                 c.execute("ALTER TABLE proposals ADD COLUMN protected_fields_json TEXT NOT NULL DEFAULT '[]'")
+            if 'evaluation_context_json' not in proposal_columns:
+                c.execute("ALTER TABLE proposals ADD COLUMN evaluation_context_json TEXT NOT NULL DEFAULT '{}'")
     def log_event(self,event_type:str,task_id:str|None=None,agent_id:str|None=None,payload:dict[str,Any]|None=None):
         with self._session() as c: c.execute('INSERT INTO events(ts,task_id,agent_id,event_type,payload_json) VALUES(?,?,?,?,?)',(time.time(),task_id,agent_id,event_type,json.dumps(payload or {},ensure_ascii=False)))
     def events(self,limit:int=100):
@@ -112,13 +114,13 @@ class StateStore:
         return dict(row) if row else None
     def save_proposal(self,p:dict[str,Any]):
         with self._session() as c:
-            c.execute('INSERT INTO proposals(proposal_id,agent_id,base_version,candidate_version,candidate_instruction,changes,protected_change,benchmark_id,status,evaluation_json,created_at,protected_fields_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
-                      (p['proposal_id'],p['agent_id'],p['base_version'],p['candidate_version'],p['candidate_instruction'],p['changes'],int(p['protected_change']),p['benchmark_id'],p['status'],json.dumps(p.get('evaluation')) if p.get('evaluation') else None,time.time(),json.dumps(p.get('protected_fields',[]))))
+            c.execute('INSERT INTO proposals(proposal_id,agent_id,base_version,candidate_version,candidate_instruction,changes,protected_change,benchmark_id,status,evaluation_json,created_at,protected_fields_json,evaluation_context_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                      (p['proposal_id'],p['agent_id'],p['base_version'],p['candidate_version'],p['candidate_instruction'],p['changes'],int(p['protected_change']),p['benchmark_id'],p['status'],json.dumps(p.get('evaluation')) if p.get('evaluation') else None,time.time(),json.dumps(p.get('protected_fields',[])),json.dumps(p.get('evaluation_context',{}),sort_keys=True)))
         self.log_event('improvement_proposed',agent_id=p['agent_id'],payload={'proposal_id':p['proposal_id'],'base_version':p['base_version'],'candidate_version':p['candidate_version'],'protected_change':p['protected_change']})
     def get_proposal(self,pid:str):
         with self._session() as c: row=c.execute('SELECT * FROM proposals WHERE proposal_id=?',(pid,)).fetchone()
         if not row: return None
-        d=dict(row); d['protected_change']=bool(d['protected_change']); d['evaluation']=json.loads(d['evaluation_json']) if d['evaluation_json'] else None; d['protected_fields']=json.loads(d.get('protected_fields_json') or '[]'); return d
+        d=dict(row); d['protected_change']=bool(d['protected_change']); d['evaluation']=json.loads(d['evaluation_json']) if d['evaluation_json'] else None; d['protected_fields']=json.loads(d.get('protected_fields_json') or '[]'); d['evaluation_context']=json.loads(d.get('evaluation_context_json') or '{}'); return d
     def update_proposal(self,pid:str,status:str,evaluation:dict[str,Any]|None=None):
         with self._session() as c: c.execute('UPDATE proposals SET status=?,evaluation_json=? WHERE proposal_id=?',(status,json.dumps(evaluation) if evaluation else None,pid))
         self.log_event('improvement_'+status,payload={'proposal_id':pid,'evaluation':evaluation or {}})

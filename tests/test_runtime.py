@@ -10,6 +10,16 @@ from unexpected_runtime.permissions import PermissionPolicy
 from unexpected_runtime.storage import StateStore
 
 ROOT=Path(__file__).resolve().parents[1]
+def _evaluation_report(benchmark_id, scenario_ids, score, critical_checks, noncritical_passed, noncritical_total, notes=''):
+    required = tuple(critical_checks)
+    noncritical_ids = tuple(f'{benchmark_id}-noncritical-{index}' for index in range(noncritical_total))
+    return EvaluationReport(
+        benchmark_id, tuple(scenario_ids), score, dict(critical_checks), noncritical_passed,
+        noncritical_total, notes, required, tuple((*required, *noncritical_ids)),
+        'deterministic-mock', 'test-rubric-v1', (),
+    )
+
+
 class FlakyProvider(DeterministicMockProvider):
     def __init__(self, fail_count=1, delay=0): super().__init__(); self.fail_count=fail_count; self.delay=delay
     def generate(self, **kwargs):
@@ -182,10 +192,10 @@ class RuntimeTests(unittest.TestCase):
         self.assertTrue(oid); self.assertIn('outcome_recorded',{e['event_type'] for e in self.c.store.events(100)})
     def test_governed_promotion_and_rollback(self):
         gov=ImprovementGovernor(self.c); aid='research-scout'; bid='fixed-benchmark-1'; scenarios=('S1','S2')
-        base=EvaluationReport(bid,scenarios,.80,{'permissions':True,'secrets':True},9,10,'baseline')
+        base=_evaluation_report(bid,scenarios,.80,{'permissions':True,'secrets':True},9,10,'baseline')
         gov.set_baseline(aid,base)
         p=gov.propose(aid,'improved candidate instructions','one targeted clarity change',bid)
-        cand=EvaluationReport(bid,scenarios,.95,{'permissions':True,'secrets':True},10,10,'candidate')
+        cand=_evaluation_report(bid,scenarios,.95,{'permissions':True,'secrets':True},10,10,'candidate')
         decision=gov.evaluate_and_promote(p,cand)
         self.assertEqual(decision['decision'],'promoted')
         active=self.c.store.active_version(aid,'1.0.0',self.c.registry.get(aid).instruction); self.assertEqual(active['version'],'1.0.1')
@@ -198,15 +208,15 @@ class RuntimeTests(unittest.TestCase):
         rolled=gov.rollback(aid,'1.0.0','test rollback',approval=approval); self.assertEqual(rolled['version'],'1.0.0')
     def test_protected_change_needs_human_approval(self):
         gov=ImprovementGovernor(self.c); aid='orchestrator'; bid='protected-benchmark'; ids=('S1',)
-        gov.set_baseline(aid,EvaluationReport(bid,ids,.8,{'safety':True},9,10))
+        gov.set_baseline(aid,_evaluation_report(bid,ids,.8,{'safety':True},9,10))
         p=gov.propose(aid,'new permissions text','modify permission model',bid,['permissions'])
-        report=gov.evaluate_and_promote(p,EvaluationReport(bid,ids,.99,{'safety':True},10,10))
+        report=gov.evaluate_and_promote(p,_evaluation_report(bid,ids,.99,{'safety':True},10,10))
         self.assertEqual(report['decision'],'rejected'); self.assertTrue(any('approval' in x for x in report['reasons']))
     def test_protected_change_promotes_only_with_trusted_action_bound_approval(self):
         gov=ImprovementGovernor(self.c); aid='orchestrator'; bid='protected-approved'; ids=('S1',)
-        gov.set_baseline(aid,EvaluationReport(bid,ids,.8,{'safety':True},9,10))
+        gov.set_baseline(aid,_evaluation_report(bid,ids,.8,{'safety':True},9,10))
         p=gov.propose(aid,'new permission instructions','tighten permission model',bid,['permissions'])
-        candidate=EvaluationReport(bid,ids,.99,{'safety':True},10,10)
+        candidate=_evaluation_report(bid,ids,.99,{'safety':True},10,10)
         self.c.permissions=PermissionPolicy(TestHostApprovalVerifier())
         self.assertTrue(callable(getattr(gov,'promotion_action_details',None)))
         details=gov.promotion_action_details(p,candidate)
@@ -219,10 +229,10 @@ class RuntimeTests(unittest.TestCase):
 
     def test_protected_approval_cannot_be_reused_for_another_proposal(self):
         gov=ImprovementGovernor(self.c); aid='orchestrator'; bid='protected-replay'; ids=('S1',)
-        gov.set_baseline(aid,EvaluationReport(bid,ids,.8,{'safety':True},9,10))
+        gov.set_baseline(aid,_evaluation_report(bid,ids,.8,{'safety':True},9,10))
         p1=gov.propose(aid,'candidate one','modify permission model',bid,['permissions'])
         p2=gov.propose(aid,'candidate two','modify permission model',bid,['permissions'])
-        candidate=EvaluationReport(bid,ids,.99,{'safety':True},10,10)
+        candidate=_evaluation_report(bid,ids,.99,{'safety':True},10,10)
         self.c.permissions=PermissionPolicy(TestHostApprovalVerifier())
         self.assertTrue(callable(getattr(gov,'promotion_action_details',None)))
         details=gov.promotion_action_details(p1,candidate)
@@ -232,9 +242,34 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(report['decision'],'rejected')
         self.assertTrue(any('approval' in reason for reason in report['reasons']))
 
+    def test_evaluation_report_rejects_missing_checks_nonfinite_scores_and_bad_counts(self):
+        missing = EvaluationReport(
+            'fixed', ('S1',), .95, {'safety': True}, 2, 2, '',
+            ('safety', 'scope'), ('safety', 'scope', 'n1', 'n2'),
+            'deterministic-mock', 'test-rubric-v1', (),
+        )
+        self.assertFalse(missing.critical_pass)
+        self.assertFalse(missing.evaluation_valid)
+        self.assertFalse(_evaluation_report('b', ('S1',), float('nan'), {'safety': True}, 2, 2).evaluation_valid)
+        self.assertFalse(_evaluation_report('b', ('S1',), 1.2, {'safety': True}, 3, 2).evaluation_valid)
+
+    def test_improvement_evaluation_context_mismatch_blocks_promotion(self):
+        from dataclasses import replace
+        gov = ImprovementGovernor(self.c)
+        baseline = _evaluation_report('context-benchmark', ('S1',), .7, {'safety': True}, 8, 10)
+        gov.set_baseline('research-scout', baseline)
+        proposal = gov.propose('research-scout', 'candidate instruction', 'one safe clarity change', 'context-benchmark')
+        candidate = replace(
+            _evaluation_report('context-benchmark', ('S1',), .9, {'safety': True}, 9, 10),
+            provider_mode='openai-live',
+        )
+        result = gov.evaluate_and_promote(proposal, candidate)
+        self.assertEqual(result['decision'], 'rejected')
+        self.assertTrue(any('evaluation context' in reason for reason in result['reasons']))
+
     def test_improvement_evidence_fingerprints_artifacts_and_rejects_stale_baseline(self):
         gov=ImprovementGovernor(self.c); aid='orchestrator'; bid='fingerprint-benchmark'; ids=('S1','S2')
-        baseline=EvaluationReport(bid,ids,.80,{'safety':True},9,10)
+        baseline=_evaluation_report(bid,ids,.80,{'safety':True},9,10)
         gov.set_baseline(aid,baseline)
         events=self.c.store.events(100)
         baseline_event=next(e for e in events if e['event_type']=='baseline_recorded')
@@ -244,7 +279,7 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn('active_version',baseline_payload)
         p1=gov.propose(aid,'candidate instruction one','narrow documentation improvement',bid)
         p2=gov.propose(aid,'candidate instruction two','another documentation improvement',bid)
-        candidate=EvaluationReport(bid,ids,.95,{'safety':True},10,10)
+        candidate=_evaluation_report(bid,ids,.95,{'safety':True},10,10)
         candidate_hash=__import__('hashlib').sha256(json.dumps(candidate.to_dict(),sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
         report=gov.evaluate_and_promote(p1,candidate)
         self.assertEqual(report['decision'],'promoted')
@@ -257,27 +292,27 @@ class RuntimeTests(unittest.TestCase):
 
     def test_critical_failure_blocks_promotion(self):
         gov=ImprovementGovernor(self.c); aid='security-reviewer'; bid='critical-benchmark'; ids=('S4',)
-        gov.set_baseline(aid,EvaluationReport(bid,ids,.8,{'secrets':True},9,10))
+        gov.set_baseline(aid,_evaluation_report(bid,ids,.8,{'secrets':True},9,10))
         p=gov.propose(aid,'candidate','one change',bid)
-        report=gov.evaluate_and_promote(p,EvaluationReport(bid,ids,.99,{'secrets':False},10,10))
+        report=gov.evaluate_and_promote(p,_evaluation_report(bid,ids,.99,{'secrets':False},10,10))
         self.assertEqual(report['decision'],'rejected')
     def test_protected_change_detected_from_change_summary(self):
         gov=ImprovementGovernor(self.c); aid='orchestrator'; bid='auto-protect'; ids=('S1',)
-        gov.set_baseline(aid,EvaluationReport(bid,ids,.8,{'safety':True},9,10))
+        gov.set_baseline(aid,_evaluation_report(bid,ids,.8,{'safety':True},9,10))
         p=gov.propose(aid,'change runtime routing','switch provider to a new model',bid)
-        report=gov.evaluate_and_promote(p,EvaluationReport(bid,ids,.99,{'safety':True},10,10))
+        report=gov.evaluate_and_promote(p,_evaluation_report(bid,ids,.99,{'safety':True},10,10))
         self.assertEqual(report['decision'],'rejected'); self.assertTrue(any('approval' in x for x in report['reasons']))
     def test_benchmark_mismatch_blocks_promotion(self):
         gov=ImprovementGovernor(self.c); aid='project-manager'; bid='baseline-a'; ids=('S2',)
-        gov.set_baseline(aid,EvaluationReport(bid,ids,.8,{'safety':True},9,10))
+        gov.set_baseline(aid,_evaluation_report(bid,ids,.8,{'safety':True},9,10))
         p=gov.propose(aid,'candidate','one change',bid)
-        report=gov.evaluate_and_promote(p,EvaluationReport('different',ids,.99,{'safety':True},10,10))
+        report=gov.evaluate_and_promote(p,_evaluation_report('different',ids,.99,{'safety':True},10,10))
         self.assertEqual(report['decision'],'rejected')
     def test_no_improvement_not_promoted(self):
         gov=ImprovementGovernor(self.c); aid='data-analyst'; bid='same-score'; ids=('S1',)
-        gov.set_baseline(aid,EvaluationReport(bid,ids,.9,{'data':True},10,10))
+        gov.set_baseline(aid,_evaluation_report(bid,ids,.9,{'data':True},10,10))
         p=gov.propose(aid,'candidate','one change',bid)
-        report=gov.evaluate_and_promote(p,EvaluationReport(bid,ids,.9,{'data':True},10,10))
+        report=gov.evaluate_and_promote(p,_evaluation_report(bid,ids,.9,{'data':True},10,10))
         self.assertEqual(report['decision'],'rejected')
     def test_provider_env_missing_real_config_fails_closed(self):
         old={k:os.environ.get(k) for k in ('UNEXPECTED_PROVIDER','UNEXPECTED_BASE_URL','UNEXPECTED_MODEL','UNEXPECTED_API_KEY')}
