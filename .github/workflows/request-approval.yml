@@ -54,6 +54,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPOSITORY: ${{ github.repository }}
           GH_ACTOR: ${{ github.actor }}
+          APPROVAL_REVIEWER: ${{ vars.UNEXPECTED_APPROVAL_REVIEWER }}
           PROPOSAL_ID: ${{ inputs.proposal_id }}
           APPROVAL_PERMISSION: ${{ inputs.permission }}
           ACTION_DIGEST: ${{ inputs.action_digest }}
@@ -101,6 +102,11 @@ jobs:
               raise SystemExit('summary must contain 1 to 1000 characters')
           if os.environ['GH_ACTOR'].lower() != 'soueilouay-creator':
               raise SystemExit('Only the configured repository owner may request privileged approvals')
+          reviewer = os.environ.get('APPROVAL_REVIEWER', '').strip()
+          if not re.fullmatch(r'[A-Za-z0-9-]{1,39}', reviewer):
+              raise SystemExit('Set repository variable UNEXPECTED_APPROVAL_REVIEWER to a valid GitHub username')
+          if reviewer.lower() == os.environ['GH_ACTOR'].lower():
+              raise SystemExit('The configured approval reviewer must be different from the requester')
 
           token = os.environ['GITHUB_TOKEN']
           api = 'https://api.github.com'
@@ -171,11 +177,8 @@ jobs:
                     'Do not approve if the action details are unclear.'
               ),
           })
-          try:
-              api_call('POST', f"/repos/{owner}/{repo}/pulls/{pr['number']}/requested_reviewers", {
-                  'reviewers': [owner],
-              })
-          except RuntimeError:
-              print('PR created; reviewer request could not be added. Assign the trusted admin manually.')
-          print('Approval request PR: ' + pr['html_url'])
+          api_call('POST', f"/repos/{owner}/{repo}/pulls/{pr['number']}/requested_reviewers", {
+              'reviewers': [reviewer],
+          })
+          print('Approval request PR created and reviewer requested: ' + pr['html_url'])
           PY
