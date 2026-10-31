@@ -5,7 +5,7 @@ on:
     branches:
       - release/v7.3.1-trusted-approval-verifier
     paths:
-      - release-source/READY
+      - release-source/uneXpected_v7.3.1_governed_runtime.zip
 
 permissions:
   contents: read
@@ -23,41 +23,31 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Reassemble and verify source archive
+      - name: Verify archive checksum and ZIP integrity
         run: |
-          python - <<'PY'
-          from pathlib import Path
-          import base64, hashlib, os, zipfile
-          parts = sorted(Path('release-source').glob('part-*.b64'))
-          if not parts:
-              raise SystemExit('No release archive parts found')
-          encoded = ''.join(p.read_text(encoding='ascii').strip() for p in parts)
-          archive = Path(os.environ['RUNNER_TEMP']) / 'uneXpected_v7.3.1_governed_runtime.zip'
-          archive.write_bytes(base64.b64decode(encoded, validate=True))
-          expected = Path('release-source/READY').read_text().strip()
-          actual = hashlib.sha256(archive.read_bytes()).hexdigest()
-          if actual != expected:
-              raise SystemExit(f'Archive checksum mismatch: {actual}')
-          with zipfile.ZipFile(archive) as z:
-              bad = z.testzip()
-              if bad:
-                  raise SystemExit(f'ZIP integrity failure: {bad}')
-              names = z.namelist()
-              if len(names) < 90 or 'uneXpected_v7/agent_manifest.json' not in names:
-                  raise SystemExit('Release archive inventory is incomplete')
-          print(f'Archive verified: {archive.stat().st_size} bytes; {len(names)} entries; SHA-256 {actual}')
-          PY
-      - name: Run full package regression suite
+          set -euo pipefail
+          ARCHIVE=release-source/uneXpected_v7.3.1_governed_runtime.zip
+          EXPECTED=4dad792982ac021a3c3e9337aad78ea46e134469410b4c0d05b9112ed0b00e1c
+          ACTUAL=$(sha256sum "$ARCHIVE" | awk '{print $1}')
+          test "$ACTUAL" = "$EXPECTED"
+          unzip -tq "$ARCHIVE"
+          echo "Verified SHA-256 $ACTUAL"
+      - name: Run full tests and compile checks
         run: |
           python - <<'PY'
           from pathlib import Path
           from zipfile import ZipFile
-          import os, compileall, subprocess, sys
-          archive = Path(os.environ['RUNNER_TEMP']) / 'uneXpected_v7.3.1_governed_runtime.zip'
-          target = Path(os.environ['RUNNER_TEMP']) / 'package'
+          import compileall, os, subprocess, sys, tempfile
+          archive = Path('release-source/uneXpected_v7.3.1_governed_runtime.zip').resolve()
+          target = Path(tempfile.mkdtemp(prefix='unexpected-v731-'))
           with ZipFile(archive) as z:
+              if z.testzip():
+                  raise SystemExit('ZIP integrity failure')
               z.extractall(target)
-          root = target / 'uneXpected_v7'
+          roots = [p for p in target.iterdir() if p.is_dir() and p.name == 'uneXpected_v7']
+          if len(roots) != 1:
+              raise SystemExit(f'Expected one uneXpected_v7 root, found {len(roots)}')
+          root = roots[0]
           env = dict(os.environ)
           env['UNEXPECTED_PACKAGE_ZIP'] = str(archive)
           if not compileall.compile_dir(str(root / 'unexpected_runtime'), quiet=1):
@@ -75,7 +65,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: verified-uneXpected-v7.3.1-package
-          path: ${{ runner.temp }}/uneXpected_v7.3.1_governed_runtime.zip
+          path: release-source/uneXpected_v7.3.1_governed_runtime.zip
           if-no-files-found: error
           retention-days: 7
 
@@ -93,24 +83,34 @@ jobs:
         with:
           name: verified-uneXpected-v7.3.1-package
           path: ${{ runner.temp }}/verified-package
-      - name: Re-check artifact and populate integration branch
+      - name: Independently verify artifact and extract release
         run: |
           python - <<'PY'
           from pathlib import Path
           from zipfile import ZipFile
-          import hashlib, shutil, os
+          import hashlib, os
           archive = Path(os.environ['RUNNER_TEMP']) / 'verified-package' / 'uneXpected_v7.3.1_governed_runtime.zip'
           expected = '4dad792982ac021a3c3e9337aad78ea46e134469410b4c0d05b9112ed0b00e1c'
           if not archive.is_file() or hashlib.sha256(archive.read_bytes()).hexdigest() != expected:
-              raise SystemExit('Downloaded artifact SHA-256 does not match the reviewed release')
+              raise SystemExit('Downloaded artifact SHA-256 mismatch')
           target = Path(os.environ['RUNNER_TEMP']) / 'unpacked'
           with ZipFile(archive) as z:
               if z.testzip():
-                  raise SystemExit('Downloaded package failed ZIP integrity check')
+                  raise SystemExit('Downloaded archive failed ZIP integrity test')
               z.extractall(target)
           source = target / 'uneXpected_v7'
           if not (source / 'agent_manifest.json').is_file():
-              raise SystemExit('Extracted package does not contain agent_manifest.json')
+              raise SystemExit('Expected manifest missing from release archive')
+          os.environ['UNEXPECTED_RELEASE_SOURCE'] = str(source)
+          PY
+      - name: Import source on an integration branch and open PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import os, shutil, subprocess
+          source = Path(os.environ['RUNNER_TEMP']) / 'unpacked' / 'uneXpected_v7'
           workspace = Path.cwd()
           for child in workspace.iterdir():
               if child.name == '.git':
@@ -120,27 +120,18 @@ jobs:
               else:
                   child.unlink()
           shutil.copytree(source, workspace, dirs_exist_ok=True)
-          print(f'Imported {sum(1 for p in workspace.rglob("*") if p.is_file())} files')
+          subprocess.run(['git','config','user.name','github-actions[bot]'],check=True)
+          subprocess.run(['git','config','user.email','41898282+github-actions[bot]@users.noreply.github.com'],check=True)
+          subprocess.run(['git','switch','-c','integration/v7.3.1-governed-runtime'],check=True)
+          subprocess.run(['git','add','-A'],check=True)
+          subprocess.run(['git','commit','-m','feat: integrate uneXpected v7.3.1 governed runtime'],check=True)
+          subprocess.run(['git','push','origin','HEAD:refs/heads/integration/v7.3.1-governed-runtime'],check=True)
+          subprocess.run(['gh','pr','create','--repo',os.environ['GITHUB_REPOSITORY'],'--base','main',
+                          '--head','integration/v7.3.1-governed-runtime',
+                          '--title','Integrate uneXpected v7.3.1 governed runtime',
+                          '--body','Imported from the checksum-verified v7.3.1 package. The preceding isolated, read-only job runs archive checks, compilation, the full unit suite and CLI smoke checks. This PR is for independent review only; it is not merged or deployed.'],check=True)
           PY
-      - name: Commit full v7.3.1 source tree
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -c integration/v7.3.1-governed-runtime
-          git add -A
-          git commit -m "feat: integrate uneXpected v7.3.1 governed runtime"
-          git push origin HEAD:refs/heads/integration/v7.3.1-governed-runtime
-      - name: Open review pull request
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh pr create \
-            --repo "${{ github.repository }}" \
-            --base main \
-            --head integration/v7.3.1-governed-runtime \
-            --title "Integrate uneXpected v7.3.1 governed runtime" \
-            --body "Imported from the checksum-verified v7.3.1 package. The isolated verification job runs the full suite, compilation and CLI smoke checks. This PR is for independent review only; it does not deploy or merge."
-      - name: Remove temporary archive transfer branch
+      - name: Remove temporary transfer branch
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
