@@ -85,6 +85,10 @@ class APITests(unittest.TestCase):
     def test_http_invocation_reaches_gateway_provider(self):
         op=Opener({"ok":True,"results":{"openai":{"status":"LIVE · verified response","text":"end-to-end live-shaped result","model":"gpt-4.1"}}})
         p=AIStudioGatewayProvider("https://gateway.example/orchestrate","g"*48,mode="openai")
+        probe=Opener({"ok":True,"results":{"openai":{"status":"LIVE · verified response","text":"direct provider probe","model":"gpt-4.1"}}})
+        with patch("unexpected_runtime.providers.urllib.request.build_opener",return_value=probe):
+            direct=p.generate(system_prompt="S",user_prompt="U",agent_id="orchestrator",task_id="probe",timeout=10)
+        self.assertIn("direct provider probe",direct)
         with tempfile.TemporaryDirectory() as state:
             c=Coordinator(state_dir=state,provider=p,max_workers=1,max_retries=0)
             s=create_server(coordinator=c,api_token="a"*48,host="127.0.0.1",port=0)
