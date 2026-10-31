@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   runtime-tests:
+    if: ${{ hashFiles('unexpected_runtime/*.py') != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
