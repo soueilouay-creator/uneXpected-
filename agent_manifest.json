@@ -22,7 +22,7 @@
     "readme_relative_directory_links_including_category_index": 121,
     "missing_readme_link_paths": 0,
     "fetched_at_utc": "2026-10-28T16:43:00Z",
-    "self_improving_skill_readme": "https://github.com/Shubhamsaboo/awesome-llm-apps/tree/main/agent_skills/self-improving-agent-skills",
+    "self_improving_skill_readme": "https://github.com/Shubhamsaboo/awesome-llm-apps/tree/6c16b23f1bacd0fdf240bb5141ef45e59e82c306/agent_skills/self-improving-agent-skills",
     "self_improving_skill_architecture": "Google ADK + Gemini multi-agent web app; conceptual learning loop adapted, application not installed"
   },
   "active_agent_count": 38,

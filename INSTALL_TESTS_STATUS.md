@@ -9,12 +9,12 @@
 
 ## Local runtime and verification
 - Executable local Python scaffold: 38-role registry, coordinator/router, SQLite task queue and audit log, typed handoffs, task DAG, bounded worker/provider pools, deadlines, cancellation, retries and idempotency; per-agent memory and reviewed shared knowledge; hash-pinned workflow skills; provenance-aware metadata-only capability registry; host-verifier/action-bound privileged permissions; and evidence-fingerprinted self-improvement with stale-baseline rejection. Deterministic mock remains the default provider.
-- v7.0 baseline: 44 passed, 0 failed, 0 errors, 1 skipped. The final v7.3.0 verification result and release ZIP checksum are recorded below after the current package was rebuilt.
+- v7.0 baseline: 44 passed, 0 failed, 0 errors, 1 skipped. The historical v7.3.0 verification result is retained below for provenance; it is not a test result for the current v7.3.1 PR head.
 - Runtime smoke: all 38 agents invoked via mock; CLI single-agent invocation, 3-agent handoff chain, 3-node DAG and four-scenario contract benchmark passed. Benchmark: 6/6 critical and 10/10 noncritical checks; mock runtime contracts only, not semantic model quality.
 - Real provider API, live integrations, semantic model evaluation, production deployment, authenticated approval channel and background scheduler were not tested/configured.
 
 ## Persistence and activation are separate states
-- **Local files/package:** v7.3.0 archive built and verified locally; original `uneXpected_v7_unified_runtime.zip` preserved as the v7.0 rollback source. See the v7.3 release section below for the current archive hash.
+- **Historical local files/package:** v7.3.0 archive built and verified locally; original `uneXpected_v7_unified_runtime.zip` preserved as the v7.0 rollback source. See the v7.3 release section below for the current archive hash.
 - **Library upload/read-back:** not completed; no v7.3.0 files are claimed saved to the persistent Library.
 - **Global Custom Instructions:** draft at `GLOBAL_CUSTOM_INSTRUCTION_V7.md`; not changed by file tools.
 - **ChatGPT Project:** draft at `PROJECT_INSTRUCTIONS_V7.md`; installation not confirmed.
@@ -24,7 +24,7 @@
 Install: `INSTALL.md`. Deploy: `DEPLOY.md`. Migration: `UPGRADE_MIGRATION.md`. Rollback: `ROLLBACK_UNINSTALL.md`. Capability and safety limits: `CAPABILITY_MATRIX.md` and `THREAT_MODEL.md`.
 
 
-## 7.3.0 — Governed workflow and capability upgrade
+## Historical 7.3.0 — Governed workflow and capability upgrade
 
 - Added a local hash-pinned workflow-skill registry for creative-media, skill-engineering and self-improvement context. Supplemental profiles remain outside `agents/`; the canonical registry still contains exactly 38 roles. Skill text is injected only for a mapped role and matching trigger, with a fresh SHA-256 check before provider dispatch.
 - Added a provenance-aware capability registry backed by an additive SQLite table and audited lifecycle events. Records are metadata only; no external capability is executed by registry transitions. The `enabled` state requires an explicitly registered adapter verifier.

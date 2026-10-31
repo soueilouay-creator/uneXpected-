@@ -8,13 +8,13 @@
 - Added per-agent specs and manifest, Markdown/CSV/JSON catalogs, consolidated index, v6 migration crosswalk, source manifest, capability matrix, threat model, architecture, install/deploy/migration/rollback guidance, and global/Project instruction drafts.
 - Added standard-library Python runtime with SQLite task queue, event/audit log, per-agent memory namespaces, provenance-tagged reviewed shared knowledge, typed handoffs, DAG execution, bounded worker/provider pools, deadlines, cooperative cancellation, retry limits, idempotency payload checks, cycle/budget guards, provider abstraction, deterministic mock and optional environment-configured OpenAI-compatible adapter.
 - Added four-scenario runtime-contract benchmark runner and governed outcome/proposal/evaluation/promotion/rollback loop. Protected-change text is conservatively detected and still requires a human-approval flag; this CLI does not authenticate the approver.
-- Final local verification: 45 automated tests passed; all 38 roles invoked via mock; CLI invocation, chain, DAG and benchmark smoke tests passed; ZIP and per-file checksum inventory verified.
+- Historical v7.0 test record: 44 tests passed, 0 failed, 0 errors, and 1 optional v6 fixture test skipped. The final post-change run retained that single explicit skip; it was not removed or counted as a pass.
 - During crosswalk enrichment, a regression run found a Markdown stable-ID formatting mismatch and a SQLite baseline-seeding race under concurrent first invocations; both were corrected and the concurrency test passed.
 - Not deployed or connected: real provider, web/browser tools inside this runtime, third-party connectors, hosted background service, scheduler, notifications, ChatGPT Project installation, global Custom Instructions activation, and Library persistence.
 
 ## Build recovery notes
 
-Early test rounds exposed a case-sensitive capability assertion, number-format mismatch, incorrect ZIP-entry threshold and checksum-header parsing. Each was diagnosed and corrected. The final post-change suite passed with zero failures/errors/skips; see `TEST_RESULTS.md`.
+Early test rounds exposed a case-sensitive capability assertion, number-format mismatch, incorrect ZIP-entry threshold and checksum-header parsing. Each was diagnosed and corrected. The historical v7.0 post-change suite completed with zero failures/errors and one optional v6 fixture skip; see `TEST_RESULTS.md`.
 
 
 ## 7.3.0 — Governed workflow and capability upgrade

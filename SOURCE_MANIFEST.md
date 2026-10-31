@@ -8,11 +8,11 @@ Fetched through the available GitHub read connector at **2026-10-28T16:43:00Z**.
 - Repository metadata `updated_at`: `2026-10-28T16:42:52Z`; `pushed_at`: `2026-10-22T19:10:10Z`; archived: `false`
 - License: `Apache-2.0` (license text begins `Apache License`; original upstream source remains authoritative)
 - README last commit: [`40b16b66e5257c528059bb93ca9410b55d39278a`](https://github.com/Shubhamsaboo/awesome-llm-apps/commit/40b16b66e5257c528059bb93ca9410b55d39278a) dated `2026-10-16T04:55:31Z`
-- Recursive tree-object SHA: `dfa79289f46826b4b63946e3a13540c9a4c3ea12`; tree truncated: `false`. The connector response for `/git/trees/main?recursive=1` reported the branch commit SHA in its top-level `sha` field; a second fetch by the explicit tree-object SHA returned the same 2,541 entries, so `commit.tree.sha` is recorded as the tree-object SHA.
+- Recursive tree-object SHA: `dfa79289f46826b4b63946e3a13540c9a4c3ea12`; tree truncated: `false`. The Git Trees API `sha` field identifies the tree object, not the branch commit. The branch commit SHA is obtained from the branch/commit object; its `commit.tree.sha` identifies the tree. The explicit tree-object fetch returned the same 2,541 entries.
 - Tree inventory: 2,541 entries = 1,984 blobs + 557 tree objects; 224 README.md files
 - README links: 121 unique relative directory links; one is the `agent_skills/` category index; 120 linked candidate workflow/app directories remain after excluding that index; missing paths: 0
 - V6 catalog cross-check: 120 unique workflow IDs and 120 unique source paths. The v6 source URLs are pinned to the current branch commit `6c16b23f1bacd0fdf240bb5141ef45e59e82c306` and the README last-commit SHA is unchanged; the explicit tree-object inventory contains all 120 linked candidate paths with no missing paths.
-- Self-improving skill source: [https://github.com/Shubhamsaboo/awesome-llm-apps/tree/main/agent_skills/self-improving-agent-skills](https://github.com/Shubhamsaboo/awesome-llm-apps/tree/main/agent_skills/self-improving-agent-skills). It describes a Google ADK/Gemini multi-agent web application. This package adapts the governed evaluation loop conceptually; that separate app is **not installed or running here**.
+- Self-improving skill source: [https://github.com/Shubhamsaboo/awesome-llm-apps/tree/6c16b23f1bacd0fdf240bb5141ef45e59e82c306/agent_skills/self-improving-agent-skills](https://github.com/Shubhamsaboo/awesome-llm-apps/tree/main/agent_skills/self-improving-agent-skills). It describes a Google ADK/Gemini multi-agent web application. This package adapts the governed evaluation loop conceptually; that separate app is **not installed or running here**.
 
 ## Scope interpretation
 

@@ -47,7 +47,7 @@ The default mock benchmark checks routing, provenance handling, tool-availabilit
 **Locally release-ready as a mock-tested runtime scaffold with one optional v6-fixture check skipped. Not production-deployed, not live-provider-verified, and not installed persistently in the ChatGPT Library/Project.**
 
 
-## v7.3.0 current release verification
+## Historical v7.3.0 release verification
 
 - **Automated tests:** 76 run; 75 passed, 1 skipped, 0 failures, 0 errors. Command: `UNEXPECTED_PACKAGE_ZIP=/mnt/data/uneXpected-v7.3-release/uneXpected_v7.3_governed_runtime.zip python -m unittest discover -s tests -v` from the package root. The one skip is the optional v6 source ZIP test; the exact fixture was not supplied and the test was not weakened or removed.
 - **Compilation:** `python -m compileall -q unexpected_runtime tests` passed.
