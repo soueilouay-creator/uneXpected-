@@ -9,7 +9,7 @@
 1. Extract the ZIP to a dedicated directory; keep `/uneXpected/` legacy files unchanged.
 2. Create a private environment configuration based on `.env.example` if using a real provider. The default is `UNEXPECTED_PROVIDER=mock`.
 3. From the package root run `python -m unexpected_runtime.cli status`, `python -m unexpected_runtime.cli list`, then `python -m unexpected_runtime.cli run orchestrator --objective 'Plan a safe test task'` and `python -m unexpected_runtime.cli eval`.
-4. Keep `uneXpected_v7.3_governed_runtime.zip` beside the extracted `uneXpected_v7/` directory (or set `UNEXPECTED_PACKAGE_ZIP` to its path), then run `python -m unittest discover -s tests -v`.
+4. Keep `uneXpected_v7.3.1_governed_runtime.zip` beside the extracted `uneXpected_v7/` directory (or set `UNEXPECTED_PACKAGE_ZIP` to its path), then run `python -m unittest discover -s tests -v`.
 5. Review `TEST_RESULTS.md`, `CAPABILITY_MATRIX.md` and `THREAT_MODEL.md`.
 
 ## State
@@ -23,4 +23,4 @@ This is a locally executable scaffold and mock-tested runtime. It is not a hoste
 
 
 ## Host approval adapter contract
-The package defines `ApprovalVerifier.verify(approval: ApprovalContext, permission: str, action_digest: str) -> bool`. No production identity provider or verifier ships with this package. Until a trusted host implements and injects this protocol, all privileged actions and protected self-improvement promotion/rollback remain denied. The verifier must bind identity, scope and exact action digest; a caller-supplied approval object is not sufficient. Durable privileged queue entries remain denied because no durable approval-reference revalidation adapter is included.
+The package includes `GitHubPullRequestApprovalVerifier` and `approval_verifier_from_env()` as a production verifier implementation. It remains disabled until the host supplies a read-only GitHub token, an exact target repository included in `UNEXPECTED_GITHUB_APPROVAL_ALLOWED_REPOSITORIES`, trusted reviewer identities, and durable ledger storage. Until those settings are valid, privileged actions and protected self-improvement promotion/rollback remain denied. The verifier must bind identity, scope and exact action digest; a caller-supplied approval object is not sufficient. Durable privileged queue entries remain denied because no durable approval-reference revalidation adapter is included.

@@ -2,7 +2,7 @@
 
 ## Real AI provider gateway
 
-The v7.3.1 Python runtime can call the existing uneXpected AI Studio service at https://unexpected-ai-studio.onrender.com/orchestrate. That Node gateway holds the OpenAI, Anthropic and optional OpenRouter credentials. The Python service receives only a separate bearer token; provider keys must remain in the gateway's Render secret settings.
+The v7.3.1 Python runtime can call the existing uneXpected AI Studio service at https://unexpected-ai-studio.onrender.com/orchestrate. In `ai_studio_gateway` mode, that Node gateway holds the OpenAI, Anthropic and optional OpenRouter credentials, and Python receives only a separate bearer token. The alternative `openai_compatible` mode reads `UNEXPECTED_API_KEY` in the Python host environment; that direct-key mode is separate and must be protected by the host secret manager.
 
 The gateway supports OpenAI Responses API, Anthropic Messages API, optional OpenRouter fallback, and a public TAAFT MCP connector limited to 28 read-only search/detail operations. Public TAAFT catalog access is not a personal TAAFT account connection. It does not expose private bookmarks, account settings or write actions.
 
@@ -15,11 +15,11 @@ Set in the Python service secret manager:
 
 Use openai or claude for a single primary provider. both makes two parallel primary requests and a synthesis request, so it can cost more. The AI Studio gateway may try its configured OpenRouter fallback if paid providers fail. It must label fallback output; the Python adapter rejects MOCK or failed responses as real provider output.
 
-The adapter requires HTTPS, rejects embedded URL credentials/query/fragment, does not follow redirects with its bearer token, caps prompts at 15,000 UTF-16 code units and responses at 1 MB, and bounds request timeouts.
+The adapter requires HTTPS, rejects embedded URL credentials/query/fragment, does not follow redirects with its bearer token, caps prompts at 15,000 UTF-16 code units and responses at 1 MB, and bounds request timeouts. Provider POST failures are not retried by default because an upstream request may have been accepted before a timeout; retries require an explicitly retry-safe provider contract.
 
 ## Runtime HTTP API
 
-Run with python -m unexpected_runtime.http_api. Set UNEXPECTED_RUNTIME_API_TOKEN to a separate random secret of at least 32 characters. Never reuse the gateway token.
+Run with `python -m unexpected_runtime.http_api`. The built-in server speaks plain HTTP and binds to `0.0.0.0` by default; it does not terminate TLS. Before exposing it publicly, require HTTPS at a trusted ingress/reverse proxy and keep the origin private. On Render, use the platform's HTTPS ingress for the public service URL. Set `UNEXPECTED_RUNTIME_API_TOKEN` to a separate random secret of at least 32 characters. Never reuse the gateway token.
 
 - GET /health: public, non-secret health metadata.
 - GET /v1/status: bearer authenticated.

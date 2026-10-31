@@ -8,7 +8,26 @@ A local, executable, quality-gated runtime scaffold for 38 canonical agent roles
 python -m unexpected_runtime.cli status
 python -m unexpected_runtime.cli list
 python -m unexpected_runtime.cli run orchestrator --objective 'Plan a safe test task'
-python -m unittest discover -s tests -v
+
+# Build the ZIP fixture required by the package-integrity test.
+python - <<'PY'
+from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile
+root = Path.cwd()
+target = root.parent / 'uneXpected_v7.3.1_governed_runtime.zip'
+with ZipFile(target, 'w', ZIP_DEFLATED) as archive:
+    for path in sorted(root.rglob('*')):
+        if not path.is_file() or '__pycache__' in path.parts or path.suffix in {'.pyc', '.sqlite3', '.db'}:
+            continue
+        relative = path.relative_to(root)
+        if any(part in {'.git', '.venv', 'venv', 'state'} for part in relative.parts):
+            continue
+        if relative.name == '.env' or (relative.name.startswith('.env.') and relative.name != '.env.example'):
+            continue
+        archive.write(path, Path('uneXpected_v7') / relative)
+print(f'Built {target} ({target.stat().st_size} bytes)')
+PY
+UNEXPECTED_PACKAGE_ZIP=../uneXpected_v7.3.1_governed_runtime.zip python -m unittest discover -s tests -v
 ```
 
 The default provider is deterministic mock. The optional AI Studio gateway connects the Python runtime to the existing OpenAI/Anthropic/OpenRouter service without copying provider API keys into Python. See docs/RUNTIME_CONNECTIVITY.md for secret handoff, authenticated runtime API, model modes, tool boundaries and Render limitations.

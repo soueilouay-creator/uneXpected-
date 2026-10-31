@@ -22,7 +22,7 @@ flowchart TD
 SQLite stores queue state, events, idempotency results, isolated agent memory, provenance-tagged shared knowledge, outcomes, proposals and version history. The provider adapter is shared; roles are specifications executed as sessions, not separate autonomous models. The default provider is deterministic mock.
 
 
-## 7.3.0 — Governed workflow and capability upgrade
+## Historical notes — 7.3.0 governed workflow and capability upgrade
 
 - Added a local hash-pinned workflow-skill registry for creative-media, skill-engineering and self-improvement context. Supplemental profiles remain outside `agents/`; the canonical registry still contains exactly 38 roles. Skill text is injected only for a mapped role and matching trigger, with a fresh SHA-256 check before provider dispatch.
 - Added a provenance-aware capability registry backed by an additive SQLite table and audited lifecycle events. Records are metadata only; no external capability is executed by registry transitions. The `enabled` state requires an explicitly registered adapter verifier.

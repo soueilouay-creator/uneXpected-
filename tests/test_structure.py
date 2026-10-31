@@ -105,7 +105,7 @@ class StructureTests(unittest.TestCase):
    self.assertIn('`'+agent['id']+'`',index)
    self.assertIn('agents/'+agent['id']+'.md',index)
  def test_v7_package_integrity(self):
-  package=Path(__import__('os').environ.get('UNEXPECTED_PACKAGE_ZIP',ROOT.parent/'uneXpected_v7.3_governed_runtime.zip'))
+  package=Path(__import__('os').environ.get('UNEXPECTED_PACKAGE_ZIP',ROOT.parent/'uneXpected_v7.3.1_governed_runtime.zip'))
   self.assertTrue(package.is_file(),str(package))
   with zipfile.ZipFile(package) as z:
    self.assertIsNone(z.testzip()); names=z.namelist(); self.assertGreater(len(names),70)
