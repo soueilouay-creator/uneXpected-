@@ -98,6 +98,23 @@ class APITests(unittest.TestCase):
         self.assertEqual(self.request("POST","/v1/invoke",{"agent_id":"orchestrator","objective":"x","deadline_seconds":float("nan")})[0],400)
         self.assertEqual(self.request("POST","/v1/invoke",{"agent_id":"orchestrator","objective":"x","max_steps":13})[0],400)
 
+    def test_http_missing_and_malformed_content_length_are_rejected(self):
+        def raw_request(content_length=None):
+            conn=http.client.HTTPConnection(self.host,self.port,timeout=8)
+            conn.putrequest("POST","/v1/invoke")
+            conn.putheader("Authorization","Bearer "+"a"*48)
+            conn.putheader("Content-Type","application/json")
+            if content_length is not None:
+                conn.putheader("Content-Length",content_length)
+            conn.endheaders()
+            response=conn.getresponse()
+            response.read()
+            status=response.status
+            conn.close()
+            return status
+        self.assertEqual(raw_request(),411)
+        self.assertEqual(raw_request("not-a-number"),400)
+
     def test_http_body_limit_is_enforced(self):
         conn=http.client.HTTPConnection(self.host,self.port,timeout=8)
         conn.request("POST","/v1/invoke",b" "*(64*1024+1),{"Authorization":"Bearer "+"a"*48,"Content-Type":"application/json"})

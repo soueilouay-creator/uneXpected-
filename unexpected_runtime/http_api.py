@@ -45,8 +45,11 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                 self.send_json(401,{"error":"Unauthorized."}); return False
             return True
         def read_body(self):
-            try: length=int(self.headers.get("Content-Length",""))
-            except ValueError: self.send_json(411,{"error":"Content-Length is required."}); return None
+            raw_length=self.headers.get("Content-Length")
+            if raw_length is None:
+                self.send_json(411,{"error":"Content-Length is required."}); return None
+            try: length=int(raw_length)
+            except ValueError: self.send_json(400,{"error":"Invalid Content-Length."}); return None
             if length<0: self.send_json(400,{"error":"Invalid Content-Length."}); return None
             if length>MAX_BODY_BYTES: self.send_json(413,{"error":"Request body too large."}); return None
             try: obj=json.loads(self.rfile.read(length).decode("utf-8"))
