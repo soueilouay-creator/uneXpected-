@@ -203,8 +203,12 @@ class GitHubPullRequestApprovalVerifier:
                     or not isinstance(request_doc.get('action_details'), dict)
                     or permission not in request_doc['action_details'].get('required_permissions', [])
                     or canonical_action_digest(request_doc['action_details']) != action_digest
-                    or request_doc.get('action_digest') != action_digest
-                    or str(request_doc.get('requested_by', '')).lower() not in self.trusted_reviewers):
+                    or request_doc.get('action_digest') != action_digest):
+                return False
+            requested_by = str(request_doc.get('requested_by', '')).strip().lower()
+            # Requests are issued only by the configured repository owner. The
+            # approving admin must be a different identity (separation of duties).
+            if requested_by != self.owner.lower() or requested_by == claimed_reviewer:
                 return False
             created_at = self._parse_time(request_doc.get('created_at'))
             pull_created_at = self._parse_time(pull.get('created_at'))
