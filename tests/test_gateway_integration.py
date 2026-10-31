@@ -33,6 +33,14 @@ class ProviderTests(unittest.TestCase):
         op=Opener({"ok":True,"results":{"openai":{"status":"MOCK","text":"fake"}}})
         with patch("unexpected_runtime.providers.urllib.request.build_opener",return_value=op):
             with self.assertRaises(ProviderError): p.generate(system_prompt="S",user_prompt="U",agent_id="a",task_id="t",timeout=5)
+    def test_live_status_must_be_unambiguous_and_not_fallback(self):
+        p=AIStudioGatewayProvider("https://gateway.example/orchestrate","g"*48,mode="openai")
+        for status in ("NOT LIVE","MOCK (live provider unavailable)","DELIVERED","LIVE · fallback"):
+            op=Opener({"ok":True,"results":{"openai":{"status":status,"text":"must not be accepted"}}})
+            with patch("unexpected_runtime.providers.urllib.request.build_opener",return_value=op):
+                with self.subTest(status=status), self.assertRaises(ProviderError):
+                    p.generate(system_prompt="S",user_prompt="U",agent_id="a",task_id="t",timeout=5)
+
     def test_rejects_insecure_url_bad_mode_and_large_task(self):
         for url in ("http://gateway.example","https://u:p@gateway.example/x"):
             with self.assertRaises(ProviderError): AIStudioGatewayProvider(url,"g"*48)

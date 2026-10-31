@@ -136,6 +136,23 @@ class RuntimeTests(unittest.TestCase):
     def test_retry_cap_and_safe_retry(self):
         self.c.close(); self.c=Coordinator(manifest_path=ROOT/'agent_manifest.json',state_dir=self.root,provider=FlakyProvider(fail_count=1),max_workers=2,max_retries=1)
         r=self.c.invoke('coding-engineer','retry test'); self.assertEqual(r.status,'completed'); self.assertEqual(r.attempts,2)
+    def test_ambiguous_provider_failures_are_not_retried_without_safe_contract(self):
+        class AmbiguousHTTPProvider:
+            name='ambiguous-http'
+            configured=True
+            def __init__(self): self.calls=0
+            def generate(self, **kwargs):
+                self.calls+=1
+                raise RuntimeError('request may have been accepted before timeout')
+        provider=AmbiguousHTTPProvider()
+        self.c.close()
+        self.c=Coordinator(manifest_path=ROOT/'agent_manifest.json',state_dir=self.root,
+                           provider=provider,max_workers=1,max_retries=2)
+        result=self.c.invoke('research-scout','one provider submission only')
+        self.assertEqual(result.status,'failed')
+        self.assertEqual(result.attempts,1)
+        self.assertEqual(provider.calls,1)
+
     def test_timeout_returns_explicit_status(self):
         self.c.close(); self.c=Coordinator(manifest_path=ROOT/'agent_manifest.json',state_dir=self.root,provider=FlakyProvider(fail_count=0,delay=.25),max_workers=2,max_retries=0)
         r=self.c.invoke('research-scout','timeout test',deadline_seconds=.03); self.assertIn(r.status,('timeout','cancelled'))
