@@ -93,7 +93,7 @@ class APITests(unittest.TestCase):
                 conn=http.client.HTTPConnection("127.0.0.1",s.server_address[1],timeout=5)
                 conn.request("POST","/v1/invoke",json.dumps({"agent_id":"orchestrator","objective":"test"}),{"Authorization":"Bearer "+"a"*48,"Content-Type":"application/json"})
                 r=conn.getresponse(); result=json.loads(r.read()); conn.close()
-                self.assertEqual(r.status,200); self.assertIn("end-to-end live-shaped result",result["result"]["output"])
+                self.assertEqual(r.status,200,result); self.assertEqual(result["result"]["status"],"completed",result); self.assertIn("end-to-end live-shaped result",result["result"]["output"])
             finally: s.shutdown(); s.server_close(); t.join(timeout=2); c.close()
 
 if __name__=="__main__": unittest.main(verbosity=2)
