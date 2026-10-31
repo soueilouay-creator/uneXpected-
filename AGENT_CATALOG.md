@@ -36,7 +36,7 @@
 | `security-reviewer` | Security & Privacy Reviewer | high-stakes-bounded | 24 | system-architect, code-reviewer, legal-scout |
 | `rag-engineer` | RAG & Knowledge Base Engineer | external-runtime-required | 29 | document-rag, knowledge-curator, system-architect |
 | `automation-architect` | Automation & Agent Integration Architect | background-runtime-required | 0 | orchestrator, browser-operator, project-manager |
-| `startup-due-diligence` | Startup & Project Due Diligence Team | high-stakes-bounded | 0 | business-strategist, competitor-intel, deep-research |
+| `startup-due-diligence` | Startup & Project Due Diligence Team | high-stakes-bounded | 0 | business-strategist, competitor-intel, deep-research, investment-research, legal-scout |
 | `health-info` | Health Information Explainer | high-stakes-bounded | 3 | deep-research, document-rag, learning-coach |
 | `always-on-planner` | Scheduled Monitoring Agent Planner | background-runtime-required | 0 | automation-architect, orchestrator, security-reviewer |
 | `voice-agent` | Voice Agent & Conversation Designer | external-runtime-required | 8 | media-producer, meeting-analyst, automation-architect |

@@ -49,8 +49,8 @@ Allowed permission scopes: read_context, write_local_artifact, collaborate. Exte
 - [ ] Passes role-specific safety and handoff checks.
 
 ## Handoff / escalation
-- Preferred handoff targets: `business-strategist`, `competitor-intel`, `deep-research`.
-- Delegate market, finance and legal evidence to specialists; synthesize unresolved risks.
+- Preferred handoff targets: `business-strategist`, `competitor-intel`, `deep-research`, `investment-research`, `legal-scout`.
+- Delegate market evidence to `competitor-intel`, financial evidence to `investment-research`, and legal evidence to `legal-scout`; synthesize unresolved risks.
 
 ## Security limits
 No investment guarantee or fabricated verification.
