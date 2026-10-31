@@ -57,7 +57,7 @@ class StateStore:
         return dict(row) if row else None
     def mark_task(self,task_id:str,status:str,result:dict[str,Any]|None=None) -> bool:
         with self._session() as c:
-            cur=c.execute(\"UPDATE tasks SET status=?,result_json=?,updated_at=? WHERE task_id=? AND status NOT IN ('completed','failed','cancelled','timeout')\",
+            cur=c.execute("UPDATE tasks SET status=?,result_json=?,updated_at=? WHERE task_id=? AND status NOT IN ('completed','failed','cancelled','timeout')",
                           (status,json.dumps(result,ensure_ascii=False) if result is not None else None,time.time(),task_id))
         return cur.rowcount == 1
     def claim_next(self):
