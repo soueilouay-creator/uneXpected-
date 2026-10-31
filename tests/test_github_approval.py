@@ -15,7 +15,8 @@ from unexpected_runtime.coordinator import Coordinator
 from unexpected_runtime.providers import DeterministicMockProvider
 
 REPOSITORY = "soueilouay-creator/uneXpected-"
-REVIEWER = "soueilouay-creator"
+REQUESTER = "soueilouay-creator"
+REVIEWER = "independent-admin"
 HEAD_SHA = "a" * 40
 ACTION_DETAILS = {"action": "agent.invoke", "required_permissions": ["repo_write"], "target": "fixture:release-1"}
 DIGEST = canonical_action_digest(ACTION_DETAILS)
@@ -28,7 +29,7 @@ def iso(delta: timedelta = timedelta(0)) -> str:
 
 class FakeGitHub:
     def __init__(self, *, state="open", review_state="APPROVED", review_commit=HEAD_SHA,
-                 reviewer=REVIEWER, permission="admin", body_digest=DIGEST,
+                 reviewer=REVIEWER, requested_by=REQUESTER, permission="admin", body_digest=DIGEST,
                  base_ref="main", head_repo=REPOSITORY, response_override=None):
         request_document = {
             "schema": "uneXpected.approval-request/v1",
@@ -37,7 +38,7 @@ class FakeGitHub:
             "permission": "repo_write",
             "action_details": ACTION_DETAILS,
             "action_digest": body_digest,
-            "requested_by": REVIEWER,
+            "requested_by": requested_by,
             "created_at": iso(timedelta(minutes=-5)),
         }
         encoded = base64.b64encode(json.dumps(request_document).encode()).decode()
@@ -100,6 +101,19 @@ class GitHubApprovalVerifierTests(unittest.TestCase):
             verifier = self.make_verifier(directory, fake)
             self.assertTrue(verifier.verify(context(), "repo_write", DIGEST))
             self.assertEqual(len(fake.calls), 4)
+
+    def test_denies_approval_when_requester_is_same_as_approver(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self_approval = self.make_verifier(
+                directory, FakeGitHub(reviewer=REQUESTER), trusted=(REQUESTER,)
+            )
+            self.assertFalse(self_approval.verify(context(approver=REQUESTER), "repo_write", DIGEST))
+
+    def test_denies_request_created_by_an_identity_other_than_repository_owner(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fake = FakeGitHub(requested_by="someone-else")
+            verifier = self.make_verifier(directory, fake)
+            self.assertFalse(verifier.verify(context(), "repo_write", DIGEST))
 
     def test_denies_reuse_after_successful_verification(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -186,7 +200,7 @@ class GitHubApprovalVerifierTests(unittest.TestCase):
             stale_doc = {
                 "schema": "uneXpected.approval-request/v1", "proposal_id": "proposal-001",
                 "repository": REPOSITORY, "permission": "repo_write", "action_digest": DIGEST,
-                "requested_by": REVIEWER, "created_at": iso(timedelta(days=-3)),
+                "requested_by": REQUESTER, "created_at": iso(timedelta(days=-3)),
             }
             key = f"/repos/soueilouay-creator/uneXpected-/contents/approvals/requests/proposal-001.json?ref={HEAD_SHA}"
             encoded = base64.b64encode(json.dumps(stale_doc).encode()).decode()
@@ -218,7 +232,7 @@ class GitHubApprovalVerifierTests(unittest.TestCase):
             reviews_path = "/repos/soueilouay-creator/uneXpected-/pulls/42/reviews?per_page=100&page=1"
             fake.responses[reviews_path].append({
                 "state": "COMMENTED", "commit_id": HEAD_SHA,
-                "submitted_at": iso(timedelta(seconds=-30)), "user": {"login": "soueilouay-creator"},
+                "submitted_at": iso(timedelta(seconds=-30)), "user": {"login": REVIEWER},
             })
             verifier = self.make_verifier(directory, fake)
             self.assertFalse(verifier.verify(context(), "repo_write", DIGEST))
@@ -240,6 +254,9 @@ class GitHubApprovalVerifierTests(unittest.TestCase):
         self.assertIn("github.actor == 'soueilouay-creator'", workflow)
         self.assertIn("pull-requests: write", workflow)
         self.assertIn("action_digest:", workflow)
+        self.assertIn("vars.UNEXPECTED_APPROVAL_REVIEWER", workflow)
+        self.assertIn("reviewer.lower() == os.environ['GH_ACTOR'].lower()", workflow)
+        self.assertIn("'reviewers': [reviewer]", workflow)
         self.assertIn("/git/ref/heads/main", workflow)
         self.assertNotIn("workflow_run:", workflow)
         self.assertNotIn("render deploy", workflow.lower())
