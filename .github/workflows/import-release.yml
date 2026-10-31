@@ -5,7 +5,8 @@ on:
     branches:
       - release/v7.3.1-trusted-approval-verifier
     paths:
-      - release-source/uneXpected_v7.3.1_governed_runtime.zip
+      - uneXpected_v7.3.1_governed_runtime.zip
+      - .github/workflows/import-release.yml
 
 permissions:
   contents: read
@@ -26,7 +27,7 @@ jobs:
       - name: Verify archive checksum and ZIP integrity
         run: |
           set -euo pipefail
-          ARCHIVE=release-source/uneXpected_v7.3.1_governed_runtime.zip
+          ARCHIVE=uneXpected_v7.3.1_governed_runtime.zip
           EXPECTED=4dad792982ac021a3c3e9337aad78ea46e134469410b4c0d05b9112ed0b00e1c
           ACTUAL=$(sha256sum "$ARCHIVE" | awk '{print $1}')
           test "$ACTUAL" = "$EXPECTED"
@@ -65,7 +66,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: verified-uneXpected-v7.3.1-package
-          path: release-source/uneXpected_v7.3.1_governed_runtime.zip
+          path: uneXpected_v7.3.1_governed_runtime.zip
           if-no-files-found: error
           retention-days: 7
 
