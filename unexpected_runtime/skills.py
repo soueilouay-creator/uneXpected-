@@ -83,14 +83,23 @@ class SkillRegistry:
         return path
 
     @classmethod
-    def _verify_file(cls, root: Path, skill: SkillSpec) -> Path:
+    def _read_verified_bytes(cls, root: Path, skill: SkillSpec) -> bytes:
         path = cls._safe_path(root, skill.path)
         if not path.is_file():
             raise SkillRegistryError(f'Skill source file is missing: {skill.path!r}.')
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        try:
+            data = path.read_bytes()
+        except OSError as exc:
+            raise SkillRegistryError(f'Cannot read skill source: {type(exc).__name__}.') from None
+        digest = hashlib.sha256(data).hexdigest()
         if digest != skill.sha256:
             raise SkillRegistryError(f'Skill source hash mismatch: {skill.id}.')
-        return path
+        return data
+
+    @classmethod
+    def _verify_file(cls, root: Path, skill: SkillSpec) -> Path:
+        cls._read_verified_bytes(root, skill)
+        return cls._safe_path(root, skill.path)
 
     def resolve(self, agent_id: str, objective: str) -> SkillSpec | None:
         text = f' {re.sub(r"[^a-z0-9]+", " ", objective.lower()).strip()} '
@@ -107,11 +116,11 @@ class SkillRegistry:
         registered = self._by_id.get(skill.id)
         if registered != skill:
             raise SkillRegistryError(f'Skill is not part of this registry: {skill.id}.')
-        path = self._verify_file(self.package_root, skill)
+        data = self._read_verified_bytes(self.package_root, skill)
         try:
-            return path.read_text(encoding='utf-8')
-        except OSError as exc:
-            raise SkillRegistryError(f'Cannot read skill source: {type(exc).__name__}.') from None
+            return data.decode('utf-8')
+        except UnicodeDecodeError as exc:
+            raise SkillRegistryError(f'Cannot decode skill source: {type(exc).__name__}.') from None
 
     def list(self) -> list[SkillSpec]:
         return list(self._skills)

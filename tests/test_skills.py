@@ -5,6 +5,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from unexpected_runtime.skills import SkillRegistry, SkillRegistryError
 from unexpected_runtime.coordinator import Coordinator
@@ -51,9 +52,53 @@ class SkillRegistryTests(unittest.TestCase):
 
     def test_path_traversal_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp) / 'package'
+            root.mkdir()
             with self.assertRaises(SkillRegistryError):
                 SkillRegistry.load(self._fixture(root, relative='../escape.md'), root)
+            self.assertTrue((Path(tmp) / 'escape.md').is_file())
+
+    def test_unreadable_skill_file_is_wrapped_as_registry_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            registry = SkillRegistry.load(self._fixture(root), root)
+            selected = registry.list()[0]
+            with patch.object(Path, 'read_bytes', side_effect=OSError('file disappeared')):
+                with self.assertRaises(SkillRegistryError):
+                    registry.read_context(selected)
+
+    def test_non_utf8_skill_source_is_wrapped_as_registry_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / 'skills' / 'binary.md'
+            target.parent.mkdir(parents=True)
+            payload = b'\xff\xfe\xfa'
+            target.write_bytes(payload)
+            manifest = {
+                'schema_version': 1,
+                'skills': [{
+                    'id': 'binary-skill', 'version': '1.0.0', 'path': 'skills/binary.md',
+                    'sha256': hashlib.sha256(payload).hexdigest(), 'agent_ids': ['media-producer'],
+                    'trigger_terms': ['video'], 'source_ref': 'fixture:binary', 'status': 'active',
+                }],
+            }
+            path = root / 'skill_manifest.json'
+            path.write_text(json.dumps(manifest), encoding='utf-8')
+            registry = SkillRegistry.load(path, root)
+            with self.assertRaises(SkillRegistryError):
+                registry.read_context(registry.list()[0])
+
+    def test_skill_context_reads_verified_bytes_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            registry = SkillRegistry.load(self._fixture(root), root)
+            selected = registry.list()[0]
+            original = Path.read_bytes
+            with patch.object(Path, 'read_bytes', autospec=True,
+                              side_effect=lambda path: original(path)) as read_bytes:
+                value = registry.read_context(selected)
+            self.assertIn('Verified demo skill', value)
+            self.assertEqual(read_bytes.call_count, 1)
 
     def test_modified_skill_hash_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -76,6 +121,7 @@ class SkillRegistryTests(unittest.TestCase):
         self.assertEqual(len(set(ids)), 38)
         self.assertIsNotNone(registry.resolve('voice-agent', 'Produce a voiceover for a video'))
         self.assertIsNotNone(registry.resolve('coding-engineer', 'Create a reusable agent skill'))
+        self.assertIsNotNone(registry.resolve('coding-engineer', 'Design a specialist profile'))
         self.assertIsNotNone(registry.resolve('self-improvement-governor', 'Run a benchmark for a self-improvement proposal'))
         self.assertIsNone(registry.resolve('creative-media-studio', 'Create a video'))
 
