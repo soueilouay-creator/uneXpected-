@@ -1,0 +1,18 @@
+# Package Status — uneXpected v7.3.1
+
+- **Canonical active roles:** 38 — 37 preserved legacy roles plus one new self-improvement governor. The count is derived from the manifest and unique responsibilities, not a target quota.
+- **Candidate inputs:** 120 current README-linked upstream workflow directories mapped to canonical roles as workflow capabilities, not 120 additional active agents. Five legacy roles have no direct README-entry mapping but remain active because their responsibilities are distinct.
+- **Migration detail:** all 120 workflow cards include item-specific source, description, inputs, procedure, output, acceptance checks, safety boundary and dependencies in the v6→v7 crosswalk.
+- **Runtime:** standard-library Python scaffold with SQLite task queue/state/audit, typed handoffs and task DAG, bounded worker/provider pools, deadlines, cooperative cancellation, bounded retries, idempotency request-hash checks, cycle/budget guards, isolated per-agent memory, provenance-tagged human-reviewed shared knowledge, deterministic mock provider, optional environment-configured OpenAI-compatible adapter, four-scenario contract benchmark runner, hash-pinned local workflow skill context, provenance-aware metadata capability registry, host-verifier/action-bound privileged authorization, evidence-fingerprinted improvement proposals, stale-baseline rejection, and governed promotion/rollback.
+- **v7.3.1 verification:** see the release verification record in `INSTALL_TESTS_STATUS.md` and `TEST_RESULTS.md`; the optional v6 archive fixture is not bundled and its test remains skipped.
+- **Canonical release archive:** `uneXpected_v7.3_governed_runtime.zip` is the governed 38-role Python runtime for this release; the original `uneXpected_v7_unified_runtime.zip` remains the untouched v7.0 rollback source. The previous 35-role Node.js archive is noncanonical and must not be distributed under the canonical name. The structural suite validates the canonical ZIP when `UNEXPECTED_PACKAGE_ZIP` is set; `FILE_INVENTORY_SHA256.txt` lists hashes for all other package files. The adjacent `.sha256` sidecar is the authoritative release archive checksum.
+- **Provider:** deterministic mock configured for tests. Real provider adapter is present but unconfigured and not live-tested.
+- **External capabilities:** web/browser actions inside this runtime, third-party connectors, live trade/payment/mail/publishing/repository writes/deletion/deployment, hosting, scheduler and notifications are not configured. Permission names do not create tools.
+- **Library:** this v7.3.0 build has not been saved to the persistent Library; local packaging and verification do not imply Library persistence.
+- **Global Custom Instructions:** v7 draft only; not changed by file tools. **Project installation:** not confirmed. **Hosted/background service:** not deployed.
+- **Approval boundary:** no production `ApprovalVerifier` is included or configured. Without an injected trusted verifier, every privileged action and protected promotion/rollback path is denied. The protocol accepts an approval context, permission and canonical action digest; the host must authenticate approver identity and validate the binding.
+
+
+## v7.3.0 local release status
+
+The v7.3.1 archive includes GitHub-backed approval-verifier code and a manual approval-request workflow. The verifier is not operationally connected until the read-only fine-grained token is installed in a separately hosted runtime, the repository base branch is protected, and live approval/revocation/replay tests pass. The runtime remains a local scaffold; no production host or external connector is configured.
