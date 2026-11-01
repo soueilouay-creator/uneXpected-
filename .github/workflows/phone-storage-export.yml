@@ -1,0 +1,194 @@
+name: Build one-file uneXpected phone workspace bundle
+
+on:
+  push:
+    branches:
+      - stabilization/phone-storage-export-2026-11-01
+
+permissions:
+  contents: read
+
+jobs:
+  build-phone-bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out export metadata
+        uses: actions/checkout@v4
+        with:
+          path: export-meta
+          persist-credentials: false
+
+      - name: Check out verified v7.3.1 core
+        uses: actions/checkout@v4
+        with:
+          repository: soueilouay-creator/uneXpected-
+          ref: 0a92f3571ffba01473813b4e4a39edc97e298be1
+          path: work/core
+          persist-credentials: false
+
+      - name: Check out AI Studio and phone PWA
+        uses: actions/checkout@v4
+        with:
+          repository: soueilouay-creator/uneXpected-ai-studio
+          ref: 6f5bc823e1ffd9284abae7dbbb6c1dae97ebf90b
+          path: work/ai-studio
+          persist-credentials: false
+
+      - name: Assemble, audit and verify the single archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="uneXpected_v7.3.1_PHONE_WORKSPACE"
+          mkdir -p "$ROOT/00_START_HERE" "$ROOT/01_CORE_RUNTIME" "$ROOT/02_AI_STUDIO" "$ROOT/03_STABILIZATION" "$ROOT/04_PHONE_GUIDE" "$ROOT/05_ROLLBACK"
+
+          python - <<'PY'
+          from pathlib import Path
+          import shutil
+
+          rules = {
+              ".git", ".venv", "venv", "node_modules", "__pycache__",
+              ".pytest_cache", ".mypy_cache", ".ruff_cache", "state", "logs",
+          }
+          excluded_names = {".env", ".env.local", ".env.production", ".env.development"}
+          excluded_suffixes = {".pyc", ".sqlite", ".sqlite3", ".db", ".log", ".pem", ".key"}
+          excluded_files = {".DS_Store", "Thumbs.db", "id_rsa", "id_ed25519"}
+
+          def copy_tree(source: Path, target: Path) -> int:
+              count = 0
+              for item in source.rglob("*"):
+                  relative = item.relative_to(source)
+                  if any(part in rules for part in relative.parts):
+                      continue
+                  if not item.is_file():
+                      continue
+                  if item.name in excluded_names or item.name in excluded_files:
+                      continue
+                  if item.suffix.lower() in excluded_suffixes:
+                      continue
+                  if item.name.startswith(".env.") and not item.name.endswith(".example"):
+                      continue
+                  if any(part.lower() in {"secrets", "credentials"} for part in relative.parts):
+                      continue
+                  destination = target / relative
+                  destination.parent.mkdir(parents=True, exist_ok=True)
+                  shutil.copy2(item, destination)
+                  count += 1
+              return count
+
+          root = Path("uneXpected_v7.3.1_PHONE_WORKSPACE")
+          core_count = copy_tree(Path("work/core"), root / "01_CORE_RUNTIME")
+          studio_count = copy_tree(Path("work/ai-studio"), root / "02_AI_STUDIO")
+          report = Path("export-meta/STABILIZATION_CLOSEOUT_2026-11-01.md")
+          if not report.is_file():
+              raise SystemExit("Stabilization closeout report is missing from export metadata.")
+          shutil.copy2(report, root / "03_STABILIZATION/CLOSEOUT_REPORT_2026-11-01.md")
+          print(f"Copied {core_count} core files and {studio_count} AI Studio files.")
+          PY
+
+          cat > "$ROOT/00_START_HERE/README_FIRST.md" <<'EOF'
+          # uneXpected v7.3.1 — Phone Workspace Bundle
+
+          This is the one-file source, documentation and rollback package for uneXpected v7.3.1. It is a ZIP archive, not an Android APK and not an automatic installation.
+
+          ## Where to keep it
+          Save this ZIP on your phone under Internal storage/Download/uneXpected/. Treat 5 GB as a hard upper limit for the uneXpected folder and its exported backups. The packaged source is intentionally much smaller than that limit.
+
+          ## Install the phone companion
+          1. Open https://unexpected-ai-studio.onrender.com/mobile/ in Chrome on Android.
+          2. Open the browser menu and choose Install app or Add to Home screen.
+          3. Open Settings in the app and enter the existing UNEXPECTED_ACCESS_TOKEN from your private Render environment. Never paste it into ChatGPT or put it in this archive.
+          4. Choose a workflow and provider route. Real provider calls can consume API credits; local workspace commands do not require a model call.
+
+          ## What stays on the phone
+          The PWA documents local projects, tasks, notes, chat history and improvement proposals, with workspace backup/export and import. Its access token is not included in workspace backups. Offline caching covers the app shell and local workspace commands, not general AI inference. Browser-managed storage is not a guaranteed 5 GB folder; Android/Chrome controls its actual quota and retention.
+
+          ## How to use this archive
+          - Keep the ZIP as the canonical portable copy.
+          - Extract it only when you need to inspect, back up or work with the source.
+          - Start with 00_START_HERE, then read the stabilization closeout in 03_STABILIZATION.
+          - The complete runtime source is under 01_CORE_RUNTIME; the phone UI and gateway source is under 02_AI_STUDIO.
+          - Do not edit the ZIP in place. Make a separate dated copy before changing source.
+          - Do not delete the original repositories or hosted deployments just because this archive exists.
+
+          ## Safety and status
+          The bundle excludes Git history, runtime databases, logs, local state, dependency caches and private environment files. It does not contain gateway tokens, provider API keys or GitHub approval credentials. The closeout report distinguishes tested behavior from remaining blockers. A configured provider is not considered live-verified until a successful authenticated request is recorded.
+          EOF
+
+          cat > "$ROOT/04_PHONE_GUIDE/ANDROID_STORAGE_AND_BACKUP.md" <<'EOF'
+          # Android storage and backup guide
+
+          ## Suggested folder layout
+          Keep one canonical ZIP in Download/uneXpected/. When extracted, keep this simple layout:
+          - 01_CORE_RUNTIME/ — Python orchestration runtime, tests, agent/skill definitions and release docs.
+          - 02_AI_STUDIO/ — Node gateway, mobile PWA, UI assets, TAAFT connector and tests.
+          - 03_STABILIZATION/ — verified status and release gates.
+          - 04_PHONE_GUIDE/ — phone setup and backup instructions.
+          - 05_ROLLBACK/ — historical rollback package, when included.
+
+          ## 5 GB ceiling
+          Treat 5 GB as the maximum for the entire uneXpected phone folder, including exported workspace backups and any media you choose to store there. Do not reserve or allocate the full amount to the browser: the PWA uses browser-managed local storage and actual quota is controlled by Android/Chrome. Keep free phone storage available for Android and other apps.
+
+          ## Backup routine
+          1. In the PWA, use its built-in workspace export.
+          2. Save the exported backup in Download/uneXpected/backups/ (create the folder if needed).
+          3. Keep the newest backup and one older known-good backup; remove duplicate temporary exports only after checking the newest backup exists and opens.
+          4. Use the PWA import function to restore a backup.
+          5. The gateway access token is not exported; re-enter it privately in the app when needed.
+
+          ## What this chat can and cannot do
+          This chat cannot mount or browse the Android filesystem, install the PWA, or move files around on the handset. Download the ZIP to the folder above, then use Android Files and Chrome for the local steps. No phone credential needs to be shared in chat.
+          EOF
+
+          cat > "$ROOT/03_STABILIZATION/SOURCE_PINS.md" <<'EOF'
+          # Source pins and provenance
+
+          - Core repository: soueilouay-creator/uneXpected-
+          - Core commit: 0a92f3571ffba01473813b4e4a39edc97e298be1
+          - AI Studio repository: soueilouay-creator/uneXpected-ai-studio
+          - AI Studio commit: 6f5bc823e1ffd9284abae7dbbb6c1dae97ebf90b
+          - Core CI run: 41290814628 (GitHub Actions; 124 passed, 1 optional skipped, 0 failed)
+          - Stabilization assessment date: 2026-11-01
+
+          This package contains source snapshots at the pinned commits. It is not a deployment export and contains no runtime databases or credentials. Render services and GitHub settings remain external and are not altered by packaging.
+          EOF
+
+          cat > "$ROOT/03_STABILIZATION/RELEASE_GATES.md" <<'EOF'
+          # Remaining release gates
+
+          1. Attach durable storage to the Python runtime or implement and test a managed transactional store.
+          2. Verify authenticated model invocation and separately verify TAAFT with explicitly approved live requests.
+          3. Enable and read back required independent code-owner review and protected-main checks.
+          4. Exercise real approval, reviewer, stale/revoked review and replay scenarios against the live GitHub integration.
+          5. Complete database-native backup and isolated restore tests.
+          6. Complete ChatGPT Library and Project/Custom Instructions activation with read-back.
+
+          Until the relevant gates pass, keep privileged actions fail-closed and treat the Free runtime's filesystem as ephemeral.
+          EOF
+
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          root = Path("uneXpected_v7.3.1_PHONE_WORKSPACE")
+          rows = []
+          for path in sorted(p for p in root.rglob("*") if p.is_file()):
+              digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              rows.append(f"{digest}  {path.relative_to(root).as_posix()}")
+          (root / "03_STABILIZATION/SHA256_MANIFEST.txt").write_text(
+              "\n".join(rows) + "\n", encoding="utf-8"
+          )
+          print(f"SHA-256 manifest written for {len(rows)} files (manifest excludes itself).")
+          PY
+
+          ZIP_NAME="uneXpected_v7.3.1_PHONE_WORKSPACE_2026-11-01.zip"
+          zip -qr "$ZIP_NAME" "$ROOT"
+          unzip -t "$ZIP_NAME"
+          sha256sum "$ZIP_NAME"
+          ls -lh "$ZIP_NAME"
+
+      - name: Upload one-file package
+        uses: actions/upload-artifact@v4
+        with:
+          name: uneXpected-v7.3.1-phone-workspace
+          path: uneXpected_v7.3.1_PHONE_WORKSPACE_2026-11-01.zip
+          if-no-files-found: error
+          retention-days: 7
