@@ -229,6 +229,8 @@ class Coordinator:
         from .improvement import ImprovementGovernor
 
         self.registry.get(agent_id)
+        if isinstance(max_corrections, bool) or not isinstance(max_corrections, int) or not 0 <= max_corrections <= 2:
+            raise ValueError("max_corrections must be an integer between 0 and 2.")
         if not isinstance(objective, str) or not objective.strip():
             raise ValueError("objective must be a non-empty string.")
         if inputs is not None and not isinstance(inputs, dict):
