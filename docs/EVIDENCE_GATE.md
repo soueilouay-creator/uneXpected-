@@ -8,6 +8,8 @@ The lifecycle no longer treats a model review verdict as proof. A task can be de
 
 Production lifecycle review requires a distinct reviewer provider. The coordinator refuses to run a lifecycle review if no separate provider route is configured and rejects reuse of the same provider object. For AI Studio, configure `UNEXPECTED_REVIEW_PROVIDER=ai_studio_gateway` with a different `UNEXPECTED_REVIEW_GATEWAY_MODE` (for example, primary `openai`, reviewer `claude`). Alternatively configure `openai_compatible` with a separate endpoint/model/key. If the primary route is `both` on the same gateway, use a separate reviewer endpoint instead of reusing either model route. Authenticated status reports the reviewer route without exposing credentials.
 
+For the AI Studio gateway reviewer route, the coordinator budgets the complete reviewer prompt against the gateway's 15,000 UTF-16-code-unit limit. Long candidate text is sent as a bounded excerpt together with the full candidate SHA-256 and original UTF-16 length; verbose test output and retrieved source excerpts are shortened. Criterion IDs, required/status fields, evidence references and the evidence summary are retained. The reviewer must not claim to have inspected omitted candidate content. Gateway provider/model/status metadata is stored separately on the task result and never prefixed to model text, preserving planner JSON and reviewer verdict parsing.
+
 The `project-manager` must return one JSON object, with no markdown fences, containing:
 
 - `steps`: a non-empty array of execution steps.
