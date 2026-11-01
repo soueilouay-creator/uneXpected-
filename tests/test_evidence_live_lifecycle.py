@@ -101,7 +101,7 @@ class EvidenceLifecycleTaskProvider:
             candidate = str(inputs.get("candidate", "")).lower()
             valid = (
                 "unittest" in candidate and "discovery" in candidate
-                evidence.get("passed") is True
+                and evidence.get("passed") is True
                 and isinstance(artifact, dict) and artifact.get("status") == "passed"
                 and isinstance(test, dict) and test.get("status") == "passed"
                 and test_actual.get("exit_code") == 0
