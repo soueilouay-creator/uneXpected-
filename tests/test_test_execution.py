@@ -63,7 +63,7 @@ class DockerTestExecutorTests(unittest.TestCase):
         self.assertIn("--memory=256m", argv)
         self.assertIn("--cpus=1", argv)
         self.assertIn("--user=65532:65532", argv)
-        self.assertEqual(run.call_args.kwargs["shell"], False)
+        self.assertEqual(run.call_args_list[0].kwargs["shell"], False)
         self.assertIn("test_evidence_engine.py", argv)
         self.assertNotIn("candidate", " ".join(argv))
 
