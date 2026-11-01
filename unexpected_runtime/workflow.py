@@ -62,7 +62,8 @@ class WorkflowRunner:
             result.evidence_history.append(dict(report))
         if not self.evidence_required:
             return verification
-        if EvidenceEngine.is_current(report, candidate):
+        evidence_candidate = candidate.get('text') if isinstance(candidate, dict) and 'text' in candidate else candidate
+        if EvidenceEngine.is_current(report, evidence_candidate):
             return verification
         gated = dict(verification)
         summary = report.get('summary') if isinstance(report, dict) else None
