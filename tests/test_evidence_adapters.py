@@ -48,9 +48,9 @@ class EvidenceAdapterConfigurationTests(unittest.TestCase):
             "RENDER_API_KEY": "r" * 48,
             "RENDER_WORKSPACE_ID": "test-workspace",
         }
-        with patch.dict("os.environ", env, clear=True), \\
-             patch("importlib.util.find_spec", return_value=None):
-            checkers, status = evidence_adapters_from_env()
+        with patch.dict("os.environ", env, clear=True):
+            with patch("importlib.util.find_spec", return_value=None):
+                checkers, status = evidence_adapters_from_env()
         self.assertNotIn("test", checkers)
         self.assertEqual(status["test_backend"],
                          "blocked: TestExecutionConfigurationError")
