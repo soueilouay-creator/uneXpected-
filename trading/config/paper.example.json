@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "release": "0.1.0",
+  "market_scope": [
+    "US-listed common stocks",
+    "US-listed ETFs"
+  ],
+  "mode": "paper",
+  "broker_connection": false,
+  "live_order_execution": false,
+  "paper_order_simulation": true,
+  "background_polling": false,
+  "alerts": "on_demand_only",
+  "allow_options": false,
+  "allow_crypto": false,
+  "allow_margin": false,
+  "allow_leverage": false,
+  "allow_short": false,
+  "account_budget_usd": null,
+  "max_loss_per_trade_usd": null,
+  "max_daily_loss_usd": null,
+  "max_position_pct": null,
+  "max_trades_per_day": null,
+  "market_data_provider": "unconfigured",
+  "notes": "Paper-only policy. User budget and personal risk limits must be supplied explicitly; upstream sample numbers are not adopted. This file is policy metadata, not an executable broker control."
+}
