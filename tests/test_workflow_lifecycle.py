@@ -203,13 +203,15 @@ class CoordinatorLifecycleTests(unittest.TestCase):
         base_url = "http://127.0.0.1:{}".format(server.server_address[1])
 
         def post(route):
-            body = json.dumps({
+            payload = {
                 "agent_id": "research-scout",
                 "objective": "Exercise the worker-capacity guard",
                 "inputs": {},
-                "max_corrections": 0,
                 "deadline_seconds": 5,
-            }).encode("utf-8")
+            }
+            if route == "/v1/lifecycle":
+                payload["max_corrections"] = 0
+            body = json.dumps(payload).encode("utf-8")
             request = urllib.request.Request(
                 base_url + route, data=body,
                 headers={"Authorization": "Bearer " + token,
