@@ -218,7 +218,7 @@ class Coordinator:
         self.store.log_event('task_graph_completed',payload={'completed_nodes':len(results),'total_nodes':len(nodes)})
         return out
     def run_lifecycle(self, agent_id:str, objective:str, inputs:dict[str,Any]|None=None, *,
-                      max_corrections:int=1, deadline_seconds:float=60.0):
+                      max_corrections:int=1, max_improvement_iterations:int=2, deadline_seconds:float=60.0):
         """Run Request -> Plan -> Execute -> Verify -> Improve & Deliver -> Learn.
 
         The planner, worker, and independent reviewer are real registered roles.
@@ -231,7 +231,7 @@ class Coordinator:
         self.registry.get(agent_id)
         if isinstance(max_corrections, bool) or not isinstance(max_corrections, int) or not 0 <= max_corrections <= 2:
             raise ValueError("max_corrections must be an integer between 0 and 2.")
-        if not isinstance(objective, str) or not objective.strip():
+        if (isinstance(max_improvement_iterations, bool) or not isinstance(max_improvement_iterations, int)\n                or not 1 <= max_improvement_iterations <= 4):\n            raise ValueError("max_improvement_iterations must be an integer between 1 and 4.")\n        if not isinstance(objective, str) or not objective.strip():
             raise ValueError("objective must be a non-empty string.")
         if inputs is not None and not isinstance(inputs, dict):
             raise TypeError("inputs must be a dictionary.")
@@ -315,7 +315,7 @@ class Coordinator:
         def deliver_stage(improved:dict[str,Any]):
             return {"status": "delivered", "agent_id": agent_id,
                     "task_id": improved.get("task_id"), "output": improved.get("text", ""),
-                    "verification": "passed_before_and_after_improvement",
+                    "verification": "passed_before_and_after_each_improvement",\n                    "improvement_iterations": improved.get("improvement_iterations"),
                     "verification_type": "role_based_model_review",
                     "reviewer_agent": "code-reviewer"}
 
@@ -351,9 +351,9 @@ class Coordinator:
     def set_agent_memory(self,agent_id:str,key:str,value:Any): self.registry.get(agent_id); self.store.set_memory(agent_id,key,value)
     def get_agent_memory(self,agent_id:str,key:str,default=None): self.registry.get(agent_id); return self.store.get_memory(agent_id,key,default)
 
-    def run_workflow(self, request:dict[str,Any], *, plan, execute, verify, improve, deliver, learn, max_corrections:int=1):
+    def run_workflow(self, request:dict[str,Any], *, plan, execute, verify, improve, deliver, learn,\n                     max_corrections:int=1, max_improvement_iterations:int=2):
         """Run the canonical quality-gated workflow using explicitly supplied host adapters."""
         from .workflow import WorkflowRunner
         runner=WorkflowRunner(plan=plan,execute=execute,verify=verify,improve=improve,
-                              deliver=deliver,learn=learn,max_corrections=max_corrections)
+                              deliver=deliver,learn=learn,max_corrections=max_corrections,\n                              max_improvement_iterations=max_improvement_iterations)
         return runner.run(request)
