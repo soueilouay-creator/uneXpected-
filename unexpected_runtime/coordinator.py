@@ -318,7 +318,7 @@ class Coordinator:
         def deliver_stage(improved:dict[str,Any]):
             return {"status": "delivered", "agent_id": agent_id,
                     "task_id": improved.get("task_id"), "output": improved.get("text", ""),
-                    "verification": "passed_initial_review_and_each_improvement_review",
+                    "verification": "passed_initial_review_and_final_improved_candidate_review"
                     "verification_type": "role_based_model_review",
                     "reviewer_agent": "code-reviewer"}
 
