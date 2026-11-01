@@ -1,5 +1,6 @@
 import asyncio
 import subprocess
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -27,10 +28,14 @@ PASS_OUTPUT = "test_one ... ok\nRan 1 test in 0.01s\n\nOK\n"
 def make_workspace():
     temp = tempfile.TemporaryDirectory()
     root = Path(temp.name)
+    source_root = Path(__file__).resolve().parents[1]
     for relative in FILES:
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("fixture", encoding="utf-8")
+        if relative == "tests/test_evidence_engine.py":
+            shutil.copyfile(source_root / relative, path)
+        else:
+            path.write_text("fixture", encoding="utf-8")
     return temp, root
 
 
@@ -40,6 +45,28 @@ class DockerTestExecutorTests(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         with self.assertRaises(TestExecutionConfigurationError):
             DockerTestExecutor(root, image_digest="python:3.12-slim")
+
+    def test_modified_test_profile_is_rejected_before_container_execution(self):
+        temp, root = make_workspace()
+        self.addCleanup(temp.cleanup)
+        (root / "tests/test_evidence_engine.py").write_text(
+            "print('Ran 1 test in 0.01s\\nOK')", encoding="utf-8"
+        )
+        executor = DockerTestExecutor(
+            root,
+            image_digest="python:3.12-slim@sha256:" + "d" * 64,
+            docker_binary="/usr/bin/docker",
+        )
+        with patch("unexpected_runtime.test_execution.subprocess.run") as run:
+            with self.assertRaises(TestExecutionConfigurationError):
+                executor("candidate", {"profile": "evidence-engine"}, {})
+        run.assert_not_called()
+
+    def test_non_python_image_family_is_rejected_even_with_a_digest(self):
+        temp, root = make_workspace()
+        self.addCleanup(temp.cleanup)
+        with self.assertRaises(TestExecutionConfigurationError):
+            DockerTestExecutor(root, image_digest="evil/python:latest@sha256:" + "e" * 64)
 
     def test_runs_only_fixed_profile_in_strict_offline_container(self):
         temp, root = make_workspace()
