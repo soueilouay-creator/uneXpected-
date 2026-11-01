@@ -129,13 +129,15 @@ class TrustedSourceRetrieverTests(unittest.TestCase):
         from unexpected_runtime.source_retrieval import _select_excerpt
 
         text = ("General documentation background. " * 200
-                + "The unittest framework supports test discovery and finds matching test modules. "
+                + "The script is a GUI tool for test discovery and execution. "
+                + "More background material. " * 200
+                + "Unittest supports simple test discovery. Test files must be importable from the project root. "
                 + "Additional reference material. " * 200)
 
         excerpt = _select_excerpt(text, 1200)
 
         self.assertLessEqual(len(excerpt), 1200)
-        self.assertIn("test discovery", excerpt.lower())
+        self.assertIn("unittest supports simple test discovery", excerpt.lower())
 
     def test_environment_factory_is_disabled_without_an_allowlist(self):
         with patch.dict("os.environ", {}, clear=True):
