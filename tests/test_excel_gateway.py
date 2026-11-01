@@ -13,8 +13,8 @@ from unexpected_runtime.providers import ProviderResponse
 
 UPLOAD_ID = "123e4567-e89b-42d3-a456-426614174000"
 ARTIFACT_ID = "223e4567-e89b-42d3-a456-426614174000"
-XLSX_BYTES = b"PK\\x03\\x04fake-xlsx-package"
-ARTIFACT_BYTES = b"PK\\x03\\x04generated-xlsx"
+XLSX_BYTES = bytes((0x50, 0x4b, 0x03, 0x04)) + b"fake-xlsx-package"
+ARTIFACT_BYTES = bytes((0x50, 0x4b, 0x03, 0x04)) + b"generated-xlsx"
 
 
 class FakeExcelGateway:

@@ -198,7 +198,7 @@ class AIStudioGatewayProvider:
             raise ProviderError("AI Studio gateway token is not configured in the runtime host.")
         if not isinstance(data, (bytes, bytearray)) or not 4 <= len(data) <= self.MAX_EXCEL_BYTES:
             raise ProviderError("Excel upload must be between 4 bytes and 20 MiB.")
-        if bytes(data[:4]) != b"PK\\x03\\x04":
+        if bytes(data[:4]) != bytes((0x50, 0x4b, 0x03, 0x04)):
             raise ProviderError("Excel upload is not an XLSX ZIP package.")
         if not isinstance(file_name, str) or not file_name.lower().endswith(".xlsx"):
             raise ProviderError("Only .xlsx workbook uploads are supported.")
@@ -257,7 +257,7 @@ class AIStudioGatewayProvider:
                 disposition = str(response.headers.get("Content-Disposition", ""))
             if len(raw) > self.MAX_EXCEL_BYTES:
                 raise ProviderError("Excel artifact exceeded the 20 MiB download limit.")
-            if len(raw) < 4 or raw[:4] != b"PK\\x03\\x04" or "spreadsheetml" not in content_type.lower():
+            if len(raw) < 4 or raw[:4] != bytes((0x50, 0x4b, 0x03, 0x04)) or "spreadsheetml" not in content_type.lower():
                 raise ProviderError("AI Studio returned an invalid XLSX artifact.")
             filename_match = re.search(r'filename="?([^";]+)', disposition, re.I)
             filename = filename_match.group(1) if filename_match else "workbook.xlsx"

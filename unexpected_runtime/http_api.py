@@ -81,7 +81,7 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
         if len(data) != length:
             handler.send_json(400, {"error": "Excel upload body was truncated."})
             return None
-        if data[:4] != b"PK\\x03\\x04":
+        if data[:4] != bytes((0x50, 0x4b, 0x03, 0x04)):
             handler.send_json(400, {"error": "Upload is not an XLSX ZIP package."})
             return None
         return data
@@ -205,7 +205,7 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                     data = downloaded.get("bytes") if isinstance(downloaded, dict) else None
                     file_name = record["file_name"]
                     if (not isinstance(data, bytes) or len(data) < 4 or len(data) > max_excel_bytes
-                            or data[:4] != b"PK\\x03\\x04"):
+                            or data[:4] != bytes((0x50, 0x4b, 0x03, 0x04))):
                         raise ValueError("Downloaded Excel artifact failed file validation.")
                     mime = xlsx_mime
                     self.send_response(200)

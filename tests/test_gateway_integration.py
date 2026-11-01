@@ -51,13 +51,13 @@ class ProviderTests(unittest.TestCase):
                                                 "sizeBytes": 8, "expiresInSeconds": 1800}})
         provider = AIStudioGatewayProvider("https://gateway.example/orchestrate", "g" * 48)
         with patch("unexpected_runtime.providers.urllib.request.build_opener", return_value=opener):
-            result = provider.upload_workbook(b"PK\\x03\\x04test", "source.xlsx", timeout=5)
+            result = provider.upload_workbook(bytes((0x50, 0x4b, 0x03, 0x04)) + b"test", "source.xlsx", timeout=5)
         self.assertEqual(result["id"], file_id)
         self.assertEqual(opener.request.full_url, "https://gateway.example/excel/upload")
         self.assertEqual(opener.request.get_header("Authorization"), "Bearer " + "g" * 48)
         self.assertEqual(opener.request.get_header("Content-type"),
                          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        self.assertEqual(opener.request.data, b"PK\\x03\\x04test")
+        self.assertEqual(opener.request.data, bytes((0x50, 0x4b, 0x03, 0x04)) + b"test")
 
     def test_excel_provider_rejects_invalid_attachment_ids_before_network_call(self):
         provider = AIStudioGatewayProvider("https://gateway.example/orchestrate", "g" * 48)
