@@ -23,9 +23,9 @@ Run with `python -m unexpected_runtime.http_api`. The built-in server speaks pla
 
 - GET /health: public, non-secret health metadata.
 - GET /v1/status: bearer authenticated.
-- POST /v1/invoke: bearer authenticated; accepts agent_id, objective, inputs, deadline_seconds, max_steps, idempotency_key and source_refs.
+- POST /v1/invoke: bearer authenticated; accepts agent_id, objective, inputs, deadline_seconds, max_steps, idempotency_key and source_refs.\n- POST /v1/lifecycle: bearer authenticated; accepts agent_id, objective, optional inputs, deadline_seconds (per stage) and max_corrections (0–2). It runs project-manager → selected specialist → code-reviewer → specialist improvement → code-reviewer final check, then records the outcome. HTTP 200 requires a delivered result; blocked verification returns 502. Each retry may cause another set of provider requests.
 
-The API rejects permission scopes, approval claims and unknown fields. It exposes only unprivileged agent invocation. It does not permit publishing, payment, account changes, repository writes, deletes, deployment or policy changes.
+The API rejects permission scopes, approval claims and unknown fields. It exposes only unprivileged agent invocation and the local-result lifecycle. Lifecycle delivery returns a result to the caller; it does not publish or perform external actions. The API does not permit publishing, payment, account changes, repository writes, deletes, deployment or policy changes.
 
 Example request JSON: {"agent_id":"orchestrator","objective":"Run a safe gateway smoke test","inputs":{},"deadline_seconds":195,"max_steps":6,"idempotency_key":"gateway-smoke-001","source_refs":[]}.
 
@@ -44,6 +44,6 @@ Create a separate Python service from soueilouay-creator/uneXpected-, branch int
 3. Generate a different random value for UNEXPECTED_RUNTIME_API_TOKEN.
 4. Set the provider mode and gateway URL, then restart the Python service.
 5. Confirm /health reports provider_configured=true and /v1/status reports version 7.3.1 and 38 agents.
-6. Send a low-cost POST /v1/invoke using a harmless test objective, with Authorization: Bearer and the API token. Require a completed result and an explicitly LIVE model/provider label. /health alone never proves a live provider call.
+6. Send a low-cost POST /v1/invoke or /v1/lifecycle using a harmless test objective, with Authorization: Bearer and the API token. Require a completed result and an explicitly LIVE model/provider label. /health alone never proves a live provider call.
 
 Never put either bearer token in chat, Git, PR comments, screenshots or workflow logs.
