@@ -73,6 +73,34 @@
       ],
       "source_ref": "canonical v7 runtime:self_improvement/SKILL.md",
       "status": "active"
+    },
+    {
+      "id": "excel-engineering",
+      "version": "1.0.0",
+      "path": "skills/excel-engineering/SKILL.md",
+      "sha256": "81d9bf4212f835791123a738faa0bfc7081c6665985df4b28d72bd27c8797de9",
+      "agent_ids": [
+        "orchestrator",
+        "data-analyst",
+        "automation-architect",
+        "coding-engineer"
+      ],
+      "trigger_terms": [
+        "excel",
+        "excelize",
+        "spreadsheet",
+        "workbook",
+        "worksheet",
+        "xlsx",
+        "formula",
+        "data validation",
+        "pivot table",
+        "power query",
+        "excel dashboard",
+        "excel report"
+      ],
+      "source_ref": "uneXpected governed runtime v7.3.2:skills/excel-engineering/SKILL.md",
+      "status": "active"
     }
   ]
 }
