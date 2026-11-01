@@ -11,6 +11,7 @@ from .approvals import ApprovalVerifier, approval_verifier_from_env
 from .storage import StateStore
 from .skills import SkillRegistry, SkillRegistryError
 from .evidence import EvidenceEngine
+from .evidence_adapters import evidence_adapters_from_env
 
 class Coordinator:
     def __init__(self, manifest_path=None, state_dir=None, provider=None, max_workers=None, max_retries=None, skill_manifest_path=None, approval_verifier:ApprovalVerifier|None=None, evidence_checkers=None):
@@ -21,7 +22,15 @@ class Coordinator:
         root.mkdir(parents=True,exist_ok=True)
         self.store=StateStore(root/'uneXpected.sqlite3')
         self.provider=provider or provider_from_env()
-        self.evidence_engine=EvidenceEngine(checkers=evidence_checkers)
+        if evidence_checkers is None:
+            self.evidence_checkers, self.evidence_adapter_status = evidence_adapters_from_env()
+        else:
+            self.evidence_checkers = dict(evidence_checkers)
+            self.evidence_adapter_status = {
+                "test_backend": "enabled: injected" if "test" in self.evidence_checkers else "not configured",
+                "source_backend": "enabled: injected" if "source" in self.evidence_checkers else "not configured",
+            }
+        self.evidence_engine=EvidenceEngine(checkers=self.evidence_checkers)
         self.skills=SkillRegistry.load(skill_manifest_path)
         self.approval_verifier = approval_verifier if approval_verifier is not None else approval_verifier_from_env(state_dir=root)
         self.permissions=PermissionPolicy(self.approval_verifier); self.max_workers=workers; self.max_retries=retries
@@ -36,7 +45,9 @@ class Coordinator:
                 'mode':'local-runtime-scaffold','max_workers':self.max_workers,'max_retries':self.max_retries,
                 'state_db':str(self.store.path),'background_service':'not running unless separately hosted','external_connectors':'not configured',
                 'approval_verifier':'github-pr-review' if self.approval_verifier else 'not configured (privileged actions fail closed)',
-                'evidence_checkers':sorted(self.evidence_engine.checkers)}
+                'evidence_checkers':sorted(self.evidence_engine.checkers),
+                'test_backend':self.evidence_adapter_status.get('test_backend','not configured'),
+                'source_backend':self.evidence_adapter_status.get('source_backend','not configured')}
     def list_agents(self):
         return [{'id':a.id,'name':a.name,'version':a.version,'capability_label':a.capability_label,'status':a.status} for a in self.registry.list()]
     def enqueue(self, request:TaskRequest):
