@@ -73,6 +73,20 @@ class WorkflowRunnerTests(unittest.TestCase):
 
 
 
+    def test_improvement_budget_must_be_a_bounded_integer(self):
+        kwargs = dict(
+            plan=lambda request, feedback=None: {},
+            execute=lambda plan: "draft",
+            verify=lambda candidate, plan: {"passed": True, "feedback": ""},
+            improve=lambda candidate, feedback: candidate,
+            deliver=lambda candidate: candidate,
+            learn=lambda record: None,
+        )
+        for invalid in (0, 6, True, 1.5):
+            with self.subTest(max_improvements=invalid):
+                with self.assertRaises(ValueError):
+                    WorkflowRunner(**kwargs, max_improvements=invalid)
+
     def test_improves_and_reverifies_same_candidate_until_it_passes(self):
         events = []
         checks = iter([
@@ -99,6 +113,7 @@ class WorkflowRunnerTests(unittest.TestCase):
         self.assertEqual(result.status, "delivered")
         self.assertTrue(result.delivered)
         self.assertEqual(result.improvements, 2)
+        self.assertEqual(result.to_dict()["improvements"], 2)
         self.assertEqual(result.verified_output, "draft-v1-v2")
         self.assertEqual(result.delivery, "draft-v1-v2")
         self.assertEqual(
