@@ -236,6 +236,24 @@ class PostgresServiceGateTests(unittest.TestCase):
             finally:
                 service.close()
 
+        settings["UNEXPECTED_TRADING_STORAGE_MODE"] = "durable"
+        settings["UNEXPECTED_TRADING_ALLOW_JOURNAL_WRITES"] = "true"
+        with patch.dict(os.environ, settings, clear=False):
+            service = TradingService.from_env()
+            account_id = "verified_" + uuid.uuid4().hex
+            try:
+                health = service.health()
+                self.assertTrue(health["journal_writes_enabled"])
+                self.assertEqual(health["database_backend"], "postgresql")
+                service.open_account(account_id, "1000")
+                fill = service.paper_order(
+                    account_id, "DEMO", "buy", 2, "100", "1", "enabled-" + account_id
+                )
+                self.assertEqual(fill["record_type"], "SIMULATED_FILL")
+                self.assertEqual(len(service.journal(account_id)), 1)
+            finally:
+                service.close()
+
 class RuntimeTradingApiTests(unittest.TestCase):
     def _request(self, base, path, token, payload=None):
         data = None if payload is None else json.dumps(payload).encode("utf-8")
