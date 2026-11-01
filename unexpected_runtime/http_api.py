@@ -108,7 +108,7 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                         isinstance(corrections,bool) or not isinstance(corrections,int)
                         or isinstance(improvement_iterations,bool)
                         or not isinstance(improvement_iterations,int)
-                    )):
+                    ))):
                 return self.send_json(400,{"error":"Invalid inputs, deadline or workflow limits."})
             if not math.isfinite(float(deadline)) or not 0 < float(deadline) <= 600:
                 return self.send_json(400,{"error":"deadline_seconds must be finite and between 0 and 600."})
