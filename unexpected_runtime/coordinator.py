@@ -239,7 +239,7 @@ class Coordinator:
         if skill_spec is not None:
             payload['verified_skill']={'id':skill_spec.id,'version':skill_spec.version,
                                        'source_ref':skill_spec.source_ref,'sha256':skill_spec.sha256}
-        attempts=0; output=''; error=None; status='failed'
+        attempts=0; output=''; error=None; status='failed'; provider_metadata={}
         for attempt in range(self.max_retries+1):
             attempts=attempt+1
             if token.cancelled: status='cancelled'; error='Cancelled before provider attempt.'; break
@@ -263,15 +263,15 @@ class Coordinator:
                 pf=self.provider_pool.submit(selected_provider.generate,system_prompt=system,user_prompt=user_prompt,agent_id=spec.id,task_id=req.task_id,timeout=max(0.1,req.deadline_seconds-(time.time()-start)))
                 provider_response=pf.result(timeout=max(0.1,req.deadline_seconds-(time.time()-start)))
                 output=str(provider_response)
-                provider_metadata = getattr(provider_response, "provider_metadata", None)
-                if isinstance(provider_metadata, dict):
-                    safe_metadata = {
-                        field: str(provider_metadata[field])[:200]
+                raw_metadata = getattr(provider_response, "provider_metadata", None)
+                if isinstance(raw_metadata, dict):
+                    provider_metadata = {
+                        field: str(raw_metadata[field])[:200]
                         for field in ("provider", "label", "model", "status")
-                        if field in provider_metadata
+                        if field in raw_metadata
                     }
-                    if safe_metadata:
-                        self.store.log_event("provider_response_metadata", req.task_id, spec.id, safe_metadata)
+                    if provider_metadata:
+                        self.store.log_event("provider_response_metadata", req.task_id, spec.id, provider_metadata)
                 if token.cancelled: status='cancelled'; error='Cancelled while provider call was in flight; result discarded.'
                 else: status='completed'
                 break
@@ -283,7 +283,7 @@ class Coordinator:
                 if attempt<self.max_retries and bool(getattr(selected_provider, 'retry_safe', False)) and not token.cancelled:
                     self.store.log_event('provider_retry',req.task_id,spec.id,{'attempt':attempts}); continue
                 break
-        result=TaskResult(req.task_id,spec.id,status,output=output,provenance=tuple(req.source_refs),attempts=attempts,error=error,started_at=start,finished_at=time.time())
+        result=TaskResult(req.task_id,spec.id,status,output=output,provenance=tuple(req.source_refs),attempts=attempts,error=error,started_at=start,finished_at=time.time(),provider_metadata=provider_metadata)
         persisted = self.store.mark_task(req.task_id,status,result.to_dict())
         if not persisted:
             row = self.store.get_task(req.task_id)
