@@ -70,6 +70,14 @@ class MarketDataAndScanTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "credentials are not configured"):
             provider.fetch_bars("AAPL")
 
+    def test_backtest_requires_explicit_initial_cash(self):
+        service = TradingService(FixtureProvider())
+        try:
+            with self.assertRaisesRegex(ValueError, "explicit backtest configuration"):
+                service.backtest("DEMO")
+        finally:
+            service.close()
+
     def test_backtest_refuses_partial_market_data(self):
         from dataclasses import replace
         batch = FixtureProvider().fetch_bars("DEMO")

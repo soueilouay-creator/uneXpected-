@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -9,14 +10,22 @@ from pathlib import Path
 from .models import as_decimal, validate_symbol
 
 
+def _serialized(method):
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+    return wrapper
+
+
 class PaperPortfolio:
     """Append-only SQLite ledger for simulated long-only fills; never connects to a broker."""
 
     def __init__(self, path: str | Path = ":memory:"):
         self.path = str(path)
+        self._lock = threading.RLock()
         if self.path != ":memory:":
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-        self.connection = sqlite3.connect(self.path, timeout=5, isolation_level=None)
+        self.connection = sqlite3.connect(self.path, timeout=5, isolation_level=None, check_same_thread=False)
         self.connection.execute("PRAGMA foreign_keys=ON")
         self.connection.execute("PRAGMA busy_timeout=5000")
         if self.path != ":memory:":
@@ -48,6 +57,7 @@ class PaperPortfolio:
             END;
         """)
 
+    @_serialized
     def open_account(self, account_id: str, initial_cash_usd):
         if not isinstance(account_id, str) or not account_id.strip() or len(account_id) > 64:
             raise ValueError("account_id must contain 1 to 64 characters")
@@ -100,9 +110,11 @@ class PaperPortfolio:
         }
         return {"account_id": account_id, "cash_usd": cash, "positions": positions}
 
+    @_serialized
     def snapshot(self, account_id: str):
         return self._snapshot_locked(account_id)
 
+    @_serialized
     def _apply(self, account_id, symbol, side, quantity, price_usd, fees_usd, idempotency_key):
         symbol = validate_symbol(symbol)
         if side not in {"buy", "sell"}:
@@ -153,9 +165,11 @@ class PaperPortfolio:
     def sell(self, account_id, symbol, quantity, price_usd, fees_usd, idempotency_key):
         return self._apply(account_id, symbol, "sell", quantity, price_usd, fees_usd, idempotency_key)
 
+    @_serialized
     def integrity_check(self):
         return self.connection.execute("PRAGMA integrity_check").fetchone()[0]
 
+    @_serialized
     def backup(self, destination: str | Path):
         target = Path(destination)
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -171,5 +185,6 @@ class PaperPortfolio:
             backup_db.close()
         return {"path": str(target), "integrity": "ok"}
 
+    @_serialized
     def close(self):
         self.connection.close()

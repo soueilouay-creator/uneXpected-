@@ -98,8 +98,9 @@ class TradingService:
     def backtest(self, symbol, timeframe="1Day", limit=100, config=None):
         symbol = validate_symbol(symbol)
         batch = self.provider.fetch_bars(symbol, timeframe=timeframe, limit=limit)
-        cfg = config or BacktestConfig(initial_cash=Decimal("10000"))
-        result = run_backtest(batch, cfg)
+        if config is None:
+            raise ValueError("an explicit backtest configuration and initial cash are required")
+        result = run_backtest(batch, config)
         return result.to_dict()
 
     def _require_writable(self):
