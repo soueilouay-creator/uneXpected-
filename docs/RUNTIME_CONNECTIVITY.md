@@ -15,7 +15,7 @@ Set in the Python service secret manager:
 
 Use openai or claude for a single primary provider. both makes two parallel primary requests and a synthesis request, so it can cost more. The AI Studio gateway may try its configured OpenRouter fallback if paid providers fail. It must label fallback output; the Python adapter rejects MOCK or failed responses as real provider output.
 
-The adapter requires HTTPS, rejects embedded URL credentials/query/fragment, does not follow redirects with its bearer token, caps prompts at 15,000 UTF-16 code units and responses at 1 MB, and bounds request timeouts. Provider POST failures are not retried by default because an upstream request may have been accepted before a timeout; retries require an explicitly retry-safe provider contract.
+The adapter requires HTTPS, rejects embedded URL credentials/query/fragment, does not follow redirects with its bearer token, caps prompts at 15,000 UTF-16 code units and responses at 1 MB, and bounds request timeouts. It returns the model's text unchanged and records live provider, label, model and status separately in `provider_metadata`; lifecycle prompts therefore remain valid JSON/verdict text. Provider POST failures are not retried by default because an upstream request may have been accepted before a timeout; retries require an explicitly retry-safe provider contract.
 
 ## Runtime HTTP API
 
