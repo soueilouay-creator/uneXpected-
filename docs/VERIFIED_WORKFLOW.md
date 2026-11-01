@@ -2,32 +2,44 @@
 
 ## Canonical sequence
 
-**Request → Plan → Execute → Verify → Improve & Deliver → Learn ↻**
+**Request → Plan → Execute → Verify → Improve ’n Deliver → Learn ↻**
 
-This lifecycle is the quality gate for work orchestrated by an uneXpected host:
+The runtime applies a quality gate at each cycle. A failed review returns to planning; exhausted correction attempts block delivery. A second review runs after improvement so the final artifact—not only the first draft—must pass.
 
-1. **Request** captures the user's objective, constraints and source context.
-2. **Plan** produces a bounded plan. A failed verification is fed back into planning.
-3. **Execute** performs the planned work through explicitly injected, authorized host adapters.
-4. **Verify** returns an explicit boolean pass/fail result and feedback. A missing or malformed verdict blocks delivery.
-5. **Improve & Deliver** runs only after verification passes. Improvement transforms the execution output; delivery receives only that improved output.
-6. **Learn** records the outcome after success or blockage so the next cycle can use the evidence.
+## Native runtime path
 
-## Runtime contract
+`Coordinator.run_lifecycle(agent_id, objective, inputs, max_corrections=1, deadline_seconds=60)` is the default specialist-backed path.
 
-The `unexpected_runtime.workflow.WorkflowRunner` module implements the quality-gated lifecycle. Host integrations provide the six stage callbacks; the runner does not pretend that a provider, connector, file store, publisher or background worker is configured.
+1. **Request:** stores the target role, objective and supplied inputs for this cycle.
+2. **Plan:** calls the registered `project-manager` role for ordered steps, dependencies, risks and acceptance criteria.
+3. **Execute:** calls the selected registered specialist role with the request and plan.
+4. **Verify:** calls the independent `code-reviewer` role. Its first non-empty line must be exactly `VERDICT: PASS` or `VERDICT: FAIL`. Missing, malformed or failed verdicts fail closed.
+5. **Improve & Deliver:** after the first PASS, calls the selected specialist to improve the candidate, then calls `code-reviewer` again. Delivery is returned only if this final review also passes.
+6. **Learn:** records the terminal result, verification history and task provenance through `ImprovementGovernor.record_outcome`, including blocked cycles.
 
-- `plan(request, feedback)` returns a plan. The first call receives `feedback=None`; subsequent calls receive the last failed verification feedback.
-- `execute(plan)` returns the execution output.
-- `verify(execution, plan)` must return `{"passed": bool, "feedback": str}`.
-- `improve(execution, feedback)` returns the improved deliverable candidate.
-- `deliver(improved_output)` is called only after a passing verification.
-- `learn(record)` receives the terminal status and verification history, including blocked outcomes.
-- `max_corrections` is bounded from 0 through 5. Exhaustion returns `blocked_verification` and never calls improve or deliver.
-- Stage exceptions return `blocked_execution`; learning is still attempted. Learning failures are surfaced separately as `learning_error` and do not convert a blocked task into success.
+Each stage uses the regular coordinator invocation path and therefore inherits the configured provider, role instructions, timeouts, audit records and permission policy. The lifecycle itself does not grant privileged permissions or configure external tools.
 
-## Integration and security boundaries
+## Retry and result contract
 
-The runner is a deterministic orchestration primitive, not an automatic deployment or a claim that all 38 roles have been migrated. A host must explicitly bind callbacks to the existing coordinator, specialist roles, verification tools, improvement governor and delivery destinations. Each adapter must enforce the existing permission and approval model. Publishing, repository writes, deployments, payments, deletion, account changes and protected policy changes remain denied unless the host's existing authorization gates approve them.
+- Native coordinator correction budget is 0–2. The generic `WorkflowRunner` primitive supports 0–5 for host-specific use.
+- A failed pre-improvement or post-improvement review returns to planning with reviewer feedback while correction budget remains.
+- Exhaustion produces `blocked_verification`; stage exceptions produce `blocked_execution`.
+- No improve call occurs after a failed first review. No delivery call occurs unless both reviews pass.
+- Learning is attempted for delivered and blocked cycles. If learning fails, `learning_error` is surfaced separately; it does not turn a blocked cycle into success.
+- `deadline_seconds` is a per-stage coordinator invocation deadline, not a total wall-clock budget for the entire cycle.
 
-The existing registry, role profiles, skill manifests, provider selection, and protected self-improvement promotion rules are unchanged by this lifecycle module. Runtime activation requires a host integration, regression tests, and a separately verified deployment.
+## Interfaces
+
+- Python: `Coordinator.run_lifecycle(...)` for native role orchestration; `Coordinator.run_workflow(...)` for explicitly injected host adapters.
+- CLI: `python -m unexpected_runtime.cli lifecycle <agent_id> --objective '...' --inputs '{}'`.
+- Authenticated HTTP: `POST /v1/lifecycle` with `agent_id`, `objective`, optional `inputs`, `deadline_seconds` and `max_corrections`.
+
+The lifecycle HTTP endpoint returns 200 only for `status=delivered`; blocked cycles return 502. It accepts 0–2 corrections. The normal `POST /v1/invoke` endpoint remains available and unchanged.
+
+## Delivery and self-improvement boundaries
+
+`deliver` currently packages a local result for the caller. It does not publish content, send mail, write repositories, deploy, pay, delete or alter accounts. Those actions continue to require their own separately authorized integration and approval.
+
+`Learn` stores outcomes; it does not rewrite role instructions or automatically promote code. The existing self-improvement governor's fixed benchmarks, regression checks, evidence fingerprints, human approval for protected changes and rollback rules remain authoritative.
+
+The 38-role registry and existing provider/permission boundaries are preserved. Runtime activation in a hosted service still requires a separately verified deployment and live provider smoke test; a passing mock CI run does not prove live model access or deployment.
