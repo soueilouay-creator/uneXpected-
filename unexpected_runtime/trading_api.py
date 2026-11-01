@@ -14,7 +14,7 @@ def _failure(exc):
         return 400, {"error": str(exc)}
     if isinstance(exc, RuntimeError):
         return 503, {"error": "Trading operation is unavailable."}
-    return 500, {"error": "Trading operation failed."}
+    return 500, {"error": "Trading operation failed.", "error_type": type(exc).__name__}
 
 
 def dispatch_trading_get(path: str, query: str, service):
