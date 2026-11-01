@@ -343,6 +343,7 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                         "id": artifact_id, "file_name": file_name, "size_bytes": size,
                         "expires_in_seconds": expiry, "download_path": download_path
                     })
+                result["output_artifacts"] = presented_artifacts
                 result["artifacts"] = presented_artifacts
                 return self.send_json(200, {"result": result})
             except Exception as exc:

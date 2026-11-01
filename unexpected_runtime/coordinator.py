@@ -94,7 +94,14 @@ class Coordinator:
         approved_knowledge=self.store.query_knowledge(limit=8)
         excel_file_ids = req.inputs.get('excel_file_ids', [])
         if excel_file_ids:
-            if not isinstance(excel_file_ids, (list, tuple)) or len(excel_file_ids) > 8:
+            invalid = not isinstance(excel_file_ids, (list, tuple)) or not 1 <= len(excel_file_ids) <= 8
+            if not invalid:
+                try:
+                    normalized_ids = [str(uuid.UUID(value)) for value in excel_file_ids]
+                    invalid = any(not isinstance(value, str) for value in excel_file_ids) or len(set(normalized_ids)) != len(normalized_ids)
+                except (ValueError, TypeError, AttributeError):
+                    invalid = True
+            if invalid:
                 return TaskResult(req.task_id, spec.id, 'failed', error='Invalid Excel attachment list.',
                                   started_at=start, finished_at=time.time())
             if not bool(getattr(self.provider, 'supports_excel_files', False)):
