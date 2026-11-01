@@ -28,6 +28,8 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
     token=(os.getenv("UNEXPECTED_RUNTIME_API_TOKEN","") if api_token is None else str(api_token or "")).strip()
     limiter=_RateLimiter()
     lifecycle_limiter=_RateLimiter(limit=3)
+    # Reserve one task-pool worker for ordinary /v1/invoke requests.
+    lifecycle_slots=threading.BoundedSemaphore(max(1, active.max_workers - 1))
     class Handler(BaseHTTPRequestHandler):
         def setup(self):
             self.request.settimeout(SOCKET_TIMEOUT_SECONDS)
@@ -117,9 +119,14 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                 if not isinstance(refs,list) or len(refs)>32 or any(not isinstance(x,str) or not x or len(x)>MAX_SOURCE_REF_CHARS for x in refs): return self.send_json(400,{"error":"Invalid source_refs."})
             try:
                 if is_lifecycle:
-                    result=active.run_lifecycle(agent.strip(),objective,inputs,
-                                                deadline_seconds=float(deadline),
-                                                max_corrections=corrections).to_dict()
+                    if active.max_workers < 2 or not lifecycle_slots.acquire(blocking=False):
+                        return self.send_json(503,{"error":"Lifecycle capacity exhausted."})
+                    try:
+                        result=active.run_lifecycle(agent.strip(),objective,inputs,
+                                                    deadline_seconds=float(deadline),
+                                                    max_corrections=corrections).to_dict()
+                    finally:
+                        lifecycle_slots.release()
                     success=result.get("status")=="delivered" and result.get("delivered") is True
                 else:
                     result=active.invoke(agent.strip(),objective,inputs,deadline_seconds=float(deadline),
