@@ -138,7 +138,13 @@ class FakeSandbox:
         return SimpleNamespace(id=sandbox_id, status="running")
 
     async def copy_to(self, sandbox_id, local_path, remote_path):
-        self.calls.append(("copy", sandbox_id, Path(local_path), remote_path))
+        staged_root = Path(local_path)
+        self.copied_files = sorted(
+            item.relative_to(staged_root).as_posix()
+            for item in staged_root.rglob("*")
+            if item.is_file()
+        )
+        self.calls.append(("copy", sandbox_id, staged_root, remote_path))
 
     async def exec(self, sandbox_id, command):
         self.calls.append(("exec", sandbox_id, command))
@@ -175,9 +181,7 @@ class RenderSandboxTestExecutorTests(unittest.TestCase):
         self.assertIn("python3 -m unittest discover", next(call[2] for call in sandbox_api.calls if call[0] == "exec"))
         self.assertEqual([call[0] for call in sandbox_api.calls],
                          ["create", "wait", "copy", "exec", "terminate"])
-        copied = next(call[2] for call in sandbox_api.calls if call[0] == "copy")
-        self.assertEqual(sorted(p.relative_to(copied).as_posix() for p in copied.rglob("*") if p.is_file()),
-                         sorted(FILES))
+        self.assertEqual(sandbox_api.copied_files, sorted(FILES))
 
     def test_cleanup_failure_blocks_even_a_passing_test_result(self):
         temp, root = make_workspace()
