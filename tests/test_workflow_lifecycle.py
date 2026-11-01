@@ -261,6 +261,10 @@ class CoordinatorLifecycleTests(unittest.TestCase):
             primary = AIStudioGatewayProvider(env["UNEXPECTED_GATEWAY_URL"], "test-token", mode="openai")
             with self.assertRaisesRegex(ProviderError, "different live model provider"):
                 reviewer_provider_from_env(primary)
+        with patch.dict(os.environ, {**env, "UNEXPECTED_REVIEW_GATEWAY_TOKEN":"", "UNEXPECTED_GATEWAY_TOKEN":""}, clear=True):
+            primary = AIStudioGatewayProvider(env["UNEXPECTED_GATEWAY_URL"], "test-token", mode="openai")
+            with self.assertRaisesRegex(ProviderError, "token is not configured"):
+                reviewer_provider_from_env(primary)
 
     def test_native_lifecycle_routes_through_plan_execute_review_improve_and_learning(self):
         coordinator, provider = self._coordinator(["PASS", "PASS"])
