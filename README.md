@@ -7,7 +7,8 @@ A local, executable, quality-gated runtime scaffold for 38 canonical agent roles
 ```bash
 python -m unexpected_runtime.cli status
 python -m unexpected_runtime.cli list
-python -m unexpected_runtime.cli run orchestrator --objective 'Plan a safe test task'\npython -m unexpected_runtime.cli lifecycle research-scout --objective 'Research a safe test topic' --inputs '{"scope":"public information"}'
+python -m unexpected_runtime.cli run orchestrator --objective 'Plan a safe test task'
+python -m unexpected_runtime.cli lifecycle research-scout --objective 'Research a safe test topic' --inputs '{"scope":"public information"}'
 
 # Build the ZIP fixture required by the package-integrity test.
 python - <<'PY'
