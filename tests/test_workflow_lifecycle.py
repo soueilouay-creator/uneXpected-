@@ -166,3 +166,25 @@ class CoordinatorLifecycleTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+    def test_default_deterministic_mock_cannot_pass_verification_gate(self):
+        import tempfile
+        from pathlib import Path
+        from unexpected_runtime.coordinator import Coordinator
+        from unexpected_runtime.providers import DeterministicMockProvider
+
+        with tempfile.TemporaryDirectory() as state:
+            coordinator = Coordinator(
+                manifest_path=Path(__file__).resolve().parents[1] / "agent_manifest.json",
+                state_dir=state, provider=DeterministicMockProvider(),
+            )
+            try:
+                result = coordinator.run_lifecycle(
+                    "research-scout", "Research a test topic", {"scope": "fixture"},
+                    max_corrections=0,
+                )
+                self.assertEqual(result.status, "blocked_verification")
+                self.assertFalse(result.delivered)
+                self.assertIsNone(result.delivery)
+                self.assertFalse(result.verification_history[0]["passed"])
+            finally:
+                coordinator.close()
