@@ -224,3 +224,10 @@ class Coordinator:
         return self.store.approve_knowledge(knowledge_id,approval.approver)
     def set_agent_memory(self,agent_id:str,key:str,value:Any): self.registry.get(agent_id); self.store.set_memory(agent_id,key,value)
     def get_agent_memory(self,agent_id:str,key:str,default=None): self.registry.get(agent_id); return self.store.get_memory(agent_id,key,default)
+
+    def run_workflow(self, request:dict[str,Any], *, plan, execute, verify, improve, deliver, learn, max_corrections:int=1):
+        """Run the canonical quality-gated workflow using explicitly supplied host adapters."""
+        from .workflow import WorkflowRunner
+        runner=WorkflowRunner(plan=plan,execute=execute,verify=verify,improve=improve,
+                              deliver=deliver,learn=learn,max_corrections=max_corrections)
+        return runner.run(request)
