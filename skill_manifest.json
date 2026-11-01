@@ -78,7 +78,7 @@
       "id": "excel-engineering",
       "version": "1.0.0",
       "path": "skills/excel-engineering/SKILL.md",
-      "sha256": "81d9bf4212f835791123a738faa0bfc7081c6665985df4b28d72bd27c8797de9",
+      "sha256": "47a50cf6faa0ca614d38b42cc7fea5f36ca6d20191d582a303dc40c426a7a6b7",
       "agent_ids": [
         "orchestrator",
         "data-analyst",
