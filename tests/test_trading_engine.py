@@ -127,6 +127,21 @@ class PaperPortfolioTests(unittest.TestCase):
                 store.sell("demo", "DEMO", 1, Decimal("100"), Decimal("0"), "sell-1")
             store.close()
 
+    def test_journal_labels_simulated_fills_and_calculates_realized_pnl(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = PaperPortfolio(Path(tmp) / "journal.sqlite3")
+            store.open_account("demo", "2000")
+            store.buy("demo", "DEMO", 10, "100", "1", "journal-buy")
+            store.sell("demo", "DEMO", 5, "110", "1", "journal-sell")
+            snapshot = store.snapshot("demo")
+            self.assertEqual(snapshot["realized_pnl_usd"], Decimal("48.5"))
+            self.assertEqual(snapshot["positions"]["DEMO"]["quantity"], 5)
+            entries = store.journal("demo")
+            self.assertEqual(len(entries), 2)
+            self.assertTrue(all(entry["record_type"] == "SIMULATED_FILL" for entry in entries))
+            self.assertEqual(entries[1]["side"], "sell")
+            store.close()
+
     def test_backup_is_integrity_checked_and_restorable(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "paper.sqlite3"
