@@ -1,7 +1,7 @@
 from __future__ import annotations
 import http.client, json, tempfile, threading, unittest
 from unittest.mock import patch
-from unexpected_runtime.providers import AIStudioGatewayProvider, OpenAICompatibleProvider, ProviderError, provider_from_env, _NoRedirect
+from unexpected_runtime.providers import (AIStudioGatewayProvider, DeterministicMockProvider, OpenAICompatibleProvider, ProviderError, provider_from_env, reviewer_provider_from_env, _NoRedirect)
 from unexpected_runtime.http_api import create_server
 from unexpected_runtime.coordinator import Coordinator
 
@@ -70,6 +70,30 @@ class ProviderTests(unittest.TestCase):
         self.assertIn("direct provider response", result)
         self.assertTrue(any(isinstance(item, _NoRedirect) for item in build.call_args.args))
         self.assertEqual(opener.request.get_header("Authorization"), "Bearer " + "k" * 48)
+
+    def test_gateway_reviewer_factory_accepts_non_gateway_primary(self):
+        env = {
+            "UNEXPECTED_REVIEW_PROVIDER": "ai_studio_gateway",
+            "UNEXPECTED_REVIEW_GATEWAY_URL": "https://review.example/orchestrate",
+            "UNEXPECTED_REVIEW_GATEWAY_TOKEN": "r" * 48,
+            "UNEXPECTED_REVIEW_GATEWAY_MODE": "claude",
+        }
+        with patch.dict("os.environ", env, clear=True):
+            reviewer = reviewer_provider_from_env(DeterministicMockProvider())
+        self.assertIsInstance(reviewer, AIStudioGatewayProvider)
+        self.assertEqual(reviewer.mode, "claude")
+
+    def test_gateway_reviewer_rejects_both_mode_on_same_endpoint(self):
+        env = {
+            "UNEXPECTED_REVIEW_PROVIDER": "ai_studio_gateway",
+            "UNEXPECTED_REVIEW_GATEWAY_URL": "https://gateway.example/orchestrate",
+            "UNEXPECTED_REVIEW_GATEWAY_TOKEN": "r" * 48,
+            "UNEXPECTED_REVIEW_GATEWAY_MODE": "both",
+        }
+        primary = AIStudioGatewayProvider(env["UNEXPECTED_REVIEW_GATEWAY_URL"], "p" * 48, mode="openai")
+        with patch.dict("os.environ", env, clear=True):
+            with self.assertRaisesRegex(ProviderError, "different live model provider"):
+                reviewer_provider_from_env(primary)
 
     def test_factory_uses_gateway_config(self):
         env={"UNEXPECTED_PROVIDER":"ai_studio_gateway","UNEXPECTED_GATEWAY_URL":"https://gateway.example","UNEXPECTED_GATEWAY_TOKEN":"g"*48}
