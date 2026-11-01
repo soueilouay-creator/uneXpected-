@@ -102,8 +102,8 @@ class CoordinatorLifecycleTests(unittest.TestCase):
         provider = LifecycleProvider()
         coordinator = Coordinator(manifest_path=Path(__file__).resolve().parents[1] / "agent_manifest.json",
                                   state_dir=temp.name, provider=provider)
-        self.addCleanup(coordinator.close)
         self.addCleanup(temp.cleanup)
+        self.addCleanup(coordinator.close)
         return coordinator, provider
 
     def test_native_lifecycle_routes_through_plan_execute_review_improve_and_learning(self):
@@ -132,3 +132,37 @@ class CoordinatorLifecycleTests(unittest.TestCase):
         self.assertIsNone(result.delivery)
         events = {event["event_type"] for event in coordinator.store.events(100)}
         self.assertIn("outcome_recorded", events)
+
+    def test_authenticated_http_lifecycle_endpoint_uses_native_workflow(self):
+        import json
+        import threading
+        import urllib.request
+        from unexpected_runtime.http_api import create_server
+
+        coordinator, provider = self._coordinator(["PASS", "PASS"])
+        token = "t" * 40
+        server = create_server(coordinator=coordinator, api_token=token, host="127.0.0.1", port=0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            url = "http://127.0.0.1:{}/v1/lifecycle".format(server.server_address[1])
+            body = json.dumps({
+                "agent_id": "research-scout",
+                "objective": "Run a safe test workflow",
+                "inputs": {"scope": "fixture"},
+                "max_corrections": 0,
+                "deadline_seconds": 5,
+            }).encode("utf-8")
+            request = urllib.request.Request(
+                url, data=body,
+                headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=10) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertEqual(payload["result"]["status"], "delivered")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
