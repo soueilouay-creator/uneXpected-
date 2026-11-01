@@ -85,6 +85,34 @@ class EvidenceEngineTests(unittest.TestCase):
         with self.assertRaises(EvidenceContractError):
             engine.evaluate("candidate", [])
 
+    def test_workflow_runner_rejects_stale_evidence_even_when_reviewer_passes(self):
+        from unexpected_runtime.workflow import WorkflowRunner
+
+        engine = EvidenceEngine()
+        criteria = [{"id": "ARTIFACT-01", "description": "Deliverable exists", "kind": "artifact",
+                     "target": "non-empty text", "required": True}]
+        stale_report = engine.evaluate("a different candidate", criteria)
+        runner = WorkflowRunner(
+            plan=lambda request, feedback=None: {},
+            execute=lambda plan: "current candidate",
+            verify=lambda candidate, plan: {
+                "passed": True, "feedback": "VERDICT: PASS",
+                "evidence_report": stale_report,
+            },
+            improve=lambda candidate, feedback: self.fail("stale evidence must not reach improvement"),
+            deliver=lambda candidate: self.fail("stale evidence must never be delivered"),
+            learn=lambda record: None,
+            max_corrections=0,
+            evidence_required=True,
+        )
+
+        result = runner.run({"objective": "verify candidate binding"})
+
+        self.assertEqual(result.status, "blocked_verification")
+        self.assertFalse(result.delivered)
+        self.assertEqual(len(result.evidence_history), 1)
+        self.assertIn("Evidence gate blocked delivery", result.error)
+
     def test_checker_failure_and_exception_fail_closed(self):
         def raising_checker(candidate, criterion, context):
             raise RuntimeError("private checker details")
