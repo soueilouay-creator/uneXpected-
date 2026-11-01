@@ -41,7 +41,7 @@ class WorkflowRunnerTests(unittest.TestCase):
         result = runner.run({"objective": "research"})
         self.assertEqual(result.status, "delivered")
         self.assertEqual(events[0], ("plan", None))
-        self.assertEqual(events[4], ("plan", "missing source evidence"))
+        self.assertEqual(events[3], ("plan", "missing source evidence"))
         self.assertNotIn(("deliver", "verified-draft"), events)
         self.assertEqual(result.corrections, 1)
 
@@ -60,7 +60,7 @@ class WorkflowRunnerTests(unittest.TestCase):
         self.assertEqual(result.status, "blocked_verification")
         self.assertFalse(result.delivered)
         self.assertEqual(len(events), 1)
-        self.assertEqual(events[0]["verification_passed"], False)
+        self.assertEqual(events[0]["verification_history"][-1]["passed"], False)
 
 
 if __name__ == "__main__":
