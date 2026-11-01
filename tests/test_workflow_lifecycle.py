@@ -21,7 +21,7 @@ class WorkflowRunnerTests(unittest.TestCase):
             learn=lambda record: events.append("learn"),
         )
         result = runner.run({"objective": "make a report"})
-        self.assertEqual(events, ["plan", "execute", "verify", "improve", "deliver", "learn"])
+        self.assertEqual(events, ["plan", "execute", "verify", "improve", "verify", "deliver", "learn"])
         self.assertTrue(result.delivered)
         self.assertEqual(result.delivery, {"artifact": "draft-improved"})
         self.assertEqual(result.status, "delivered")
@@ -31,6 +31,7 @@ class WorkflowRunnerTests(unittest.TestCase):
         checks = iter([
             {"passed": False, "feedback": "missing source evidence"},
             {"passed": True, "feedback": ""},
+            {"passed": True, "feedback": "final output is ready"},
         ])
         def plan(request, feedback=None):
             events.append(("plan", feedback))
