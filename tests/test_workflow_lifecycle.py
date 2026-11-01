@@ -129,6 +129,7 @@ class CoordinatorLifecycleTests(unittest.TestCase):
         self.assertFalse(result.delivered)
         self.assertEqual(provider.review_calls, 2)
         self.assertIsNone(result.delivery)
+        self.assertIsNone(result.verified_output)
         events = {event["event_type"] for event in coordinator.store.events(100)}
         self.assertIn("outcome_recorded", events)
 
