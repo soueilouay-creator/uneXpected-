@@ -9,6 +9,7 @@ import os
 import re
 import socket
 import ssl
+import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 import time
 from datetime import datetime, timezone
@@ -117,10 +118,11 @@ def _fetch_pinned_https(
         declared_length = headers.get("content-length")
         if declared_length is not None:
             try:
-                if int(declared_length) < 0 or int(declared_length) > max_bytes:
-                    raise SourceRetrievalError("Source response exceeds the configured byte limit.")
+                declared_size = int(declared_length)
             except ValueError:
                 raise SourceRetrievalError("Source response has an invalid content length.") from None
+            if declared_size < 0 or declared_size > max_bytes:
+                raise SourceRetrievalError("Source response exceeds the configured byte limit.")
         body = response.read(max_bytes + 1)
         return response.status, headers, body
     except SourceRetrievalError:
@@ -291,11 +293,17 @@ class TrustedSourceRetriever:
             normalized = str(parsed_address)
             if normalized not in validated:
                 validated.append(normalized)
+        if len(validated) > 8:
+            raise SourceRetrievalError("Source host returned too many network addresses.")
+        deadline = time.monotonic() + self.timeout_seconds
         last_error: SourceRetrievalError | None = None
         for address in validated:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
             try:
                 status, headers, body = self._transport(
-                    host, address, request_target, self.timeout_seconds, self.max_bytes,
+                    host, address, request_target, remaining, self.max_bytes,
                 )
                 break
             except SourceRetrievalError as exc:
