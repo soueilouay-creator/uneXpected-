@@ -54,7 +54,7 @@ class DockerTestExecutorTests(unittest.TestCase):
             result = executor("candidate", {"profile": "evidence-engine"}, {})
         self.assertTrue(result["passed"])
         self.assertEqual(result["actual"]["tests_run"], 1)
-        argv = run.call_args.args[0]
+        argv = run.call_args_list[0].args[0]
         self.assertIn("--network=none", argv)
         self.assertIn("--read-only", argv)
         self.assertIn("--cap-drop=ALL", argv)
