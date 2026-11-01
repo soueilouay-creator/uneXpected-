@@ -29,8 +29,13 @@ def _normalize_domain(value: str) -> str:
         host = candidate.encode("idna").decode("ascii")
     except UnicodeError:
         raise SourceRetrievalError("Allowed source domain is not valid IDNA.") from None
-    if len(host) > 253 or not re.fullmatch(r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*", host):
-        raise SourceRetrievalError("Allowed source domains must be exact DNS hostnames.")
+    if (
+        len(host) > 253
+        or "." not in host
+        or host.rsplit(".", 1)[-1] in {"localhost", "local", "internal", "test", "invalid", "example", "onion"}
+        or not re.fullmatch(r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))+", host)
+    ):
+        raise SourceRetrievalError("Allowed source domains must be public-looking exact DNS hostnames.")
     try:
         ipaddress.ip_address(host)
     except ValueError:
@@ -194,8 +199,11 @@ class TrustedSourceRetriever:
         self._transport = transport or _fetch_pinned_https
 
     def _parse_url(self, url: str) -> tuple[str, str]:
-        if not isinstance(url, str) or not url or len(url) > 2048:
-            raise SourceRetrievalError("Source reference must be a URL of at most 2048 characters.")
+        if (
+            not isinstance(url, str) or not url or len(url) > 2048
+            or any(ord(character) < 0x20 or ord(character) == 0x7F for character in url)
+        ):
+            raise SourceRetrievalError("Source reference must be a safe URL of at most 2048 characters.")
         try:
             parsed = urlsplit(url)
             port = parsed.port
@@ -306,6 +314,8 @@ class TrustedSourceRetriever:
             raise SourceRetrievalError("At least one source URL is required.")
         if len(urls) > self.max_sources:
             raise SourceRetrievalError("Source count exceeds the configured limit.")
+        if any(not isinstance(url, str) for url in urls):
+            raise SourceRetrievalError("Every source reference must be a URL string.")
         if len(set(urls)) != len(urls):
             raise SourceRetrievalError("Duplicate source URLs are not accepted.")
         # All sources are required: partial retrieval must never be represented as complete.
