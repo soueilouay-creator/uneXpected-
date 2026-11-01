@@ -83,6 +83,7 @@ class PaperPortfolio:
         if not account:
             raise ValueError("paper account does not exist")
         cash = Decimal(account[0])
+        realized_pnl = Decimal("0")
         positions = {}
         orders = self.connection.execute(
             "SELECT symbol, side, quantity, price_usd, fees_usd FROM paper_orders WHERE account_id=? ORDER BY rowid",
@@ -92,23 +93,34 @@ class PaperPortfolio:
             quantity = int(quantity)
             price = Decimal(price_text)
             fee = Decimal(fee_text)
-            position = positions.setdefault(symbol, {"quantity": 0, "average_price": Decimal("0")})
+            position = positions.setdefault(symbol, {"quantity": 0, "average_cost": Decimal("0")})
             if side == "buy":
                 new_qty = position["quantity"] + quantity
-                total_cost = position["average_price"] * position["quantity"] + price * quantity
+                total_cost = position["average_cost"] * position["quantity"] + price * quantity + fee
                 position["quantity"] = new_qty
-                position["average_price"] = total_cost / Decimal(new_qty)
+                position["average_cost"] = total_cost / Decimal(new_qty)
                 cash -= price * quantity + fee
             else:
+                if quantity > position["quantity"]:
+                    raise RuntimeError("paper ledger contains a sell exceeding its long position")
+                realized_pnl += price * quantity - fee - position["average_cost"] * quantity
                 position["quantity"] -= quantity
                 cash += price * quantity - fee
                 if position["quantity"] == 0:
-                    position["average_price"] = Decimal("0")
+                    position["average_cost"] = Decimal("0")
         positions = {
-            symbol: {"quantity": value["quantity"], "average_price": value["average_price"]}
+            symbol: {
+                "quantity": value["quantity"],
+                "average_cost_per_share_usd": value["average_cost"],
+            }
             for symbol, value in positions.items() if value["quantity"] > 0
         }
-        return {"account_id": account_id, "cash_usd": cash, "positions": positions}
+        return {
+            "account_id": account_id,
+            "cash_usd": cash,
+            "positions": positions,
+            "realized_pnl_usd": realized_pnl,
+        }
 
     @_serialized
     def snapshot(self, account_id: str):
@@ -138,7 +150,7 @@ class PaperPortfolio:
                 if not same:
                     raise ValueError("idempotency_key was already used for a different paper order")
                 self.connection.execute("COMMIT")
-                return {"order_id": existing[0], "duplicate": True, "side": side, "symbol": symbol, "quantity": quantity}
+                return {"order_id": existing[0], "duplicate": True, "record_type": "SIMULATED_FILL", "side": side, "symbol": symbol, "quantity": quantity}
             snapshot = self._snapshot_locked(account_id)
             if side == "buy":
                 total = price * quantity + fees
@@ -154,7 +166,7 @@ class PaperPortfolio:
                 (order_id, account_id, idempotency_key, symbol, side, quantity, str(price), str(fees), datetime.now(timezone.utc).isoformat()),
             )
             self.connection.execute("COMMIT")
-            return {"order_id": order_id, "duplicate": False, "side": side, "symbol": symbol, "quantity": quantity}
+            return {"order_id": order_id, "duplicate": False, "record_type": "SIMULATED_FILL", "side": side, "symbol": symbol, "quantity": quantity}
         except Exception:
             self.connection.execute("ROLLBACK")
             raise
@@ -164,6 +176,33 @@ class PaperPortfolio:
 
     def sell(self, account_id, symbol, quantity, price_usd, fees_usd, idempotency_key):
         return self._apply(account_id, symbol, "sell", quantity, price_usd, fees_usd, idempotency_key)
+
+    @_serialized
+    def journal(self, account_id: str):
+        account = self.connection.execute(
+            "SELECT 1 FROM paper_accounts WHERE account_id=?", (account_id,)
+        ).fetchone()
+        if not account:
+            raise ValueError("paper account does not exist")
+        rows = self.connection.execute(
+            "SELECT order_id, idempotency_key, symbol, side, quantity, price_usd, fees_usd, created_at "
+            "FROM paper_orders WHERE account_id=? ORDER BY rowid",
+            (account_id,),
+        ).fetchall()
+        return [
+            {
+                "record_type": "SIMULATED_FILL",
+                "order_id": row[0],
+                "idempotency_key": row[1],
+                "symbol": row[2],
+                "side": row[3],
+                "quantity": int(row[4]),
+                "price_usd": Decimal(row[5]),
+                "fees_usd": Decimal(row[6]),
+                "created_at": row[7],
+            }
+            for row in rows
+        ]
 
     @_serialized
     def integrity_check(self):

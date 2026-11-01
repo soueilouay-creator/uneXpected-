@@ -127,5 +127,8 @@ class TradingService:
     def portfolio(self, account_id):
         return self.portfolio_store.snapshot(account_id)
 
+    def journal(self, account_id):
+        return self.portfolio_store.journal(account_id)
+
     def close(self):
         self.portfolio_store.close()

@@ -209,9 +209,14 @@ class RuntimeTradingApiTests(unittest.TestCase):
                     "idempotency_key": "api-order-live", "mode": "live",
                 })
                 self.assertEqual(status, 400)
+                status, journal = self._request(base, "/v1/trading/journal?account_id=demo", token)
+                self.assertEqual(status, 200)
+                self.assertEqual(len(journal), 1)
+                self.assertEqual(journal[0]["record_type"], "SIMULATED_FILL")
                 status, portfolio = self._request(base, "/v1/trading/portfolio?account_id=demo", token)
                 self.assertEqual(status, 200)
                 self.assertEqual(portfolio["cash_usd"], "899")
+                self.assertEqual(portfolio["realized_pnl_usd"], "0")
             finally:
                 server.shutdown()
                 server.server_close()

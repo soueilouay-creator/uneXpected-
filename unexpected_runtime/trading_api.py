@@ -23,6 +23,11 @@ def dispatch_trading_get(path: str, query: str, service):
             if query:
                 return 400, {"error": "health does not accept query parameters"}
             return 200, service.health()
+        if path == "/v1/trading/journal":
+            params = parse_qs(query, keep_blank_values=True)
+            if set(params) != {"account_id"} or len(params["account_id"]) != 1 or not params["account_id"][0]:
+                return 400, {"error": "exactly one account_id query parameter is required"}
+            return 200, service.journal(params["account_id"][0])
         if path == "/v1/trading/portfolio":
             params = parse_qs(query, keep_blank_values=True)
             if set(params) != {"account_id"} or len(params["account_id"]) != 1 or not params["account_id"][0]:
