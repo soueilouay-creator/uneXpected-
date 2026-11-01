@@ -20,7 +20,12 @@ class ProviderTests(unittest.TestCase):
         p=AIStudioGatewayProvider("https://unexpected-ai-studio.onrender.com/orchestrate","g"*48,mode="openai")
         with patch("unexpected_runtime.providers.urllib.request.build_opener",return_value=opener):
             out=p.generate(system_prompt="S",user_prompt="U",agent_id="orchestrator",task_id="t",timeout=12)
-        self.assertIn("real answer",out); self.assertEqual(opener.request.get_header("Authorization"),"Bearer "+"g"*48)
+        self.assertEqual(out, "real answer")
+        self.assertEqual(out.provider_metadata, {
+            "provider": "openai", "label": "OpenAI", "model": "gpt-4.1",
+            "status": "LIVE · verified response",
+        })
+        self.assertEqual(opener.request.get_header("Authorization"),"Bearer "+"g"*48)
     def test_dual_mode_prefers_live_synthesis(self):
         p=AIStudioGatewayProvider("https://gateway.example/orchestrate","g"*48,mode="both")
         op=Opener({"ok":True,"results":{"synthesis":{"status":"LIVE · verified response","text":"combined"}}})
