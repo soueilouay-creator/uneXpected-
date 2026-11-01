@@ -3,7 +3,7 @@ name: uneXpected runtime CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, project/trading-intelligence-v0.1.0]
   workflow_dispatch:
 
 permissions:
