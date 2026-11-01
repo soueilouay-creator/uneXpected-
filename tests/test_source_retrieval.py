@@ -177,12 +177,12 @@ class TrustedSourceRetrieverTests(unittest.TestCase):
         def serve():
             try:
                 server_sock.sendall(
-                    b"HTTP/1.1 200 OK\\r\\nTransfer-Encoding: chunked\\r\\n\\r\\n"
+                    b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
                 )
-                for byte in b"0000000000000001\\r\\n":
+                for byte in b"0000000000000001\r\n":
                     time.sleep(0.06)
                     server_sock.sendall(bytes([byte]))
-                server_sock.sendall(b"a\\r\\n0\\r\\n\\r\\n")
+                server_sock.sendall(b"a\r\n0\r\n\r\n")
             except OSError:
                 pass
 
