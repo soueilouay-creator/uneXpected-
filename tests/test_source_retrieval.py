@@ -160,6 +160,49 @@ class TrustedSourceRetrieverTests(unittest.TestCase):
         self.assertEqual(len(connection.sock.timeouts), 4)
         self.assertGreater(connection.sock.timeouts[0], connection.sock.timeouts[-1])
 
+    def test_real_chunked_response_cannot_extend_absolute_deadline(self):
+        import http.client
+        import socket
+        import threading
+        import time
+        from types import SimpleNamespace
+        from unexpected_runtime import source_retrieval
+
+        client_sock, server_sock = socket.socketpair()
+        deadline = time.monotonic() + 0.30
+        deadline_socket_type = getattr(source_retrieval, "_DeadlineSocket", None)
+        active_socket = deadline_socket_type(client_sock, deadline) if deadline_socket_type else client_sock
+        response = http.client.HTTPResponse(active_socket, method="GET")
+
+        def serve():
+            try:
+                server_sock.sendall(
+                    b"HTTP/1.1 200 OK\\r\\nTransfer-Encoding: chunked\\r\\n\\r\\n"
+                )
+                for byte in b"0000000000000001\\r\\n":
+                    time.sleep(0.06)
+                    server_sock.sendall(bytes([byte]))
+                server_sock.sendall(b"a\\r\\n0\\r\\n\\r\\n")
+            except OSError:
+                pass
+
+        sender = threading.Thread(target=serve, daemon=True)
+        sender.start()
+        try:
+            response.begin()
+            started = time.monotonic()
+            with self.assertRaisesRegex(SourceRetrievalError, "overall deadline"):
+                _read_response_bounded(
+                    SimpleNamespace(sock=active_socket), response,
+                    deadline=deadline, max_bytes=1024,
+                )
+            self.assertLess(time.monotonic() - started, 0.55)
+        finally:
+            response.close()
+            active_socket.close()
+            server_sock.close()
+            sender.join(timeout=1)
+
     def test_environment_factory_is_disabled_without_an_allowlist(self):
         with patch.dict("os.environ", {}, clear=True):
             self.assertIsNone(source_retriever_from_env())
