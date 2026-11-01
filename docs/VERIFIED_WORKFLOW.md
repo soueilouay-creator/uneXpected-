@@ -25,7 +25,7 @@ Each stage uses the regular coordinator invocation path and therefore inherits t
 - A failed initial review returns to planning with reviewer feedback while correction budget remains.
 - A failed post-improvement review returns the same candidate to the specialist for another improvement round. If the improvement budget is exhausted, the runner uses the remaining correction budget to replan/re-execute or blocks.
 - Exhausting both the improvement and correction budgets produces `blocked_verification`; stage exceptions produce `blocked_execution`.
-- No improve call occurs after a failed first review. No delivery call occurs unless both reviews pass.
+- No improve call occurs after a failed initial review. No delivery call occurs unless the initial review passes and an improved candidate subsequently passes independent review.
 - Learning is attempted for delivered and blocked cycles. If learning fails, `learning_error` is surfaced separately; it does not turn a blocked cycle into success.
 - `deadline_seconds` is a per-stage coordinator invocation deadline, not a total wall-clock budget for the entire cycle.
 
