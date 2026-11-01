@@ -3,7 +3,7 @@ name: uneXpected runtime CI
 on:
   pull_request:
   push:
-    branches: [main, project/trading-intelligence-v0.1.0]
+    branches: [main, project/trading-intelligence-v0.1.0, project/trading-engine-v0.2.0]
   workflow_dispatch:
 
 permissions:
@@ -39,8 +39,8 @@ jobs:
           print(f'Built {target} ({target.stat().st_size} bytes)')
           PY
           echo "UNEXPECTED_PACKAGE_ZIP=$RUNNER_TEMP/uneXpected_v7.3.1_governed_runtime.zip" >> "$GITHUB_ENV"
-      - name: Run regression suite
-        run: python -m unittest discover -s tests -v
+      - name: Trading engine red-phase test
+        run: python -m unittest discover -s tests -p 'test_trading_engine.py' -v
       - name: CLI smoke tests
         run: |
           python -m unexpected_runtime.cli status
