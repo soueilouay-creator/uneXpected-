@@ -227,7 +227,12 @@ def _read_response_bounded(connection: http.client.HTTPSConnection, response: ht
         # HTTPResponse.read() can perform multiple socket reads before it returns.
         # read1() performs at most one underlying read, so the next iteration
         # recalculates the absolute deadline after each response-body chunk.
-        chunk = response.read1(min(8192, max_bytes + 1 - len(body)))
+        try:
+            chunk = response.read1(min(8192, max_bytes + 1 - len(body)))
+        except http.client.IncompleteRead:
+            if deadline - clock() <= 0:
+                raise SourceRetrievalError("Source response exceeded its overall deadline.") from None
+            raise SourceRetrievalError("Source response ended before complete HTTP framing.") from None
         if not chunk:
             return bytes(body)
         body.extend(chunk)
