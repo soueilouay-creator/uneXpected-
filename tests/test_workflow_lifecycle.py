@@ -386,6 +386,15 @@ class CoordinatorLifecycleTests(unittest.TestCase):
         self.assertEqual(len(first_result), 1)
         self.assertEqual(first_result[0][0], 200)
 
+    def test_runtime_status_discloses_registered_evidence_checker_kinds(self):
+        coordinator, provider = self._coordinator(["PASS"])
+        self.assertEqual(coordinator.status()["evidence_checkers"], ["artifact"])
+
+        configured, configured_provider = self._coordinator(
+            ["PASS"], evidence_checkers={"test": lambda candidate, criterion, context: {}}
+        )
+        self.assertEqual(configured.status()["evidence_checkers"], ["artifact", "test"])
+
     def test_reviewer_pass_cannot_override_missing_required_test_and_source_evidence(self):
         coordinator, provider = self._coordinator(["PASS"])
         criteria = [
