@@ -55,7 +55,26 @@ Each checker receives `(candidate, criterion, context)` and returns a dictionary
 
 A successful record requires an actual value and a non-empty provenance reference. Missing checker configuration yields `unverified`; invalid results and exceptions fail closed. Required unverified or failed checks block delivery. Optional unverified checks remain visible but do not block.
 
-The built-in `artifact` checker only proves that the candidate is non-empty and records its SHA-256 fingerprint. It does not prove factual accuracy, source quality, correctness of calculations or that code works. Test, source and measurement checkers are not configured by default; a host must supply safe, task-appropriate executors. In particular, test execution should use a separately constrained sandbox and source verification should retrieve and inspect the underlying material, not merely check that a URL string exists.
+The built-in `artifact` checker only proves that the candidate is non-empty and records its SHA-256 fingerprint. It does not prove factual accuracy, source quality, correctness of calculations or that code works.
+
+### Isolated test execution
+
+The runtime supports two explicitly selected test backends:
+
+- `UNEXPECTED_TEST_EXECUTOR=docker` for CI or a self-hosted host with Docker.
+- `UNEXPECTED_TEST_EXECUTOR=render-sandbox` for a disposable Render Sandboxes microVM.
+
+Both execute only the fixed `evidence-engine` profile; a request may select that bounded profile through the optional `profile` field on a `test` criterion. Arbitrary commands are not accepted. The profile stages only `tests/test_evidence_engine.py`, `unexpected_runtime/__init__.py`, `unexpected_runtime/evidence.py` and `unexpected_runtime/workflow.py`. The Docker backend requires an immutable image digest and runs with `--network=none`, a read-only root, dropped capabilities, no-new-privileges, a non-root UID, memory/CPU/PID limits and a guest timeout. The Render backend creates an ephemeral microVM with `network_policy="deny-all"`, uploads only those four files, applies a guest timeout, and explicitly terminates the sandbox. A failed or unconfirmed cleanup blocks PASS.
+
+Render configuration is held on the host only: set `RENDER_API_KEY`, `RENDER_WORKSPACE_ID` and `UNEXPECTED_TEST_EXECUTOR=render-sandbox` in the runtime host's secret manager. The token is used only by the host SDK client; it is never injected into the sandbox. `UNEXPECTED_TEST_SANDBOX_TIMEOUT_SECONDS` bounds the microVM lifetime. The pinned SDK is in `requirements.txt`. The GitHub Actions workflow uses a Docker image resolved to an immutable digest for its end-to-end isolated test run; this is a CI container backend, not evidence that the Render microVM service has been enabled.
+
+### Trusted source retrieval
+
+Set `UNEXPECTED_SOURCE_ALLOWED_DOMAINS` to a comma-separated list of exact hostnames, for example `docs.python.org`. Wildcards, IP literals, single-label/internal hostnames, non-HTTPS URLs, credentials, non-443 ports, queries/fragments, redirects and non-public DNS answers are rejected. DNS is resolved and validated before the TCP connection; the connection is pinned to a validated public address while TLS hostname verification remains enabled. Requests and responses have time and byte bounds, compressed/non-text responses are rejected, and only bounded HTML/plain-text/JSON excerpts are retained. The evidence record includes the original URL, title, content type, retrieval time, byte count, raw-body SHA-256 and excerpt. The source retriever runs in the trusted host, not inside the network-disabled test sandbox.
+
+The source adapter's PASS means that allowlisted source material was actually retrieved and fingerprinted; it does not mean that the source proves the candidate's claims. The independent reviewer receives the retrieved title/excerpt and must assess relevance, support and contradictions. A source URL string by itself is never evidence. Default limits are three sources, 262,144 bytes per document, 8 seconds per request and 2,400 excerpt characters per source; host configuration can tune within the adapter's validated bounds.
+
+Test, source and measurement checkers are not active unless the host configuration is complete. Incomplete test configuration is exposed as `blocked`; absent configuration is `not configured`. Either state leaves required criteria unverified and blocks delivery. The authenticated `GET /v1/status` response exposes `test_backend`, `source_backend` and the registered `evidence_checkers`; it never returns secret values.
 
 ## Freshness and delivery rules
 
