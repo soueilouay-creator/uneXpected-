@@ -55,7 +55,7 @@
       "id": "trading-ops",
       "version": "0.2.0",
       "path": "skills/trading-ops/WORKFLOW.md",
-      "sha256": "c4b90eda1f94d0774b82b51124aa5f82eb55b84ec6cecd9bd7801e75969856d9",
+      "sha256": "fe56a7dd6ded1d367717dc871d356ae8aa6c93ca9502629d8249469857c22e91",
       "agent_ids": [
         "orchestrator",
         "investment-research",
