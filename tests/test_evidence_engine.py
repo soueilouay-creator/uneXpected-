@@ -55,12 +55,7 @@ class EvidenceEngineTests(unittest.TestCase):
         self.assertIn("evidence_ref", report["evidence"][0]["missing_fields"])
 
     def test_optional_unverified_criterion_does_not_override_required_pass(self):
-        engine = EvidenceEngine(checkers={
-            "artifact": lambda candidate, criterion, context: {
-                "passed": True, "actual": "non-empty", "expected": "non-empty",
-                "evidence_ref": "runtime://candidate",
-            }
-        })
+        engine = EvidenceEngine()
         criteria = [
             {"id": "ARTIFACT-01", "description": "Deliverable exists", "kind": "artifact",
              "target": "non-empty", "required": True},
