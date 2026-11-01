@@ -35,7 +35,7 @@ class Coordinator:
         return {'ecosystem_version':'7.3.1','registered_agents':len(self.registry),'provider':getattr(self.provider,'name',type(self.provider).__name__),
                 'mode':'local-runtime-scaffold','max_workers':self.max_workers,'max_retries':self.max_retries,
                 'state_db':str(self.store.path),'background_service':'not running unless separately hosted','external_connectors':'not configured',
-                'approval_verifier':'github-pr-review' if self.approval_verifier else 'not configured (privileged actions fail closed)'}
+                'approval_verifier':'github-pr-review' if self.approval_verifier else 'not configured (privileged actions fail closed)',\n                'evidence_checkers':sorted(self.evidence_engine.checkers)}
     def list_agents(self):
         return [{'id':a.id,'name':a.name,'version':a.version,'capability_label':a.capability_label,'status':a.status} for a in self.registry.list()]
     def enqueue(self, request:TaskRequest):
