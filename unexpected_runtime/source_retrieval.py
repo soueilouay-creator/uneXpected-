@@ -75,6 +75,10 @@ def _resolve_public_addresses(host: str, port: int) -> list[str]:
     return addresses
 
 
+class _DeadlineExceeded(TimeoutError):
+    """Internal deadline signal; must not subclass ValueError (http.client remaps it)."""
+
+
 class _DeadlineSocketRaw(io.RawIOBase):
     """Socket read adapter that recalculates the absolute deadline per recv."""
 
@@ -124,7 +128,7 @@ class _DeadlineSocket:
     def _remaining(self) -> float:
         remaining = self._deadline - self._clock()
         if remaining <= 0:
-            raise SourceRetrievalError("Source response exceeded its overall deadline.")
+            raise _DeadlineExceeded("Source response exceeded its overall deadline.")
         return remaining
 
     def settimeout(self, timeout: float | None) -> None:
@@ -137,14 +141,14 @@ class _DeadlineSocket:
         try:
             self._sock.sendall(data)
         except (socket.timeout, TimeoutError):
-            raise SourceRetrievalError("Source request exceeded its overall deadline.") from None
+            raise _DeadlineExceeded("Source request exceeded its overall deadline.") from None
 
     def _recv_into(self, buffer: Any) -> int:
         self.settimeout(None)
         try:
             return self._sock.recv_into(buffer)
         except (socket.timeout, TimeoutError):
-            raise SourceRetrievalError("Source response exceeded its overall deadline.") from None
+            raise _DeadlineExceeded("Source response exceeded its overall deadline.") from None
 
     def makefile(
         self,
@@ -229,6 +233,8 @@ def _read_response_bounded(connection: http.client.HTTPSConnection, response: ht
         # recalculates the absolute deadline after each response-body chunk.
         try:
             chunk = response.read1(min(8192, max_bytes + 1 - len(body)))
+        except _DeadlineExceeded:
+            raise SourceRetrievalError("Source response exceeded its overall deadline.") from None
         except http.client.IncompleteRead:
             if deadline - clock() <= 0:
                 raise SourceRetrievalError("Source response exceeded its overall deadline.") from None
