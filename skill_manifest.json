@@ -52,29 +52,6 @@
       "status": "active"
     },
     {
-      "id": "self-improvement",
-      "version": "1.0.0",
-      "path": "self_improvement/SKILL.md",
-      "sha256": "7e1e063c47de5556271de9d4faae43a7ebbe5770825381b38f9d5502bade1fa5",
-      "agent_ids": [
-        "self-improvement-governor",
-        "orchestrator",
-        "system-architect"
-      ],
-      "trigger_terms": [
-        "self improvement",
-        "benchmark",
-        "regression",
-        "governed improvement",
-        "improvement proposal",
-        "rollback",
-        "upgrade unexpected",
-        "improve unexpected"
-      ],
-      "source_ref": "canonical v7 runtime:self_improvement/SKILL.md",
-      "status": "active"
-    },
-    {
       "id": "trading-ops",
       "version": "0.1.0",
       "path": "skills/trading-ops/WORKFLOW.md",
@@ -104,6 +81,29 @@
         "stock scanner"
       ],
       "source_ref": "https://github.com/Jakeschincariol/day-trader-skill@3d0f4ef6986f4984b7c6bd46f7ff4f87744c3abd adapted as uneXpected workflow",
+      "status": "active"
+    },
+    {
+      "id": "self-improvement",
+      "version": "1.0.0",
+      "path": "self_improvement/SKILL.md",
+      "sha256": "7e1e063c47de5556271de9d4faae43a7ebbe5770825381b38f9d5502bade1fa5",
+      "agent_ids": [
+        "self-improvement-governor",
+        "orchestrator",
+        "system-architect"
+      ],
+      "trigger_terms": [
+        "self improvement",
+        "benchmark",
+        "regression",
+        "governed improvement",
+        "improvement proposal",
+        "rollback",
+        "upgrade unexpected",
+        "improve unexpected"
+      ],
+      "source_ref": "canonical v7 runtime:self_improvement/SKILL.md",
       "status": "active"
     }
   ]
