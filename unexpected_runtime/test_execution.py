@@ -298,7 +298,7 @@ class RenderSandboxTestExecutor:
         guest_timeout = min(profile["guest_timeout_seconds"], self.timeout_seconds - 30)
         command = (
             f"cd /workspace && timeout -k 2 {guest_timeout} "
-            "python -m unittest discover -s tests -p test_evidence_engine.py -v"
+            "python3 -m unittest discover -s tests -p test_evidence_engine.py -v"
         )
         try:
             sandbox = await sandboxes.create(
