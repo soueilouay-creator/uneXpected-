@@ -69,6 +69,20 @@ class EvidenceEngineTests(unittest.TestCase):
         self.assertEqual(report["evidence"][1]["status"], "unverified")
         self.assertEqual(report["failed_criteria"], [])
 
+    def test_test_profile_is_preserved_in_normalized_acceptance_criteria(self):
+        criteria = [{
+            "id": "TEST-01",
+            "description": "Run the evidence engine regression profile",
+            "kind": "test",
+            "target": "0 failures",
+            "required": True,
+            "profile": "evidence-engine",
+        }]
+
+        normalized = EvidenceEngine.validate_criteria(criteria)
+
+        self.assertEqual(normalized[0]["profile"], "evidence-engine")
+
     def test_duplicate_or_invalid_criteria_are_rejected(self):
         engine = EvidenceEngine()
         duplicate = [
