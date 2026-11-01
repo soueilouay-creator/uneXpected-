@@ -89,7 +89,7 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             if not active_limiter.allow(identity): return self.send_json(429,{"error":"Request rate limit exceeded."})
             body=self.read_body()
             if body is None: return
-            allowed=({"agent_id","objective","inputs","deadline_seconds","max_corrections"}
+            allowed=({"agent_id","objective","inputs","deadline_seconds","max_corrections","max_improvements"}
                      if is_lifecycle else
                      {"agent_id","objective","inputs","deadline_seconds","max_steps","idempotency_key","source_refs"})
             if set(body)-allowed: return self.send_json(400,{"error":"Unsupported fields; privileged actions are not exposed."})
@@ -98,12 +98,14 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             steps=body.get("max_steps",6)
             idem=body.get("idempotency_key"); refs=body.get("source_refs",[])
             corrections=body.get("max_corrections",1)
+            improvements=body.get("max_improvements",3)
             if not isinstance(agent,str) or not agent.strip() or not isinstance(objective,str) or not objective.strip():
                 return self.send_json(400,{"error":"agent_id and objective are required."})
             if len(objective)>MAX_OBJECTIVE_CHARS: return self.send_json(413,{"error":"Objective too large."})
             if (not isinstance(inputs,dict) or isinstance(deadline,bool) or not isinstance(deadline,(int,float))
                     or (not is_lifecycle and (isinstance(steps,bool) or not isinstance(steps,int)))
-                    or (is_lifecycle and (isinstance(corrections,bool) or not isinstance(corrections,int)))):
+                    or (is_lifecycle and (isinstance(corrections,bool) or not isinstance(corrections,int)
+                                       or isinstance(improvements,bool) or not isinstance(improvements,int)))):
                 return self.send_json(400,{"error":"Invalid inputs, deadline or workflow limits."})
             if not math.isfinite(float(deadline)) or not 0 < float(deadline) <= 600:
                 return self.send_json(400,{"error":"deadline_seconds must be finite and between 0 and 600."})
@@ -112,6 +114,8 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             if is_lifecycle:
                 if not 0 <= corrections <= 2:
                     return self.send_json(400,{"error":"max_corrections must be between 0 and 2 for the HTTP workflow endpoint."})
+                if not 1 <= improvements <= 5:
+                    return self.send_json(400,{"error":"max_improvements must be between 1 and 5 for the HTTP workflow endpoint."})
             else:
                 if not 1 <= steps <= 12:
                     return self.send_json(400,{"error":"max_steps must be between 1 and 12."})
@@ -124,7 +128,8 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                     try:
                         result=active.run_lifecycle(agent.strip(),objective,inputs,
                                                     deadline_seconds=float(deadline),
-                                                    max_corrections=corrections).to_dict()
+                                                    max_corrections=corrections,
+                                                    max_improvements=improvements).to_dict()
                     finally:
                         lifecycle_slots.release()
                     success=result.get("status")=="delivered" and result.get("delivered") is True
