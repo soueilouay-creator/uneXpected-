@@ -72,7 +72,7 @@ class WorkflowRunner:
         gated['passed'] = False
         gated['feedback'] = 'Evidence gate blocked delivery: ' + str(reason)
         if reviewer_feedback:
-            gated['feedback'] += '\\nReviewer feedback: ' + reviewer_feedback
+            gated['feedback'] += '\nReviewer feedback: ' + reviewer_feedback
         return gated
 
     def run(self, request: dict[str, Any]) -> WorkflowResult:
