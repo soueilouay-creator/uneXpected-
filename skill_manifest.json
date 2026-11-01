@@ -53,7 +53,7 @@
     },
     {
       "id": "trading-ops",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "path": "skills/trading-ops/WORKFLOW.md",
       "sha256": "c4b90eda1f94d0774b82b51124aa5f82eb55b84ec6cecd9bd7801e75969856d9",
       "agent_ids": [
@@ -80,7 +80,7 @@
         "price alert",
         "stock scanner"
       ],
-      "source_ref": "https://github.com/Jakeschincariol/day-trader-skill@3d0f4ef6986f4984b7c6bd46f7ff4f87744c3abd adapted as uneXpected workflow",
+      "source_ref": "uneXpected trading engine v0.2.0; upstream workflow metadata retained from pinned day-trader-skill commit 3d0f4ef6986f4984b7c6bd46f7ff4f87744c3abd",
       "status": "active"
     },
     {

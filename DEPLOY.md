@@ -28,3 +28,16 @@ A separate Render Free web service named `unexpected-v731-runtime-test` is deplo
 This host is a smoke-test environment only: Free plan, ephemeral filesystem, no persistent approval ledger, and auto-deploy disabled. It is not the production deployment and must not be used to enable privileged actions. Its health response reports gateway/API credentials configured, but no authenticated invoke or live model response was verified.
 
 The `CODEOWNERS review` repository ruleset remains disabled and must be enabled separately. Live provider/TAAFT verification, persistent storage, approval replay/revocation tests and production backup/restore remain production gates.
+
+## Trading engine v0.2.0 — deployment gate
+
+This engine is available on the isolated branch `project/trading-engine-v0.2.0`; the v7.3.1 mainline and current Render test service have not been changed by it.
+
+- Keep `UNEXPECTED_TRADING_DATA_PROVIDER=fixture` unless a permitted read-only market-data provider is configured.
+- For Alpaca, store `APCA_API_KEY_ID` and `APCA_API_SECRET_KEY` only in the host secret manager. The adapter uses the fixed `data.alpaca.markets` host, IEX feed and GET-only stock bars endpoint. It never calls a broker/trading endpoint.
+- Keep `UNEXPECTED_TRADING_STORAGE_MODE=ephemeral` and `UNEXPECTED_TRADING_ALLOW_JOURNAL_WRITES=false` on hosts without a verified persistent disk.
+- Only after a persistent path has been mounted, tested across restarts and backed up may an operator set `UNEXPECTED_TRADING_STORAGE_MODE=durable` and `UNEXPECTED_TRADING_ALLOW_JOURNAL_WRITES=true`. These flags are an operator attestation, not proof that the disk is durable.
+- Keep `UNEXPECTED_RUNTIME_API_TOKEN` random and at least 32 ASCII characters, stored only in the host secret manager. Use TLS termination and restrict who can reach the service.
+- The runtime health endpoint reports configured storage mode and database integrity but cannot independently prove that a host volume survives redeploy or restart. Perform an actual persistence and restore drill before enabling writes.
+
+There is no broker, live-order, scheduled polling or unattended trading function in v0.2.0. No production deployment is claimed by this source branch or its GitHub Actions tests.

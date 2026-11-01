@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "release": "0.1.0",
+  "release": "0.2.0",
   "market_scope": [
     "US-listed common stocks",
     "US-listed ETFs"
@@ -21,6 +21,12 @@
   "max_daily_loss_usd": null,
   "max_position_pct": null,
   "max_trades_per_day": null,
-  "market_data_provider": "unconfigured",
-  "notes": "Paper-only policy. User budget and personal risk limits must be supplied explicitly; upstream sample numbers are not adopted. This file is policy metadata, not an executable broker control."
+  "market_data_provider": "fixture",
+  "notes": "Paper-only policy. Fixture data is synthetic. Optional Alpaca IEX market-data access must be separately configured using host secrets. User account budget and personal risk limits remain unset. Journal writes require explicitly verified durable storage; no broker connection or live execution exists.",
+  "journal_writes_enabled_by_default": false,
+  "storage_mode_default": "ephemeral",
+  "data_timeframes": [
+    "1Day",
+    "15Min"
+  ]
 }

@@ -1,7 +1,7 @@
-# Trading Operations Workflow Profile v0.1.0
+# Trading Operations Workflow Profile v0.2.0
 
 **Type:** Workflow profile; not a new canonical agent.
-**Skill:** `trading-ops@0.1.0`
+**Skill:** `trading-ops@0.2.0`
 **Mapped roles:** `orchestrator`, `investment-research`, `data-analyst`.
 **Escalation:** `security-reviewer` for data, connector and secret boundaries; `legal-scout` for jurisdiction or source-terms questions.
 
@@ -15,6 +15,10 @@
 ## Permission boundary
 
 The workflow consumes verified data and returns research or paper-only artifacts. It cannot authorize or invoke `trade`, `external_write`, broker actions, background scheduling, credential access or deployment. Existing host permission enforcement remains authoritative and fail-closed.
+
+## Runtime integration
+
+The `trading_engine` package exposes synthetic fixture scanning, optional read-only IEX market data, explicit-input risk sizing, reproducible historical simulation, and an append-only SQLite paper-fill journal with realized P&L. Runtime routes are authenticated and typed. Journal writes remain disabled unless durable storage is explicitly configured. There is no broker order endpoint, live trading, unattended monitoring or arbitrary code execution.
 
 ## Acceptance checks
 

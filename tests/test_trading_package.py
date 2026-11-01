@@ -53,7 +53,9 @@ class TradingPackageTests(unittest.TestCase):
         for key in ('account_budget_usd', 'max_loss_per_trade_usd', 'max_daily_loss_usd',
                     'max_position_pct', 'max_trades_per_day'):
             self.assertIsNone(config[key], key)
-        self.assertEqual(config['market_data_provider'], 'unconfigured')
+        self.assertEqual(config['market_data_provider'], 'fixture')
+        self.assertIs(config['journal_writes_enabled_by_default'], False)
+        self.assertEqual(config['storage_mode_default'], 'ephemeral')
 
     def test_readme_does_not_claim_the_upstream_tools_are_installed_or_executable(self):
         readme = (self.trading_root / 'README.md').read_text(encoding='utf-8').lower()
@@ -66,7 +68,7 @@ class TradingPackageTests(unittest.TestCase):
         skill = next(item for item in manifest['skills'] if item['id'] == 'trading-ops')
         content = (ROOT / skill['path']).read_bytes()
         self.assertEqual(hashlib.sha256(content).hexdigest(), skill['sha256'])
-        self.assertEqual(skill['version'], '0.1.0')
+        self.assertEqual(skill['version'], '0.2.0')
         self.assertEqual(set(skill['agent_ids']), {'orchestrator', 'investment-research', 'data-analyst'})
         self.assertNotIn('permissions', skill)
 

@@ -30,7 +30,19 @@ PY
 UNEXPECTED_PACKAGE_ZIP=../uneXpected_v7.3.1_governed_runtime.zip python -m unittest discover -s tests -v
 ```
 
-The default provider is deterministic mock. The optional AI Studio gateway connects the Python runtime to the existing OpenAI/Anthropic/OpenRouter service without copying provider API keys into Python. See docs/RUNTIME_CONNECTIVITY.md for secret handoff, authenticated runtime API, model modes, tool boundaries and Render limitations.
+The default AI provider is deterministic mock. The optional AI Studio gateway connects the Python runtime to the existing OpenAI/Anthropic/OpenRouter service without copying provider API keys into Python. See docs/RUNTIME_CONNECTIVITY.md for secret handoff, authenticated runtime API, model modes, tool boundaries and Render limitations.
+
+## Trading engine v0.2.0 — isolated project branch
+
+The branch `project/trading-engine-v0.2.0` adds a separate paper-only engine without altering the v7.3.1 mainline:
+
+```bash
+python -m unexpected_runtime.cli trading health
+python -m unexpected_runtime.cli trading scan --symbols DEMO
+python -m unexpected_runtime.cli trading backtest DEMO --initial-cash 10000
+```
+
+The default data provider is clearly labelled synthetic fixture data. Optional Alpaca Market Data is read-only and uses IEX only after host-side secrets are configured. The API exposes authenticated, schema-limited scan, risk, backtest, paper account, order, portfolio and journal routes. Paper writes are disabled until durable storage is verified and explicitly enabled. No real broker or live order route exists. See `trading/README.md` and the v0.2.0 design/implementation plan. This project branch has not been merged or deployed to the existing Render service.
 
 ## 7.3.0 — Governed workflow and capability upgrade
 
