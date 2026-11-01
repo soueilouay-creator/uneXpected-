@@ -247,7 +247,7 @@ class EvidenceEngine:
             or not item.get("criterion_id").strip()
             or item.get("candidate_sha256") != fingerprint
             or type(item.get("required")) is not bool
-            or item.get("status") not in {"passed", "failed", "unverified"}
+            or item.get("status") not in ("passed", "failed", "unverified")
             for item in evidence
         ):
             return False
