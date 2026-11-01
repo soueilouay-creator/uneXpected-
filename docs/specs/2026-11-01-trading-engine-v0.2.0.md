@@ -16,7 +16,8 @@ Provide an executable trading-research engine behind uneXpected's typed API and 
 - `trading_engine.scanner`: 20-bar breakout, 20-bar SMA reclaim, RSI-14 oversold bounce and 15-minute opening-range signal.
 - `trading_engine.risk`: Decimal long-only whole-share sizing under risk budget, cash, position percentage and remaining daily-loss caps.
 - `trading_engine.backtest`: long-only breakout simulation with next-bar-open entry, explicit commission/slippage, stop-first intrabar collision, metrics and data/config hashes.
-- `trading_engine.portfolio`: append-only SQLite simulated-fill journal, idempotency, derived cash/positions, average-cost realized P&L, integrity checks and SQLite online backup.
+- `trading_engine.portfolio`: append-only SQLite simulated-fill journal for local runs, idempotency, derived cash/positions, average-cost realized P&L, integrity checks and SQLite online backup.
+- `trading_engine.postgres_portfolio`: managed PostgreSQL backend with schema-scoped migrations, database transactions, account-row locking, idempotent simulated fills, immutable journal triggers, derived average-cost realized P&L and database connectivity/schema checks.
 - `trading_engine.service`: typed service boundary with fixture default, optional provider selection and fail-closed journal writes.
 - `unexpected_runtime.trading_api`: authenticated strict-schema HTTP integration; the existing Coordinator remains the model orchestration runtime, not a code execution sandbox.
 
@@ -36,9 +37,11 @@ A signal is computed after a completed bar close. Entry is at the following bar 
 
 ## Paper journal and storage
 
-SQLite maintains a paper account and immutable simulated-fill rows. A repeated idempotency key with identical fields returns the existing fill; a different payload is rejected. Orders cannot be updated or deleted through the ledger schema. Cash, positions, average cost and realized P&L are derived from the append-only history. Backup uses SQLite's online backup API and verifies the restored database with `PRAGMA integrity_check`.
+SQLite maintains a local paper account and immutable simulated-fill rows. Managed Postgres provides the hosted implementation: schema-scoped creation, account-row locking during fills, database constraints and triggers that reject updates/deletes, and reconnect-persistence checks. Both backends derive cash, positions, average cost and realized P&L from the immutable fill history.
 
-API journal writes fail closed unless both `UNEXPECTED_TRADING_STORAGE_MODE=durable` and `UNEXPECTED_TRADING_ALLOW_JOURNAL_WRITES=true` are explicitly set by the operator. These settings do not prove durability; the operator must verify a persistent mount and test restart/restore. Existing Render Free test service storage is ephemeral and therefore stays read-only.
+Render paid Postgres provides managed point-in-time recovery; on the Hobby workspace its current documented recovery window is three days, and logical exports are retained for seven days. CI runs integration tests against a PostgreSQL 16 service container. This verifies SQL behavior, not the persistence of a production Render database.
+
+API journal writes fail closed unless both `UNEXPECTED_TRADING_STORAGE_MODE=durable` and `UNEXPECTED_TRADING_ALLOW_JOURNAL_WRITES=true` are explicitly set by the operator. The service selects managed Postgres through `UNEXPECTED_TRADING_DATABASE_URL` (or host-provided `DATABASE_URL`) and reports the active backend in health. Storage-mode flags do not themselves prove durability; the operator must verify the managed database, test a service restart and confirm the provider's recovery workflow.
 
 ## Runtime routes
 
@@ -55,7 +58,7 @@ All routes require the existing runtime bearer token, use the request rate limit
 
 ## Exclusions
 
-No live brokerage, real orders, short selling, margin, leverage, options, crypto, scheduled polling, background alerting, portfolio sync or automated buy/sell advice. No paid market-data plan or paid storage resource. No default risk values.
+No live brokerage, real orders, short selling, margin, leverage, options, crypto, scheduled polling, background alerting, portfolio sync or automated buy/sell advice. No paid market-data plan is required for the initial IEX feed. A paid persistent host/database is not provisioned by this source release and requires explicit user approval. No default risk values.
 
 ## Acceptance criteria
 
