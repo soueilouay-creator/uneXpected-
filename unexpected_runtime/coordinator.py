@@ -218,7 +218,7 @@ class Coordinator:
         self.store.log_event('task_graph_completed',payload={'completed_nodes':len(results),'total_nodes':len(nodes)})
         return out
     def run_lifecycle(self, agent_id:str, objective:str, inputs:dict[str,Any]|None=None, *,
-                      max_corrections:int=1, deadline_seconds:float=60.0):
+                      max_corrections:int=1, max_improvements:int=3, deadline_seconds:float=60.0):
         """Run Request -> Plan -> Execute -> Verify -> Improve & Deliver -> Learn.
 
         The planner, worker, and independent reviewer are real registered roles.
@@ -231,6 +231,8 @@ class Coordinator:
         self.registry.get(agent_id)
         if isinstance(max_corrections, bool) or not isinstance(max_corrections, int) or not 0 <= max_corrections <= 2:
             raise ValueError("max_corrections must be an integer between 0 and 2.")
+        if isinstance(max_improvements, bool) or not isinstance(max_improvements, int) or not 1 <= max_improvements <= 5:
+            raise ValueError("max_improvements must be an integer between 1 and 5.")
         if not isinstance(objective, str) or not objective.strip():
             raise ValueError("objective must be a non-empty string.")
         if inputs is not None and not isinstance(inputs, dict):
@@ -296,9 +298,10 @@ class Coordinator:
         def improve_stage(execution:dict[str,Any], feedback:str):
             output, task_id = invoke_stage(
                 "improve", agent_id,
-                "Improve the already reviewed candidate using the reviewer feedback. "
-                "Preserve verified facts, do not invent evidence, and return the complete improved deliverable. "
-                "The improved result will be independently reviewed again before delivery.",
+                "Improve the current candidate using the latest independent reviewer feedback. "
+                "This may be a repeated refinement round on a candidate improved previously. "
+                "Preserve verified facts, address the stated deficiencies, do not invent evidence, and return the complete revised deliverable. "
+                "The revised candidate will be independently reviewed again before delivery.",
                 {"request": request, "plan": plan_context["text"],
                  "candidate": execution.get("text", ""), "review_feedback": feedback},
             )
@@ -315,7 +318,7 @@ class Coordinator:
         def deliver_stage(improved:dict[str,Any]):
             return {"status": "delivered", "agent_id": agent_id,
                     "task_id": improved.get("task_id"), "output": improved.get("text", ""),
-                    "verification": "passed_before_and_after_improvement",
+                    "verification": "passed_initial_review_and_each_improvement_review",
                     "verification_type": "role_based_model_review",
                     "reviewer_agent": "code-reviewer"}
 
@@ -323,6 +326,7 @@ class Coordinator:
             feedback = json.dumps({"status": record.get("status"),
                                    "verification_history": record.get("verification_history", []),
                                    "corrections": record.get("corrections", 0),
+                                   "improvements": record.get("improvements", 0),
                                    "error": record.get("error")}, ensure_ascii=False)
             ImprovementGovernor(self).record_outcome(
                 agent_id, worker_task_ids[-1] if worker_task_ids else None,
@@ -337,10 +341,11 @@ class Coordinator:
                                   "delivered": bool(record.get("delivered"))})
 
         self.store.log_event("workflow_cycle_started", agent_id=agent_id,
-                             payload={"agent_id": agent_id, "max_corrections": max_corrections})
+                             payload={"agent_id": agent_id, "max_corrections": max_corrections,
+                                      "max_improvements": max_improvements})
         runner = WorkflowRunner(plan=bound_plan, execute=execute_stage, verify=verify_stage,
                                  improve=improve_stage, deliver=deliver_stage, learn=learn_stage,
-                                 max_corrections=max_corrections)
+                                 max_corrections=max_corrections, max_improvements=max_improvements)
         return runner.run(request)
 
     def add_shared_knowledge(self,source:str,content:str): return self.store.add_knowledge(source,content)
@@ -351,9 +356,11 @@ class Coordinator:
     def set_agent_memory(self,agent_id:str,key:str,value:Any): self.registry.get(agent_id); self.store.set_memory(agent_id,key,value)
     def get_agent_memory(self,agent_id:str,key:str,default=None): self.registry.get(agent_id); return self.store.get_memory(agent_id,key,default)
 
-    def run_workflow(self, request:dict[str,Any], *, plan, execute, verify, improve, deliver, learn, max_corrections:int=1):
+    def run_workflow(self, request:dict[str,Any], *, plan, execute, verify, improve, deliver, learn,
+                     max_corrections:int=1, max_improvements:int=3):
         """Run the canonical quality-gated workflow using explicitly supplied host adapters."""
         from .workflow import WorkflowRunner
         runner=WorkflowRunner(plan=plan,execute=execute,verify=verify,improve=improve,
-                              deliver=deliver,learn=learn,max_corrections=max_corrections)
+                              deliver=deliver,learn=learn,max_corrections=max_corrections,
+                              max_improvements=max_improvements)
         return runner.run(request)
