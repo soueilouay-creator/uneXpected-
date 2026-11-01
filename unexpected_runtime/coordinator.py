@@ -339,7 +339,7 @@ class Coordinator:
             elif review.strip():
                 feedback_parts.append("Independent reviewer feedback: " + review)
             return {"passed": reviewer_passed and evidence_passed,
-                    "feedback": "\\n".join(feedback_parts), "evidence_report": evidence_report,
+                    "feedback": "\n".join(feedback_parts), "evidence_report": evidence_report,
                     "task_id": task_id, "verification_type": "deterministic_evidence_plus_role_based_review",
                     "reviewer_agent": "code-reviewer"}
 
