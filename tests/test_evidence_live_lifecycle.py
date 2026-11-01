@@ -98,7 +98,9 @@ class EvidenceLifecycleTaskProvider:
             excerpt = " ".join(
                 [str(item.get("title", "")) + " " + str(item.get("excerpt", "")) for item in sources]
             ).lower()
+            candidate = str(inputs.get("candidate", "")).lower()
             valid = (
+                "unittest" in candidate and "discovery" in candidate
                 evidence.get("passed") is True
                 and isinstance(artifact, dict) and artifact.get("status") == "passed"
                 and isinstance(test, dict) and test.get("status") == "passed"
