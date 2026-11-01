@@ -394,6 +394,8 @@ class CoordinatorLifecycleTests(unittest.TestCase):
             ["PASS"], evidence_checkers={"test": lambda candidate, criterion, context: {}}
         )
         self.assertEqual(configured.status()["evidence_checkers"], ["artifact", "test"])
+        self.assertEqual(configured.status()["test_backend"], "enabled: injected")
+        self.assertEqual(configured.status()["source_backend"], "not configured")
 
     def test_reviewer_pass_cannot_override_missing_required_test_and_source_evidence(self):
         coordinator, provider = self._coordinator(["PASS"])
