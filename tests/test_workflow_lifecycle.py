@@ -73,6 +73,78 @@ class WorkflowRunnerTests(unittest.TestCase):
 
 
 
+
+    def test_repeats_improve_and_independent_verify_until_latest_candidate_passes(self):
+        events = []
+        verdicts = iter([
+            {"passed": True, "feedback": "initial candidate meets acceptance criteria"},
+            {"passed": False, "feedback": "iteration 1: missing edge-case handling"},
+            {"passed": False, "feedback": "iteration 2: unclear evidence trail"},
+            {"passed": True, "feedback": "iteration 3: all criteria satisfied"},
+        ])
+
+        def improve(candidate, feedback):
+            events.append(("improve", feedback))
+            return candidate + "-improved"
+
+        def verify(candidate, plan):
+            events.append(("verify", candidate))
+            return next(verdicts)
+
+        runner = WorkflowRunner(
+            plan=lambda request, feedback=None: events.append("plan") or {"steps": ["work"]},
+            execute=lambda plan: events.append("execute") or "draft",
+            verify=verify,
+            improve=improve,
+            deliver=lambda candidate: events.append(("deliver", candidate)) or candidate,
+            learn=lambda record: events.append("learn"),
+            max_improvement_iterations=3,
+        )
+
+        result = runner.run({"objective": "produce a robust deliverable"})
+
+        self.assertEqual(result.status, "delivered")
+        self.assertEqual(result.improvement_iterations, 3)
+        self.assertEqual(result.verified_output, "draft-improved-improved-improved")
+        self.assertEqual(result.delivery, result.verified_output)
+        self.assertEqual([entry["iteration"] for entry in result.verification_history], [0, 1, 2, 3])
+        self.assertEqual([entry["passed"] for entry in result.verification_history],
+                         [True, False, False, True])
+        self.assertEqual([event for event in events if isinstance(event, str)],
+                         ["plan", "execute", "learn"])
+        self.assertEqual([event[0] for event in events if isinstance(event, tuple)],
+                         ["verify", "improve", "verify", "improve", "verify",
+                          "improve", "verify", "deliver"])
+
+    def test_exhausted_improvement_iterations_block_delivery_of_latest_failed_candidate(self):
+        checks = iter([
+            {"passed": True, "feedback": ""},
+            {"passed": False, "feedback": "still missing evidence"},
+            {"passed": False, "feedback": "still incomplete after second pass"},
+        ])
+        delivered = []
+
+        runner = WorkflowRunner(
+            plan=lambda request, feedback=None: {},
+            execute=lambda plan: "draft",
+            verify=lambda candidate, plan: next(checks),
+            improve=lambda candidate, feedback: candidate + "-improved",
+            deliver=lambda candidate: delivered.append(candidate),
+            learn=lambda record: None,
+            max_improvement_iterations=2,
+        )
+
+        result = runner.run({"objective": "prepare a deliverable"})
+
+        self.assertEqual(result.status, "blocked_verification")
+        self.assertFalse(result.delivered)
+        self.assertEqual(result.improvement_iterations, 2)
+        self.assertIsNone(result.verified_output)
+        self.assertIsNone(result.delivery)
+        self.assertEqual(delivered, [])
+        self.assertIn("second pass", result.error)
+
+
 class CoordinatorLifecycleTests(unittest.TestCase):
     def _coordinator(self, reviewer_verdicts):
         import tempfile
