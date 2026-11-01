@@ -355,11 +355,17 @@ class Coordinator:
                 {"request": request, "plan": plan["text"], "acceptance_criteria": plan["acceptance_criteria"],
                  "evidence_report": evidence_report, "candidate": candidate_text, "review_phase": phase},
             )
-            first_line = review.strip().splitlines()[0].strip().upper() if review.strip() else ""
-            reviewer_passed = first_line == "VERDICT: PASS"
+            review_lines = review.strip().splitlines() if review.strip() else []
+            first_line = review_lines[0].strip().upper() if review_lines else ""
+            justification = "\n".join(line.strip() for line in review_lines[1:] if line.strip())
+            reviewer_passed = first_line == "VERDICT: PASS" and bool(justification)
             if first_line not in {"VERDICT: PASS", "VERDICT: FAIL"}:
                 review = ("Reviewer returned no valid verdict line; verification failed closed. "
                           "Raw reviewer response: " + review)
+                reviewer_passed = False
+            elif first_line == "VERDICT: PASS" and not justification:
+                review = ("Reviewer returned a bare PASS without supporting review justification; "
+                          "verification failed closed. Raw reviewer response: " + review)
                 reviewer_passed = False
             evidence_passed = EvidenceEngine.is_current(evidence_report, candidate_text)
             feedback_parts = []
