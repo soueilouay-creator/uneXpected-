@@ -5,7 +5,7 @@ from typing import Any
 import json, os, time, uuid, hashlib, math
 from .models import TaskRequest, AgentMessage, TaskResult, CancellationToken, ApprovalContext, PermissionDenied, CycleLimitError, BudgetExceeded, UnknownAgent
 from .registry import AgentRegistry
-from .providers import provider_from_env, reviewer_provider_from_env, ProviderError
+from .providers import AIStudioGatewayProvider, provider_from_env, reviewer_provider_from_env, ProviderError
 from .permissions import PermissionPolicy
 from .approvals import ApprovalVerifier, approval_verifier_from_env
 from .storage import StateStore
@@ -64,6 +64,95 @@ class Coordinator:
                 'test_backend':self.evidence_adapter_status.get('test_backend','not configured'),
                 'source_backend':self.evidence_adapter_status.get('source_backend','not configured'),
                 'reviewer_provider':self.reviewer_provider_status}
+    @staticmethod
+    def _compact_reviewer_payload(payload: dict[str, Any], *, max_code_units: int) -> dict[str, Any]:
+        """Fit the reviewer context to the gateway's UTF-16 budget without losing evidence identity."""
+        if not isinstance(payload, dict) or isinstance(max_code_units, bool) or not isinstance(max_code_units, int):
+            raise ValueError("Reviewer payload and code-unit budget are invalid.")
+        if max_code_units < 256:
+            raise ValueError("Gateway has insufficient room for a safe reviewer context.")
+
+        candidate_text = payload.get("candidate")
+        if isinstance(candidate_text, str):
+            candidate_sha256 = hashlib.sha256(candidate_text.encode("utf-8")).hexdigest()
+            candidate_length = len(candidate_text.encode("utf-16-le")) // 2
+        else:
+            candidate_sha256 = None
+            candidate_length = None
+
+        preserve = {
+            "criterion_id", "kind", "status", "evidence_ref", "sha256",
+            "domain", "url", "exit_code", "tests_run", "source_count",
+            "required", "passed",
+        }
+        limits = {
+            "candidate": 5000, "plan": 1400, "objective": 1000,
+            "excerpt": 700, "output_tail": 700, "summary": 700,
+            "details": 500, "description": 500, "target": 500,
+        }
+        marker = "\n...[truncated for gateway review budget]...\n"
+
+        def units(value: str) -> int:
+            return len(value.encode("utf-16-le")) // 2
+
+        def take_prefix(value: str, budget: int) -> str:
+            out = []
+            used = 0
+            for char in value:
+                cost = 2 if ord(char) > 0xFFFF else 1
+                if used + cost > budget:
+                    break
+                out.append(char)
+                used += cost
+            return "".join(out)
+
+        def take_suffix(value: str, budget: int) -> str:
+            out = []
+            used = 0
+            for char in reversed(value):
+                cost = 2 if ord(char) > 0xFFFF else 1
+                if used + cost > budget:
+                    break
+                out.append(char)
+                used += cost
+            return "".join(reversed(out))
+
+        def truncate(value: str, limit: int) -> str:
+            if units(value) <= limit:
+                return value
+            marker_units = units(marker)
+            if limit <= marker_units + 2:
+                return take_prefix(value, limit)
+            content_budget = limit - marker_units
+            prefix_budget = int(content_budget * 0.72)
+            suffix_budget = content_budget - prefix_budget
+            return take_prefix(value, prefix_budget) + marker + take_suffix(value, suffix_budget)
+
+        for factor in (1.0, 0.75, 0.5, 0.35, 0.25, 0.15, 0.1):
+            def compact(value: Any, key: str = "") -> Any:
+                if isinstance(value, str):
+                    if key in preserve:
+                        return value
+                    base_limit = limits.get(key, 320)
+                    return truncate(value, max(32, int(base_limit * factor)))
+                if isinstance(value, dict):
+                    return {item_key: compact(item_value, str(item_key))
+                            for item_key, item_value in value.items()}
+                if isinstance(value, (list, tuple)):
+                    return [compact(item) for item in value]
+                return value
+
+            bounded = compact(payload)
+            if isinstance(candidate_text, str):
+                bounded["candidate_sha256"] = candidate_sha256
+                bounded["candidate_length_utf16"] = candidate_length
+                bounded["candidate_truncated"] = bounded.get("candidate") != candidate_text
+            encoded = json.dumps(bounded, ensure_ascii=False, separators=(",", ":"))
+            if units(encoded) <= max_code_units:
+                return bounded
+
+        raise ValueError("Reviewer context cannot fit the gateway budget without removing required evidence identity.")
+
     def list_agents(self):
         return [{'id':a.id,'name':a.name,'version':a.version,'capability_label':a.capability_label,'status':a.status} for a in self.registry.list()]
     def enqueue(self, request:TaskRequest):
@@ -155,8 +244,34 @@ class Coordinator:
             attempts=attempt+1
             if token.cancelled: status='cancelled'; error='Cancelled before provider attempt.'; break
             try:
-                pf=self.provider_pool.submit(selected_provider.generate,system_prompt=system,user_prompt=json.dumps(payload,ensure_ascii=False),agent_id=spec.id,task_id=req.task_id,timeout=max(0.1,req.deadline_seconds-(time.time()-start)))
-                output=pf.result(timeout=max(0.1,req.deadline_seconds-(time.time()-start)))
+                user_payload = payload
+                if spec.id == "code-reviewer" and isinstance(selected_provider, AIStudioGatewayProvider):
+                    budget = selected_provider.user_prompt_budget(
+                        system_prompt=system, agent_id=spec.id, task_id=req.task_id
+                    )
+                    user_payload = self._compact_reviewer_payload(payload, max_code_units=budget)
+                    self.store.log_event(
+                        "reviewer_context_compacted", req.task_id, spec.id,
+                        {
+                            "max_code_units": budget,
+                            "candidate_truncated": user_payload.get("candidate_truncated", False),
+                            "candidate_sha256": user_payload.get("candidate_sha256", ""),
+                            "candidate_length_utf16": user_payload.get("candidate_length_utf16", 0),
+                        },
+                    )
+                user_prompt = json.dumps(user_payload, ensure_ascii=False, separators=(",", ":"))
+                pf=self.provider_pool.submit(selected_provider.generate,system_prompt=system,user_prompt=user_prompt,agent_id=spec.id,task_id=req.task_id,timeout=max(0.1,req.deadline_seconds-(time.time()-start)))
+                provider_response=pf.result(timeout=max(0.1,req.deadline_seconds-(time.time()-start)))
+                output=str(provider_response)
+                provider_metadata = getattr(provider_response, "provider_metadata", None)
+                if isinstance(provider_metadata, dict):
+                    safe_metadata = {
+                        field: str(provider_metadata[field])[:200]
+                        for field in ("provider", "label", "model", "status")
+                        if field in provider_metadata
+                    }
+                    if safe_metadata:
+                        self.store.log_event("provider_response_metadata", req.task_id, spec.id, safe_metadata)
                 if token.cancelled: status='cancelled'; error='Cancelled while provider call was in flight; result discarded.'
                 else: status='completed'
                 break
