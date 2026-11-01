@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import os
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,9 @@ def evidence_adapters_from_env(
     if requested_test:
         try:
             executor = test_executor_from_env(workspace_root)
+            if executor is not None and requested_test == "render-sandbox":
+                if importlib.util.find_spec("render") is None:
+                    raise TestExecutionConfigurationError("The pinned Render Python SDK is not installed.")
             if executor is None:
                 status["test_backend"] = "not configured"
             else:
