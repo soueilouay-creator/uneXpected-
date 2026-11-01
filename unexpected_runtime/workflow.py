@@ -54,13 +54,31 @@ class WorkflowRunner:
                 if not isinstance(verification, dict) or type(verification.get('passed')) is not bool:
                     raise ValueError('verify must return a dictionary with a boolean passed field.')
                 feedback = str(verification.get('feedback') or '')
-                result.verification_history.append({'passed': verification['passed'], 'feedback': feedback,
-                                                    'attempt': len(result.verification_history) + 1})
+                result.verification_history.append({'phase': 'before_improvement', 'passed': verification['passed'], 'feedback': feedback,
+                                                    'attempt': len(result.verification_history) + 1,
+                                                    'task_id': verification.get('task_id')})
                 if verification['passed']:
                     result.verified_output = self.improve_stage(result.execution, feedback)
-                    result.delivery = self.deliver_stage(result.verified_output)
-                    result.status, result.delivered = 'delivered', True
-                    break
+                    final_verification = self.verify_stage(result.verified_output, result.plan)
+                    if not isinstance(final_verification, dict) or type(final_verification.get('passed')) is not bool:
+                        raise ValueError('verify must return a dictionary with a boolean passed field.')
+                    final_feedback = str(final_verification.get('feedback') or '')
+                    result.verification_history.append({'phase': 'after_improvement',
+                                                        'passed': final_verification['passed'],
+                                                        'feedback': final_feedback,
+                                                        'attempt': len(result.verification_history) + 1,
+                                                        'task_id': final_verification.get('task_id')})
+                    if final_verification['passed']:
+                        result.delivery = self.deliver_stage(result.verified_output)
+                        result.status, result.delivered = 'delivered', True
+                        break
+                    feedback = 'Post-improvement verification failed: ' + (final_feedback or 'No reviewer feedback supplied.')
+                    if result.corrections >= self.max_corrections:
+                        result.status = 'blocked_verification'
+                        result.error = feedback
+                        break
+                    result.corrections += 1
+                    continue
                 if result.corrections >= self.max_corrections:
                     result.status = 'blocked_verification'
                     result.error = feedback or 'Verification failed; correction budget exhausted.'
