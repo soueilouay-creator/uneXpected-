@@ -74,7 +74,6 @@ class WorkflowRunner:
                     continue
 
                 candidate_output = result.execution
-                improvement_passed = False
                 for improvement_iteration in range(1, self.max_improvements + 1):
                     candidate_output = self.improve_stage(candidate_output, feedback)
                     result.improvements += 1
@@ -95,15 +94,12 @@ class WorkflowRunner:
                         result.verified_output = candidate_output
                         result.delivery = self.deliver_stage(result.verified_output)
                         result.status, result.delivered = 'delivered', True
-                        improvement_passed = True
                         break
                     feedback = 'Post-improvement verification failed: ' + (
                         final_feedback or 'No reviewer feedback supplied.'
                     )
 
                 if result.delivered:
-                    break
-                if improvement_passed:
                     break
                 if result.corrections >= self.max_corrections:
                     result.status = 'blocked_verification'
