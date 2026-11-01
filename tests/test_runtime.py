@@ -62,7 +62,7 @@ class RuntimeTests(unittest.TestCase):
 
     def test_runtime_status_reports_governed_release_version(self):
         status=self.c.status()
-        self.assertEqual(status['ecosystem_version'],'7.3.1')
+        self.assertEqual(status['ecosystem_version'],'7.3.2')
         self.assertEqual(status['mode'],'local-runtime-scaffold')
         self.assertIn('not configured',status['external_connectors'])
     def test_registry_has_unique_active_roles(self):

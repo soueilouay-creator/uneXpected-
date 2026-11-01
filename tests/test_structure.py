@@ -8,8 +8,8 @@ class StructureTests(unittest.TestCase):
    p=ROOT/rel; self.assertTrue(p.is_file(),rel); self.assertGreater(p.stat().st_size,0,rel)
  def test_release_version_is_consistent(self):
   d=json.loads((ROOT/'agent_manifest.json').read_text())
-  self.assertEqual(d['ecosystem_version'],'7.3.1')
-  self.assertIn("__version__ = '7.3.1'",(ROOT/'unexpected_runtime/__init__.py').read_text())
+  self.assertEqual(d['ecosystem_version'],'7.3.2')
+  self.assertIn("__version__ = '7.3.2'",(ROOT/'unexpected_runtime/__init__.py').read_text())
  def test_manifest_ids_and_specs_unique(self):
   d=json.loads((ROOT/'agent_manifest.json').read_text()); agents=d['agents']; ids=[a['id'] for a in agents]
   self.assertEqual(len(agents),38); self.assertEqual(len(ids),len(set(ids)))
@@ -105,7 +105,7 @@ class StructureTests(unittest.TestCase):
    self.assertIn('`'+agent['id']+'`',index)
    self.assertIn('agents/'+agent['id']+'.md',index)
  def test_v7_package_integrity(self):
-  package=Path(__import__('os').environ.get('UNEXPECTED_PACKAGE_ZIP',ROOT.parent/'uneXpected_v7.3.1_governed_runtime.zip'))
+  package=Path(__import__('os').environ.get('UNEXPECTED_PACKAGE_ZIP',ROOT.parent/'uneXpected_v7.3.2_governed_runtime.zip'))
   self.assertTrue(package.is_file(),str(package))
   with zipfile.ZipFile(package) as z:
    self.assertIsNone(z.testzip()); names=z.namelist(); self.assertGreater(len(names),70)

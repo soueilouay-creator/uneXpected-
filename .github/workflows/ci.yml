@@ -25,7 +25,7 @@ jobs:
           from pathlib import Path
           from zipfile import ZIP_DEFLATED, ZipFile
           root = Path.cwd()
-          target = Path(__import__('os').environ['RUNNER_TEMP']) / 'uneXpected_v7.3.1_governed_runtime.zip'
+          target = Path(__import__('os').environ['RUNNER_TEMP']) / 'uneXpected_v7.3.2_governed_runtime.zip'
           with ZipFile(target, 'w', ZIP_DEFLATED) as archive:
               for path in sorted(root.rglob('*')):
                   if not path.is_file() or '__pycache__' in path.parts or path.suffix in {'.pyc', '.sqlite3', '.db'}:
@@ -38,7 +38,7 @@ jobs:
                   archive.write(path, Path('uneXpected_v7') / relative)
           print(f'Built {target} ({target.stat().st_size} bytes)')
           PY
-          echo "UNEXPECTED_PACKAGE_ZIP=$RUNNER_TEMP/uneXpected_v7.3.1_governed_runtime.zip" >> "$GITHUB_ENV"
+          echo "UNEXPECTED_PACKAGE_ZIP=$RUNNER_TEMP/uneXpected_v7.3.2_governed_runtime.zip" >> "$GITHUB_ENV"
       - name: Run regression suite
         run: python -m unittest discover -s tests -v
       - name: CLI smoke tests
