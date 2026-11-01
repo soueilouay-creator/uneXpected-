@@ -42,7 +42,7 @@ python -m unexpected_runtime.cli trading scan --symbols DEMO
 python -m unexpected_runtime.cli trading backtest DEMO --initial-cash 10000
 ```
 
-The default data provider is clearly labelled synthetic fixture data. Optional Alpaca Market Data is read-only and uses IEX only after host-side secrets are configured. The API exposes authenticated, schema-limited scan, risk, backtest, paper account, order, portfolio and journal routes. Paper writes are disabled until durable storage is verified and explicitly enabled. No real broker or live order route exists. See `trading/README.md` and the v0.2.0 design/implementation plan. This project branch has not been merged or deployed to the existing Render service.
+The default data provider is clearly labelled synthetic fixture data. Optional Alpaca Market Data is read-only at the adapter boundary and uses IEX only after host-side secrets are configured. Local paper journaling uses SQLite; hosted paper journaling uses a separately implemented managed-Postgres backend exercised against PostgreSQL 16 in CI. Paper writes remain disabled until an approved persistent database is connected, verified and explicitly enabled. No real broker or live order route exists. See `trading/README.md` and the v0.2.0 design/implementation plan. This project branch has not been merged or deployed to the existing Render service.
 
 ## 7.3.0 — Governed workflow and capability upgrade
 

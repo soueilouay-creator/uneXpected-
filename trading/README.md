@@ -9,7 +9,7 @@ This isolated project branch adds a native paper-trading engine behind uneXpecte
 - Deterministic completed-bar scans: 20-bar breakout, 20-bar SMA reclaim, RSI-14 bounce, and 15-minute opening-range rule.
 - Decimal-based long-only risk sizing with explicit inputs for equity, cash, stop, target, risk budget, position cap and optional daily-loss cap.
 - Reproducible breakout backtests with dataset/config SHA-256 fingerprints, next-bar-open entry, commission/slippage, conservative stop-first intrabar tie handling and documented limitations.
-- SQLite paper account and append-only simulated-fill journal, idempotency keys, cash/position derivation, realized average-cost P&L including fees, integrity check and backup/restore.
+- SQLite paper account for local use and managed PostgreSQL ledger for hosted use. Both provide append-only simulated fills, idempotency keys, cash/position derivation and realized average-cost P&L including fees. PostgreSQL is integration-tested against PostgreSQL 16 in CI. Paid Render Postgres supplies managed point-in-time recovery.
 - Authenticated typed runtime endpoints and local CLI commands. The Coordinator does not expose arbitrary Python execution.
 
 ## Safety and operating boundaries
@@ -18,7 +18,7 @@ The engine is strictly `PAPER_ONLY`. There is no live or paper broker connector;
 
 The upstream Python executables are inventoried by Git blob SHA but are **not copied, installed, executed or exposed as tools**. This is not a Python execution engine for those upstream scripts; the native engine here is a separately implemented package.
 
-Paper journal writes are disabled by default. The API returns a fail-closed error until an operator has configured a genuinely durable database path and explicitly set both storage flags. The currently known Render Free test service has ephemeral storage; keep journal writes disabled there. Do not treat a local or CI test database as hosted persistence.
+Paper journal writes are disabled by default. The API returns a fail-closed error until an operator has configured an approved durable database URL and explicitly set both storage flags. For hosted Render use managed PostgreSQL through `UNEXPECTED_TRADING_DATABASE_URL`. Render Free web-service storage is ephemeral and Free Postgres expires after 30 days without managed backups; neither is suitable as a permanent paper journal. A CI Postgres container verifies database behavior but is not production persistence.
 
 ## Quick start
 
@@ -31,7 +31,7 @@ python -m unexpected_runtime.cli trading risk-check --payload '{"symbol":"DEMO",
 python -m unexpected_runtime.cli trading backtest DEMO --initial-cash 10000
 ```
 
-The default provider is synthetic `fixture`. The Alpaca option is enabled only after configuring `UNEXPECTED_TRADING_DATA_PROVIDER=alpaca`, `APCA_API_KEY_ID` and `APCA_API_SECRET_KEY` in the host secret manager. Use it only for permitted market-data access; the adapter does not call trading endpoints.
+The default provider is synthetic `fixture`. The Alpaca option is enabled only after configuring `UNEXPECTED_TRADING_DATA_PROVIDER=alpaca`, `APCA_API_KEY_ID` and `APCA_API_SECRET_KEY` in the host secret manager. The adapter only issues GET requests to `data.alpaca.markets` for IEX stock bars and never calls the trading API host. Prefer paper-account keys if using the standard Trading API key pair; the runtime has no broker order route. Alpaca Basic currently offers US stocks/ETFs on IEX, 200 historical API calls per minute and a latest-15-minute historical data limitation; it is not consolidated SIP data.
 
 ## Runtime API
 

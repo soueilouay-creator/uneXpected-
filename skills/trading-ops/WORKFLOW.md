@@ -32,9 +32,9 @@ Yahoo Finance endpoints in the upstream project are unofficial, may be delayed o
 - `trading_engine.scanner`: completed-bar 20-bar breakout, 20-bar SMA reclaim, RSI-14 bounce, and a 15-minute opening-range rule. It is not a general technical-analysis platform and never upgrades synthetic bars into real quotes.
 - `trading_engine.risk`: Decimal-based whole-share long sizing under explicit risk-per-trade, daily-loss, cash and position caps. No personal risk settings are pre-filled.
 - `trading_engine.backtest`: deterministic long-only breakout simulation; signal after bar close, entry next bar open, configurable commission/slippage, stop-first when stop and target both touch within one bar, dataset/config SHA-256 fingerprints, and explicit limitations.
-- `trading_engine.portfolio`: SQLite append-only simulated-fill ledger, idempotency, cash/position derivation, average-cost realized P&L including fees, `SIMULATED_FILL` journal records, integrity check and online backup/restore.
+- `trading_engine.portfolio` and `trading_engine.postgres_portfolio`: SQLite for local use and managed PostgreSQL for hosted use; both provide an append-only simulated-fill ledger, idempotency, cash/position derivation and average-cost realized P&L including fees. PostgreSQL schema, persistence and ledger constraints are exercised against a real PostgreSQL service in CI.
 - `unexpected_runtime.http_api`: bearer-authenticated typed endpoints for health, scan, risk, backtest, accounts, paper orders, portfolio and journal. CLI offers the same local functions. No generic code execution or real order route is exposed.
-- Journal writes are disabled by default. They fail closed unless the operator explicitly configures a confirmed durable path and enables both storage environment flags. The currently known Render Free test host has ephemeral storage and must stay read-only for paper journal writes.
+- Journal writes are disabled by default. They fail closed unless the operator explicitly selects `UNEXPECTED_TRADING_STORAGE_MODE=durable` and `UNEXPECTED_TRADING_ALLOW_JOURNAL_WRITES=true`. Hosted Render uses managed PostgreSQL through the secret `UNEXPECTED_TRADING_DATABASE_URL`; SQLite is reserved for local use or an explicitly verified persistent disk. A free Render Postgres database is temporary and must not be used as a permanent paper journal.
 
 ## Eleven capability workflows
 
@@ -67,7 +67,7 @@ The checked-in example fixes `mode` to `paper`, disables broker connection, live
 
 ## Execution and installation status
 
-The uneXpected v7.3.1 skill registry attaches this hash-pinned Markdown workflow to provider context. The native v0.2.0 engine is wired to the runtime API/CLI in this isolated branch; it does not run upstream Python executables. The optional Alpaca data adapter is unconfigured by default. Local SQLite journal functionality is implemented and tested, but hosted journal writes remain blocked on ephemeral storage until durable storage is separately configured and verified. This skill cannot grant `trade`, `external_write`, `schedule_background` or other privileged permissions.
+The uneXpected v7.3.1 skill registry attaches this hash-pinned Markdown workflow to provider context. The native v0.2.0 engine is wired to the runtime API/CLI in this isolated branch; it does not run upstream Python executables. The optional Alpaca data adapter is unconfigured by default. Local SQLite and managed-Postgres journal backends are implemented; the Postgres backend is integration-tested against PostgreSQL in CI. Hosted journal writes remain disabled until an approved managed Postgres instance is provisioned, its internal URL is configured, and persistence/recovery readiness is verified. This skill cannot grant `trade`, `external_write`, `schedule_background` or other privileged permissions.
 
 ## Required output format
 

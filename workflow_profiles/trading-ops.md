@@ -18,7 +18,7 @@ The workflow consumes verified data and returns research or paper-only artifacts
 
 ## Runtime integration
 
-The `trading_engine` package exposes synthetic fixture scanning, optional read-only IEX market data, explicit-input risk sizing, reproducible historical simulation, and an append-only SQLite paper-fill journal with realized P&L. Runtime routes are authenticated and typed. Journal writes remain disabled unless durable storage is explicitly configured. There is no broker order endpoint, live trading, unattended monitoring or arbitrary code execution.
+The `trading_engine` package exposes synthetic fixture scanning, optional read-only IEX market data, explicit-input risk sizing, reproducible historical simulation, and an append-only SQLite (local) or PostgreSQL (managed-host) paper-fill journal with realized P&L. Runtime routes are authenticated and typed. Journal writes remain disabled unless managed PostgreSQL (or a verified persistent disk) is explicitly configured and both durable-storage flags are enabled. There is no broker order endpoint, live trading, unattended monitoring or arbitrary code execution.
 
 ## Acceptance checks
 
