@@ -14,10 +14,10 @@ The runtime applies a quality gate at each cycle. A failed review returns to pla
 2. **Plan:** calls the registered `project-manager` role for ordered steps, dependencies, risks and acceptance criteria.
 3. **Execute:** calls the selected registered specialist role with the request and plan.
 4. **Verify:** calls the independent `code-reviewer` role. Its first non-empty line must be exactly `VERDICT: PASS` or `VERDICT: FAIL`. Missing, malformed or failed verdicts fail closed.
-5. **Improve & Deliver:** after the first PASS, calls the selected specialist to improve the candidate, then calls `code-reviewer` again. Delivery is returned only if this final review also passes.
+5. **Improve & Deliver:** after the first PASS, calls the selected specialist to improve the candidate, then calls `code-reviewer` again. Delivery is returned only if this final review also passes. The result labels this as `role_based_model_review` and retains the reviewer task ID and role in verification history.
 6. **Learn:** records the terminal result, verification history and task provenance through `ImprovementGovernor.record_outcome`, including blocked cycles.
 
-Each stage uses the regular coordinator invocation path and therefore inherits the configured provider, role instructions, timeouts, audit records and permission policy. The lifecycle itself does not grant privileged permissions or configure external tools.
+Each stage uses the regular coordinator invocation path and therefore inherits the configured provider, role instructions, timeouts, audit records and permission policy. This is an independent role-based model review—not a deterministic test suite, formal proof, or automatic verification of external facts. Tasks needing executable tests, source checks or domain-specific measurements must supply and run those checks as part of the specialist's work. The lifecycle itself does not grant privileged permissions or configure external tools.
 
 ## Retry and result contract
 
