@@ -48,7 +48,7 @@
       "skill_path": "trader-entry/SKILL.md",
       "skill_git_blob_sha": "8eb646220bb13a2732838faaa829db514a0440fa",
       "tool_path": "trader-entry/entry.py",
-      "tool_git_blob_sha": "fa0ccc5493bff7481991cc63ec7a8b58aa62535",
+      "tool_git_blob_sha": "fa0ccc5493bff7481991cc63ec7a8b58aa62535e",
       "purpose": "entry-condition timing",
       "copied_into_this_release": false
     },
