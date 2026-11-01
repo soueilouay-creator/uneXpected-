@@ -8,6 +8,17 @@
 
 **Tech Stack:** Python 3.12, stdlib `asyncio`, `http.client`, `ssl`, `socket`, `ipaddress`, `html.parser`, Docker CLI in GitHub Actions, Render Python SDK 1.6.0 for managed Sandboxes, GitHub Actions CI.
 
+## Implementation status — 2026-11-01
+
+**Code and CI verification completed on branch `feature/evidence-driven-quality-gate`.**
+
+- Trusted HTTPS source retrieval is wired into `Coordinator` through `UNEXPECTED_SOURCE_ALLOWED_DOMAINS`. The successful end-to-end run retrieved the official `docs.python.org` unittest documentation through the host retriever and asserted its domain, non-empty excerpt and raw-content SHA-256 provenance.
+- The fixed `evidence-engine` test profile is pinned to the SHA-256 of `tests/test_evidence_engine.py`; only four allowlisted files are staged. The real CI backend used an immutable official Python image and a Docker container configured with `--network=none`, read-only root, dropped capabilities, no-new-privileges, non-root UID and CPU/memory/PID limits. Cleanup must be confirmed before evidence can PASS.
+- The native coordinator lifecycle ran two evidence/review passes (initial and improved candidate), two isolated test-profile executions and two real source retrievals. The live lifecycle integration test passed, delivered the improved candidate and recorded learning/provenance. The role provider in this CI integration is a scripted deterministic fixture; it is not a live model API call.
+- The regression suite completed with 178 tests and 2 optional skips. Runtime compilation, package integrity, the real-source + isolated-Docker lifecycle step and CLI smoke tests all passed in GitHub Actions run [#41334058052](https://github.com/soueilouay-creator/uneXpected-/actions/runs/41334058052) on commit `9d214732e88250ef8ad69d84c47bc92ae8b78d2d`.
+- Render Sandboxes implementation is present and its SDK interaction, staging and cleanup behavior are contract-tested with a fake SDK client. A real Render microVM has **not** been launched: no `RENDER_API_KEY` / `RENDER_WORKSPACE_ID` was available from the connected service metadata. Add these only through the runtime host's secret settings. The token is never passed to the sandbox.
+- No Render service was deployed or reconfigured, no live AI provider was called, and PR #7 remains draft and unmerged pending independent review.
+
 ## Global Constraints
 
 - Do not run arbitrary model/user-supplied shell commands. Test profiles and commands are fixed in code and selected by a bounded profile ID.
