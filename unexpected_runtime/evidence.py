@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -86,13 +87,19 @@ class EvidenceEngine:
                 raise EvidenceContractError(f"Criterion {criterion_id} requires a measurable target.")
             if type(required) is not bool:
                 raise EvidenceContractError(f"Criterion {criterion_id} requires a boolean required field.")
-            normalized.append({
+            normalized_item = {
                 "id": criterion_id,
                 "description": description.strip(),
                 "kind": kind,
                 "target": target.strip(),
                 "required": required,
-            })
+            }
+            profile = item.get("profile")
+            if profile is not None:
+                if kind != "test" or not isinstance(profile, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,31}", profile):
+                    raise EvidenceContractError(f"Criterion {criterion_id} has an invalid test profile.")
+                normalized_item["profile"] = profile
+            normalized.append(normalized_item)
         if not any(item["required"] for item in normalized):
             raise EvidenceContractError("At least one acceptance criterion must be required.")
         return normalized
