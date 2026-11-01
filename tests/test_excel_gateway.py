@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 from unexpected_runtime.coordinator import Coordinator
 from unexpected_runtime.http_api import create_server
+from unexpected_runtime.providers import ProviderResponse
 
 
 UPLOAD_ID = "123e4567-e89b-42d3-a456-426614174000"
@@ -37,15 +38,15 @@ class FakeExcelGateway:
 
     def generate(self, *, system_prompt, user_prompt, agent_id, task_id, timeout, excel_file_ids=()):
         self.attached_ids = list(excel_file_ids)
-        return SimpleNamespace(
+        return ProviderResponse(
             text="Live Excel gateway response: workbook generated and verified.",
-            excel_artifacts=[{
+            excel_artifacts=({
                 "id": ARTIFACT_ID,
                 "fileName": "report.xlsx",
                 "sizeBytes": len(ARTIFACT_BYTES),
                 "expiresInSeconds": 1800,
                 "downloadPath": "/excel/download/" + ARTIFACT_ID,
-            }],
+            },),
         )
 
     def download_artifact(self, artifact_id, timeout=30):

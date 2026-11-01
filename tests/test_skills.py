@@ -165,7 +165,7 @@ class SkillRegistryTests(unittest.TestCase):
                 coordinator.invoke('data-analyst', 'Summarize this market research brief')
                 self.assertNotIn('Excel Engineering Skill', provider.requests[-1]['system_prompt'])
                 events = coordinator.store.events(100)
-                self.assertIn('excel-engineering', {e['payload'].get('skill_id') for e in events if e['event_type'] == 'skill_context_attached'})
+                self.assertIn('excel-engineering', {json.loads(e['payload_json']).get('skill_id') for e in events if e['event_type'] == 'skill_context_attached'})
             finally:
                 coordinator.close()
 
