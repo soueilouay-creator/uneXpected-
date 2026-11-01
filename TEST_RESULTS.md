@@ -57,3 +57,15 @@ The default mock benchmark checks routing, provenance handling, tool-availabilit
 - **Release artifact:** `uneXpected_v7.3_governed_runtime.zip`; its adjacent `.sha256` sidecar was verified with `sha256sum -c`.
 - **Rollback artifact:** original v7.0 source ZIP passed its original SHA-256 sidecar check; it remains unchanged.
 - **Limitations:** the mock benchmark verifies runtime/control-plane contracts only, not semantic model quality. No production `ApprovalVerifier`, live model provider call, TAAFT/MCP adapter, external integration, hosted service, deployment, Library save/read-back or ChatGPT Project activation was exercised.
+
+
+## Current v7.3.1 stabilization CI — 2026-11-01
+
+- **Merged main commit:** `cdef6c263cbf44f0739a2b90070ec58059aca9a2`.
+- **Pre-merge PR CI:** run #32 (`41290438435`) passed on `6b3ea2568b50e9e179f2a21f8f2aa7cc6d26d474`.
+- **Post-merge main CI:** run #33 (`41290628188`) passed on `cdef6c263cbf44f0739a2b90070ec58059aca9a2`; all workflow steps passed.
+- **Regression suite:** 125 tests run; 124 passed; 1 optional v6 source-archive fixture test skipped; 0 failures and 0 errors.
+- **Compilation, package integrity, SHA-256 inventory and CLI smoke tests:** passed.
+- **Runtime contract benchmark:** score 1.0, 8/8 critical checks and 11/11 noncritical checks passed. Provider mode: deterministic mock; semantic model quality is not measured.
+- **Separate Render test host:** deployed the same source tree and returned HTTP 200 at `/health`. API routes tested without credentials returned 401 as expected. No authenticated or paid model request was made.
+- **Production gates still open:** live provider/TAAFT verification, persistent runtime and approval-ledger storage, trusted reviewer/approval replay tests, enforced CODEOWNERS ruleset, production deployment and backup/restore drill.

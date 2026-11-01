@@ -11,7 +11,7 @@
 - Executable local Python scaffold: 38-role registry, coordinator/router, SQLite task queue and audit log, typed handoffs, task DAG, bounded worker/provider pools, deadlines, cancellation, retries and idempotency; per-agent memory and reviewed shared knowledge; hash-pinned workflow skills; provenance-aware metadata-only capability registry; host-verifier/action-bound privileged permissions; and evidence-fingerprinted self-improvement with stale-baseline rejection. Deterministic mock remains the default provider.
 - v7.0 baseline: 44 passed, 0 failed, 0 errors, 1 skipped. The historical v7.3.0 verification result is retained below for provenance; it is not a test result for the current v7.3.1 PR head.
 - Runtime smoke: all 38 agents invoked via mock; CLI single-agent invocation, 3-agent handoff chain, 3-node DAG and four-scenario contract benchmark passed. Benchmark: 6/6 critical and 10/10 noncritical checks; mock runtime contracts only, not semantic model quality.
-- Real provider API, live integrations, semantic model evaluation, production deployment, authenticated approval channel and background scheduler were not tested/configured.
+- Real provider API responses, live TAAFT operations, semantic model evaluation, production deployment, authenticated approval invocation and background scheduling remain unverified. The Render test host reports gateway and runtime API authentication configured, but configuration presence is not a successful provider call.
 
 ## Persistence and activation are separate states
 - **Historical local files/package:** v7.3.0 archive built and verified locally; original `uneXpected_v7_unified_runtime.zip` preserved as the v7.0 rollback source. See the v7.3 release section below for the current archive hash.
@@ -19,7 +19,7 @@
 - **Global Custom Instructions:** draft at `GLOBAL_CUSTOM_INSTRUCTION_V7.md`; not changed by file tools.
 - **ChatGPT Project:** draft at `PROJECT_INSTRUCTIONS_V7.md`; installation not confirmed.
 - **External connectors/provider:** GitHub read connector used to refresh the upstream source; runtime provider is mock. Real provider and other runtime connectors are unconfigured.
-- **Hosted service:** not deployed; no claim that all agents are simultaneously executing or always online.
+- **Hosted service:** a separate Render Free test service is deployed for v7.3.1 health checks only; it is not a production or always-on agent service. Its filesystem is ephemeral and auto-deploy is disabled.
 
 Install: `INSTALL.md`. Deploy: `DEPLOY.md`. Migration: `UPGRADE_MIGRATION.md`. Rollback: `ROLLBACK_UNINSTALL.md`. Capability and safety limits: `CAPABILITY_MATRIX.md` and `THREAT_MODEL.md`.
 
@@ -46,3 +46,19 @@ Install: `INSTALL.md`. Deploy: `DEPLOY.md`. Migration: `UPGRADE_MIGRATION.md`. R
 - **Approval boundary:** production identity verification is not configured; `ApprovalVerifier` is an injected host contract only. Privileged actions fail closed when no trusted verifier is supplied.
 - **TAAFT/MCP:** no Python runtime adapter is included or live-tested; metadata registry records do not execute external tools.
 - **Activation state:** local artifact only. No Library upload/read-back, ChatGPT Project installation, Custom Instructions activation, GitHub push or Render deployment was performed.
+
+
+## Current v7.3.1 stabilization verification — 2026-11-01
+
+- **Merged release source:** PR #2, `Integrate uneXpected v7.3.1 governed runtime`, merged to `main` at `cdef6c263cbf44f0739a2b90070ec58059aca9a2`. The tested PR head was `6b3ea2568b50e9e179f2a21f8f2aa7cc6d26d474`; the merge commit preserves the same source tree.
+- **Pre-merge CI:** GitHub Actions run #32 (`41290438435`) completed successfully on the tested PR head.
+- **Post-merge CI:** GitHub Actions run #33 (`41290628188`) completed successfully on the actual `main` merge commit. Compilation, package ZIP integrity, regression suite and CLI smoke steps all passed.
+- **Regression suite:** 125 tests run; 124 passed and one optional historical v6 archive fixture was skipped because that external archive was not supplied. No failures or errors.
+- **Fixed benchmark:** score 1.0; all 8 declared critical checks true and all 11/11 noncritical checks passed. Provider mode was deterministic mock. This measures runtime/control-plane contracts, not semantic LLM response quality.
+- **CLI smoke:** status, list and eval commands passed. The registry reported 38 canonical roles.
+- **Inventory:** the exact SHA-256 file inventory passed as part of the regression suite, including the final stabilization changes.
+- **Render test host:** service `unexpected-v731-runtime-test` (`srv-dbj237m7bikc73e71pf0`) successfully deployed the tested source tree. Public `/health` returned HTTP 200, version 7.3.1, `provider_configured=true`, `authentication_configured=true` and `privileged_actions=fail-closed`. Unauthenticated `/v1/status` and `/v1/invoke` probes both returned HTTP 401.
+- **Render limitations:** the test service is Free, has ephemeral storage, has auto-deploy disabled and remains on the integration branch at the tested source commit. It is not production persistence and must not be used for privileged actions.
+- **Security governance:** the repository ruleset named `CODEOWNERS review` exists but its enforcement is disabled. The owner must enable and verify required code-owner review and protected-branch checks separately.
+- **Still unverified:** no authenticated runtime invocation, live OpenAI/Claude/OpenRouter response, live TAAFT-backed model request, positive/revoked/replay approval cycle, durable-storage restart test, production backup/restore, or production deployment was performed. Provider/API token presence in the health response is not proof of live connectivity.
+- **Activation:** persistent Library upload/read-back, Global Custom Instructions activation and ChatGPT Project installation remain separate and unconfirmed.
