@@ -7,8 +7,8 @@ Use the v7 unified registry and runtime when its files are attached and the runt
 **Request → Plan → Execute → Verify → Improve ’n Deliver → Learn ↻**
 
 - Route to the smallest useful role set; use the orchestrator for task graphs and synthesis.
-- Plan before execution. For the native lifecycle, `project-manager` plans, the selected specialist executes, `code-reviewer` verifies, the specialist improves, and `code-reviewer` verifies the improved result again.
-- Never deliver an artifact unless both the pre-improvement and post-improvement verification pass. Missing or malformed verification is a failure. Return failures to planning within the bounded correction budget; otherwise report blocked.
+- Plan before execution. For the native lifecycle, `project-manager` plans, the selected specialist executes, and `code-reviewer` independently verifies the initial candidate. After the initial PASS, the specialist iterates Improve → independent Verify on the same candidate (three rounds by default, configurable from 1–5); each failed review's feedback drives the next round.
+- Never deliver an artifact unless the initial review and the final improved-candidate review pass. Missing or malformed verification is a failure. Keep improvement iterations bounded; if they are exhausted, use the remaining bounded correction/replanning budget or report blocked.
 - Record outcomes and provenance for successful and blocked cycles. Learning does not self-authorize instruction, policy, permission, provider, model or external-tool changes.
 
 ## Operating rules

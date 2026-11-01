@@ -73,6 +73,119 @@ class WorkflowRunnerTests(unittest.TestCase):
 
 
 
+    def test_exhausted_improvement_rounds_replan_when_correction_budget_remains(self):
+        plans = []
+        executions = []
+        checks = iter([
+            {'passed': True, 'feedback': 'Initial candidate is sound.'},
+            {'passed': False, 'feedback': 'The first revision is still incomplete.'},
+            {'passed': True, 'feedback': 'Second execution meets the criteria.'},
+            {'passed': True, 'feedback': 'The improved second execution passes.'},
+        ])
+
+        def plan(request, feedback=None):
+            plans.append(feedback)
+            return {'iteration': len(plans)}
+
+        def execute(current_plan):
+            executions.append(current_plan['iteration'])
+            return 'draft-' + str(current_plan['iteration'])
+
+        runner = WorkflowRunner(
+            plan=plan, execute=execute,
+            verify=lambda candidate, current_plan: next(checks),
+            improve=lambda candidate, feedback: candidate + '-improved',
+            deliver=lambda candidate: candidate, learn=lambda record: None,
+            max_corrections=1, max_improvements=1,
+        )
+        result = runner.run({'objective': 'prepare a report'})
+
+        self.assertEqual(result.status, 'delivered')
+        self.assertEqual(result.corrections, 1)
+        self.assertEqual(result.improvements, 2)
+        self.assertEqual(plans[0], None)
+        self.assertIn('Post-improvement verification failed', plans[1])
+        self.assertEqual(executions, [1, 2])
+        self.assertEqual(result.verified_output, 'draft-2-improved')
+
+    def test_improvement_budget_must_be_a_bounded_integer(self):
+        kwargs = dict(
+            plan=lambda request, feedback=None: {},
+            execute=lambda plan: "draft",
+            verify=lambda candidate, plan: {"passed": True, "feedback": ""},
+            improve=lambda candidate, feedback: candidate,
+            deliver=lambda candidate: candidate,
+            learn=lambda record: None,
+        )
+        for invalid in (0, 6, True, 1.5):
+            with self.subTest(max_improvements=invalid):
+                with self.assertRaises(ValueError):
+                    WorkflowRunner(**kwargs, max_improvements=invalid)
+
+    def test_improves_and_reverifies_same_candidate_until_it_passes(self):
+        events = []
+        checks = iter([
+            {"passed": True, "feedback": "Initial candidate meets the baseline."},
+            {"passed": False, "feedback": "Add missing evidence and tighten the conclusion."},
+            {"passed": True, "feedback": "The revised candidate now meets every criterion."},
+        ])
+
+        def improve(candidate, feedback):
+            events.append(("improve", candidate, feedback))
+            return candidate + "-v" + str(sum(1 for event in events if event[0] == "improve"))
+
+        runner = WorkflowRunner(
+            plan=lambda request, feedback=None: events.append("plan") or {"steps": ["work"]},
+            execute=lambda plan: events.append("execute") or "draft",
+            verify=lambda candidate, plan: events.append(("verify", candidate)) or next(checks),
+            improve=improve,
+            deliver=lambda candidate: events.append(("deliver", candidate)) or candidate,
+            learn=lambda record: events.append(("learn", record)),
+            max_improvements=3,
+        )
+        result = runner.run({"objective": "prepare a sourced report"})
+
+        self.assertEqual(result.status, "delivered")
+        self.assertTrue(result.delivered)
+        self.assertEqual(result.improvements, 2)
+        self.assertEqual(result.to_dict()["improvements"], 2)
+        self.assertEqual(result.verified_output, "draft-v1-v2")
+        self.assertEqual(result.delivery, "draft-v1-v2")
+        self.assertEqual(
+            [item["phase"] for item in result.verification_history],
+            ["before_improvement", "after_improvement", "after_improvement_2"],
+        )
+        self.assertEqual([item["passed"] for item in result.verification_history],
+                         [True, False, True])
+        self.assertEqual([event[1] for event in events if isinstance(event, tuple) and event[0] == "verify"],
+                         ["draft", "draft-v1", "draft-v1-v2"])
+
+    def test_exhausted_improvement_budget_blocks_delivery_and_records_count(self):
+        events = []
+        checks = iter([
+            {"passed": True, "feedback": "Initial baseline passed."},
+            {"passed": False, "feedback": "Still missing citations."},
+            {"passed": False, "feedback": "Citation coverage remains incomplete."},
+        ])
+        runner = WorkflowRunner(
+            plan=lambda request, feedback=None: {},
+            execute=lambda plan: "draft",
+            verify=lambda candidate, plan: next(checks),
+            improve=lambda candidate, feedback: candidate + "-revised",
+            deliver=lambda candidate: self.fail("must not deliver after exhausted improvement budget"),
+            learn=lambda record: events.append(record),
+            max_improvements=2,
+            max_corrections=0,
+        )
+        result = runner.run({"objective": "prepare a sourced report"})
+
+        self.assertEqual(result.status, "blocked_verification")
+        self.assertFalse(result.delivered)
+        self.assertEqual(result.improvements, 2)
+        self.assertEqual(len(result.verification_history), 3)
+        self.assertEqual(events[0]["improvements"], 2)
+
+
 class CoordinatorLifecycleTests(unittest.TestCase):
     def _coordinator(self, reviewer_verdicts):
         import tempfile
@@ -124,6 +237,7 @@ class CoordinatorLifecycleTests(unittest.TestCase):
         result = coordinator.run_lifecycle(
             "research-scout", "Research a sample topic", {"scope": "public sources"},
             max_corrections=0,
+            max_improvements=1,
         )
         self.assertEqual(result.status, "blocked_verification")
         self.assertFalse(result.delivered)
@@ -132,6 +246,19 @@ class CoordinatorLifecycleTests(unittest.TestCase):
         self.assertIsNone(result.verified_output)
         events = {event["event_type"] for event in coordinator.store.events(100)}
         self.assertIn("outcome_recorded", events)
+
+    def test_native_lifecycle_repeats_improvement_until_review_passes(self):
+        coordinator, provider = self._coordinator(["PASS", "FAIL", "PASS"])
+        result = coordinator.run_lifecycle(
+            "research-scout", "Research a sample topic", {"scope": "public sources"},
+            max_corrections=0, max_improvements=2,
+        )
+        self.assertEqual(result.status, "delivered")
+        self.assertEqual(provider.review_calls, 3)
+        self.assertEqual(result.improvements, 2)
+        self.assertEqual([item["phase"] for item in result.verification_history],
+                         ["before_improvement", "after_improvement", "after_improvement_2"])
+        self.assertTrue(result.delivered)
 
     def test_authenticated_http_lifecycle_endpoint_uses_native_workflow(self):
         import json
@@ -151,6 +278,7 @@ class CoordinatorLifecycleTests(unittest.TestCase):
                 "objective": "Run a safe test workflow",
                 "inputs": {"scope": "fixture"},
                 "max_corrections": 0,
+                "max_improvements": 2,
                 "deadline_seconds": 5,
             }).encode("utf-8")
             request = urllib.request.Request(
