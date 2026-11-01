@@ -16,7 +16,7 @@ class Opener:
 
 class ProviderTests(unittest.TestCase):
     def test_live_gateway_response_and_bearer_auth(self):
-        opener=Opener({"ok":True,"results":{"openai":{"status":"LIVE · verified response","text":"real answer","model":"gpt-4.1"}}})
+        opener=Opener({"ok":True,"results":{"openai":{"status":"LIVE · verified response","label":"OpenAI","text":"real answer","model":"gpt-4.1"}}})
         p=AIStudioGatewayProvider("https://unexpected-ai-studio.onrender.com/orchestrate","g"*48,mode="openai")
         with patch("unexpected_runtime.providers.urllib.request.build_opener",return_value=opener):
             out=p.generate(system_prompt="S",user_prompt="U",agent_id="orchestrator",task_id="t",timeout=12)
