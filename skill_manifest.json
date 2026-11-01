@@ -73,6 +73,38 @@
       ],
       "source_ref": "canonical v7 runtime:self_improvement/SKILL.md",
       "status": "active"
+    },
+    {
+      "id": "trading-ops",
+      "version": "0.1.0",
+      "path": "skills/trading-ops/WORKFLOW.md",
+      "sha256": "c4b90eda1f94d0774b82b51124aa5f82eb55b84ec6cecd9bd7801e75969856d9",
+      "agent_ids": [
+        "orchestrator",
+        "investment-research",
+        "data-analyst"
+      ],
+      "trigger_terms": [
+        "trading",
+        "day trade",
+        "paper trading",
+        "paper trade",
+        "market scan",
+        "scan stocks",
+        "trading setup",
+        "entry plan",
+        "exit plan",
+        "position sizing",
+        "trade risk",
+        "risk check",
+        "backtest",
+        "trading journal",
+        "earnings analysis",
+        "price alert",
+        "stock scanner"
+      ],
+      "source_ref": "https://github.com/Jakeschincariol/day-trader-skill@3d0f4ef6986f4984b7c6bd46f7ff4f87744c3abd adapted as uneXpected workflow",
+      "status": "active"
     }
   ]
 }
