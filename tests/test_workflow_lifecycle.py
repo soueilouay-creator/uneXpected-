@@ -70,9 +70,6 @@ class WorkflowRunnerTests(unittest.TestCase):
         self.assertEqual(events[0]["verification_history"][-1]["passed"], False)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class CoordinatorLifecycleTests(unittest.TestCase):
     def _coordinator(self, reviewer_verdicts):
@@ -93,7 +90,7 @@ class CoordinatorLifecycleTests(unittest.TestCase):
                 if agent == "code-reviewer":
                     verdict = reviewer_verdicts[self.review_calls]
                     self.review_calls += 1
-                    return f"VERDICT: {verdict}\\nReview evidence for {verdict.lower()}."
+                    return f"VERDICT: {verdict}" + chr(10) + f"Review evidence for {verdict.lower()}."
                 if agent == "research-scout":
                     return "Research deliverable, version " + str(self.review_calls)
                 return "Test response."
@@ -166,3 +163,6 @@ class CoordinatorLifecycleTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
             thread.join(timeout=2)
+
+if __name__ == "__main__":
+    unittest.main()
