@@ -167,6 +167,21 @@ class _VisibleHTMLText(html.parser.HTMLParser):
             self.text_parts.append(clean)
 
 
+def _select_excerpt(text: str, max_chars: int) -> str:
+    """Prefer a bounded passage near test-discovery material when present."""
+    match = re.search(r"(?i)(?:test\s+discovery|discovery|discovering|find.{0,80}tests)", text)
+    if match is None or len(text) <= max_chars:
+        return text[:max_chars]
+    start = max(0, match.start() - max_chars // 3)
+    end = min(len(text), start + max_chars)
+    excerpt = text[start:end].strip()
+    if start:
+        excerpt = "… " + excerpt
+    if end < len(text):
+        excerpt = excerpt.rstrip() + " …"
+    return excerpt[:max_chars]
+
+
 class TrustedSourceRetriever:
     """Bounded HTTPS source retrieval for a caller-configured exact host allowlist.
 
@@ -329,7 +344,7 @@ class TrustedSourceRetriever:
             "bytes": len(body),
             "sha256": hashlib.sha256(body).hexdigest(),
             "retrieved_at": datetime.now(timezone.utc).isoformat(),
-            "excerpt": excerpt[:self.max_excerpt_chars],
+            "excerpt": _select_excerpt(excerpt, self.max_excerpt_chars),
         }
 
     def retrieve_many(self, urls: list[str]) -> list[dict[str, Any]]:
