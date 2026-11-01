@@ -449,7 +449,7 @@ class CoordinatorLifecycleTests(unittest.TestCase):
             result.evidence_history[1]["candidate_sha256"],
         )
         self.assertEqual({call[0] for call in checker_calls}, {"TEST-01", "SOURCE-01"})
-        review_prompt = provider.requests[1]["user_prompt"]
+        review_prompt = next(item["user_prompt"] for item in provider.requests if item["agent_id"] == "code-reviewer")
         self.assertIn("evidence_report", review_prompt)
         self.assertIn("SOURCE-01", review_prompt)
 
