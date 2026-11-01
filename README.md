@@ -8,6 +8,7 @@ A local, executable, quality-gated runtime scaffold for 38 canonical agent roles
 python -m unexpected_runtime.cli status
 python -m unexpected_runtime.cli list
 python -m unexpected_runtime.cli run orchestrator --objective 'Plan a safe test task'
+python -m unexpected_runtime.cli lifecycle research-scout --objective 'Research a safe test topic' --inputs '{"scope":"public information"}'
 
 # Build the ZIP fixture required by the package-integrity test.
 python - <<'PY'
@@ -30,7 +31,7 @@ PY
 UNEXPECTED_PACKAGE_ZIP=../uneXpected_v7.3.1_governed_runtime.zip python -m unittest discover -s tests -v
 ```
 
-The default provider is deterministic mock. The optional AI Studio gateway connects the Python runtime to the existing OpenAI/Anthropic/OpenRouter service without copying provider API keys into Python. See docs/RUNTIME_CONNECTIVITY.md for secret handoff, authenticated runtime API, model modes, tool boundaries and Render limitations.
+The default provider is deterministic mock; mock output is not a live verification and may fail the review gate. Use a configured live provider for real lifecycle work. The new `lifecycle` command uses `project-manager`, the requested specialist and `code-reviewer`; the final improved result is reviewed again before local delivery. See [docs/VERIFIED_WORKFLOW.md](docs/VERIFIED_WORKFLOW.md). The optional AI Studio gateway connects the Python runtime to the existing OpenAI/Anthropic/OpenRouter service without copying provider API keys into Python. See docs/RUNTIME_CONNECTIVITY.md for secret handoff, authenticated runtime API, model modes, tool boundaries and Render limitations.
 
 ## 7.3.0 — Governed workflow and capability upgrade
 
