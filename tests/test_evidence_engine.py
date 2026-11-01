@@ -80,6 +80,45 @@ class EvidenceEngineTests(unittest.TestCase):
         with self.assertRaises(EvidenceContractError):
             engine.evaluate("candidate", [])
 
+    def test_checker_results_must_be_json_safe_and_criteria_kinds_typed(self):
+        engine = EvidenceEngine(checkers={
+            "measurement": lambda candidate, criterion, context: {
+                "passed": True, "actual": float("nan"), "evidence_ref": "metrics://run/1",
+            }
+        })
+        criteria = [{"id": "METRIC-01", "description": "Metric is within range",
+                     "kind": "measurement", "target": "finite value", "required": True}]
+
+        report = engine.evaluate("candidate", criteria)
+
+        self.assertFalse(report["passed"])
+        self.assertEqual(report["evidence"][0]["status"], "unverified")
+        self.assertIn("actual_json_value", report["evidence"][0]["missing_fields"])
+        with self.assertRaises(EvidenceContractError):
+            engine.evaluate("candidate", [
+                {"id": "BAD-01", "description": "Bad kind", "kind": [], "target": "value", "required": True}
+            ])
+
+    def test_current_report_rejects_tampered_counts_and_incomplete_records(self):
+        engine = EvidenceEngine()
+        criteria = [{"id": "ARTIFACT-01", "description": "Candidate exists", "kind": "artifact",
+                     "target": "non-empty", "required": True}]
+        report = engine.evaluate("candidate", criteria)
+        self.assertTrue(EvidenceEngine.is_current(report, "candidate"))
+
+        import copy
+        bool_count = copy.deepcopy(report)
+        bool_count["required_passed"] = True
+        self.assertFalse(EvidenceEngine.is_current(bool_count, "candidate"))
+
+        missing_record = copy.deepcopy(report)
+        missing_record["evidence"] = []
+        self.assertFalse(EvidenceEngine.is_current(missing_record, "candidate"))
+
+        stale_optional = copy.deepcopy(report)
+        stale_optional["evidence"][0]["candidate_sha256"] = "0" * 64
+        self.assertFalse(EvidenceEngine.is_current(stale_optional, "candidate"))
+
     def test_workflow_runner_rejects_stale_evidence_even_when_reviewer_passes(self):
         from unexpected_runtime.workflow import WorkflowRunner
 
