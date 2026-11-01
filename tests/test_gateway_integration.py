@@ -97,7 +97,9 @@ class APITests(unittest.TestCase):
         self.assertEqual(code,200); self.assertNotIn("api_token",data); self.assertNotIn("state_db",data)
     def test_auth_and_status(self):
         self.assertEqual(self.request("GET","/v1/status",token="")[0],401)
-        self.assertEqual(self.request("GET","/v1/status")[0],200)
+        code, status = self.request("GET","/v1/status")
+        self.assertEqual(code,200)
+        self.assertEqual(status["evidence_checkers"], ["artifact"])
 
     def test_non_ascii_bearer_header_is_rejected_without_server_error(self):
         conn=http.client.HTTPConnection(self.host,self.port,timeout=8)
