@@ -148,7 +148,7 @@ class TrustedSourceRetrieverTests(unittest.TestCase):
             def __init__(self): self.sock = FakeSocket()
         class SlowResponse:
             def __init__(self): self.calls = 0
-            def read(self, size):
+            def read1(self, size):
                 self.calls += 1
                 return b"data"
         times = iter([0.0, 0.3, 0.6, 0.9, 1.2])
