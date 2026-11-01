@@ -7,7 +7,6 @@ import re
 import shutil
 import subprocess
 import tempfile
-import time
 import uuid
 from pathlib import Path
 from typing import Any, Callable
@@ -160,7 +159,6 @@ class DockerTestExecutor:
             self.image_digest,
             *profile["argv"],
         ]
-        started = time.monotonic()
         try:
             try:
                 completed = subprocess.run(
@@ -207,7 +205,7 @@ class DockerTestExecutor:
                     "non_root_user": "65532:65532",
                     "capabilities": "all_dropped",
                     "no_new_privileges": True,
-                    "memory_limit": "512m",
+                    "memory_limit": "256m",
                     "cpu_limit": 1,
                     "pids_limit": 64,
                 },
