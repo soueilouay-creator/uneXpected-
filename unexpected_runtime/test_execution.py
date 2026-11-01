@@ -149,7 +149,7 @@ class DockerTestExecutor:
             "--cap-drop=ALL",
             "--security-opt=no-new-privileges",
             "--pids-limit=64",
-            "--memory=512m",
+            "--memory=256m",
             "--cpus=1",
             "--user=65532:65532",
             "--tmpfs=/tmp:rw,nosuid,nodev,size=32m",
@@ -176,7 +176,7 @@ class DockerTestExecutor:
                 tests_run, summary_passed = _parse_result(output)
                 exit_code = completed.returncode
                 timed_out = False
-                cleanup_confirmed = True  # --rm is intentionally omitted; explicit cleanup is checked below.
+                cleanup_confirmed = True
             except subprocess.TimeoutExpired as exc:
                 output = _bounded_output(exc.stdout, exc.stderr)
                 tests_run, _ = _parse_result(output)
@@ -184,7 +184,6 @@ class DockerTestExecutor:
                 timed_out = True
                 cleanup_confirmed = self._remove_container(container_name)
                 summary_passed = False
-            duration_seconds = max(0.0, time.monotonic() - started)
             # A normal docker run leaves an exited container because this backend
             # does not use --rm; always confirm explicit removal after capturing logs.
             if not timed_out:
