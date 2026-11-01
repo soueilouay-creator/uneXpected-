@@ -9,10 +9,14 @@ import os
 import re
 import socket
 import ssl
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 import time
 from datetime import datetime, timezone
 from typing import Any, Callable
 from urllib.parse import urlsplit, urlunsplit
+
+
+_DNS_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="unexpected-source-dns")
 
 
 class SourceRetrievalError(ValueError):
@@ -45,7 +49,10 @@ def _normalize_domain(value: str) -> str:
 
 def _resolve_public_addresses(host: str, port: int) -> list[str]:
     try:
-        results = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        future = _DNS_POOL.submit(socket.getaddrinfo, host, port, 0, socket.SOCK_STREAM)
+        results = future.result(timeout=4)
+    except FutureTimeout:
+        raise SourceRetrievalError("Source host DNS lookup exceeded its deadline.") from None
     except OSError:
         raise SourceRetrievalError("Source host DNS lookup failed.") from None
     addresses: list[str] = []
@@ -173,8 +180,8 @@ class TrustedSourceRetriever:
         *,
         timeout_seconds: float = 8.0,
         max_bytes: int = 262144,
-        max_sources: int = 5,
-        max_excerpt_chars: int = 8000,
+        max_sources: int = 3,
+        max_excerpt_chars: int = 2400,
         resolver: Callable[[str, int], list[str]] | None = None,
         transport: Callable[[str, str, str, float, int], tuple[int, dict[str, str], bytes]] | None = None,
     ) -> None:
@@ -284,9 +291,17 @@ class TrustedSourceRetriever:
             normalized = str(parsed_address)
             if normalized not in validated:
                 validated.append(normalized)
-        status, headers, body = self._transport(
-            host, validated[0], request_target, self.timeout_seconds, self.max_bytes,
-        )
+        last_error: SourceRetrievalError | None = None
+        for address in validated:
+            try:
+                status, headers, body = self._transport(
+                    host, address, request_target, self.timeout_seconds, self.max_bytes,
+                )
+                break
+            except SourceRetrievalError as exc:
+                last_error = exc
+        else:
+            raise last_error or SourceRetrievalError("Source host could not be reached over HTTPS.")
         if status != 200:
             raise SourceRetrievalError(f"Source request returned HTTP {status}; redirects are not followed.")
         if len(body) > self.max_bytes:
@@ -363,7 +378,7 @@ def source_retriever_from_env() -> TrustedSourceRetriever | None:
     try:
         timeout = float(os.getenv("UNEXPECTED_SOURCE_TIMEOUT_SECONDS", "8"))
         max_bytes = int(os.getenv("UNEXPECTED_SOURCE_MAX_BYTES", "262144"))
-        max_sources = int(os.getenv("UNEXPECTED_SOURCE_MAX_COUNT", "5"))
+        max_sources = int(os.getenv("UNEXPECTED_SOURCE_MAX_COUNT", "3"))
         return TrustedSourceRetriever(
             domains,
             timeout_seconds=timeout,
