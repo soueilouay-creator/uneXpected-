@@ -1,4 +1,12 @@
-# uneXpected v7.3.1 Changelog
+# uneXpected v7.3.2 Changelog
+
+## 7.3.2 — Governed Excel engineering workflow (2026-11-01)
+
+- Registered a hash-pinned `excel-engineering` skill for existing orchestrator, data analyst, automation architect and coding engineer roles. The canonical 38-role manifest is unchanged.
+- Added authenticated XLSX upload, request-scoped file ID validation, provider routing through the Node AI Studio Excel tools, bounded artifact metadata and authenticated artifact download through the Python runtime API.
+- Added strict provider/file handoff validation, 20 MiB per-file bounds, a maximum of eight attached workbooks, and 30-minute process-local expiry. The workflow remains fail-closed when the Excel-capable gateway is not configured.
+- Added regression coverage for skill mapping, provider forwarding, upload authentication, attachment ownership, artifact metadata and download read-back.
+
 
 ## 7.0.0 — Unified local runtime scaffold
 

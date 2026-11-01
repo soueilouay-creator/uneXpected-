@@ -1,4 +1,4 @@
-# uneXpected v7.3.1 — Unified Self-Developing Agent Ecosystem
+# uneXpected v7.3.2 — Unified Self-Developing Agent Ecosystem
 
 A local, executable, quality-gated runtime scaffold for 38 canonical agent roles. It preserves 37 legacy specialist profiles and adds one self-improvement governor. The 120 upstream README-linked templates are mapped as workflow capabilities, not separate agents.
 
@@ -14,7 +14,7 @@ python - <<'PY'
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 root = Path.cwd()
-target = root.parent / 'uneXpected_v7.3.1_governed_runtime.zip'
+target = root.parent / 'uneXpected_v7.3.2_governed_runtime.zip'
 with ZipFile(target, 'w', ZIP_DEFLATED) as archive:
     for path in sorted(root.rglob('*')):
         if not path.is_file() or '__pycache__' in path.parts or path.suffix in {'.pyc', '.sqlite3', '.db'}:
@@ -27,10 +27,10 @@ with ZipFile(target, 'w', ZIP_DEFLATED) as archive:
         archive.write(path, Path('uneXpected_v7') / relative)
 print(f'Built {target} ({target.stat().st_size} bytes)')
 PY
-UNEXPECTED_PACKAGE_ZIP=../uneXpected_v7.3.1_governed_runtime.zip python -m unittest discover -s tests -v
+UNEXPECTED_PACKAGE_ZIP=../uneXpected_v7.3.2_governed_runtime.zip python -m unittest discover -s tests -v
 ```
 
-The default provider is deterministic mock. The optional AI Studio gateway connects the Python runtime to the existing OpenAI/Anthropic/OpenRouter service without copying provider API keys into Python. See docs/RUNTIME_CONNECTIVITY.md for secret handoff, authenticated runtime API, model modes, tool boundaries and Render limitations.
+The v7.3.2 release adds the hash-pinned Excel engineering workflow and authenticated XLSX transfer to the configured AI Studio gateway. Use the authenticated `POST /v1/excel/upload` route, attach the returned IDs through `inputs.excel_file_ids`, and retrieve generated files only via the returned authenticated `download_path`. The Excel file routes are available only when the Excel-capable gateway provider is configured; uploads and artifacts are temporary and process-local for up to 30 minutes. The default provider is deterministic mock. The optional AI Studio gateway connects the Python runtime to the existing OpenAI/Anthropic/OpenRouter service without copying provider API keys into Python. See docs/RUNTIME_CONNECTIVITY.md for secret handoff, authenticated runtime API, model modes, tool boundaries and Render limitations.
 
 ## 7.3.0 — Governed workflow and capability upgrade
 
