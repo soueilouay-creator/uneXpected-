@@ -1,6 +1,6 @@
 # Trading Engine v0.2.0 — Design Specification
 
-**Status:** Implemented on isolated branch; final CI verification pending.  
+**Status:** Implemented and full-suite CI verified on isolated branch; hosted deployment remains separately gated.  
 **Base:** uneXpected v7.3.1 / Trading Intelligence v0.1.0  
 **Target branch:** `project/trading-engine-v0.2.0`  
 **Market scope:** US-listed common stocks and ETFs, long-only, paper-only.
