@@ -21,7 +21,7 @@ class Coordinator:
         self.store=StateStore(root/'uneXpected.sqlite3')
         self.provider=provider or provider_from_env()
         self.skills=SkillRegistry.load(skill_manifest_path)
-        self.approval_verifier = approval_verifier if approval_verifier is not None else approval_verifier_from_env()
+        self.approval_verifier = approval_verifier if approval_verifier is not None else approval_verifier_from_env(state_dir=root)
         self.permissions=PermissionPolicy(self.approval_verifier); self.max_workers=workers; self.max_retries=retries
         self.task_pool=ThreadPoolExecutor(max_workers=workers,thread_name_prefix='unexpected-task')
         self.provider_pool=ThreadPoolExecutor(max_workers=workers,thread_name_prefix='unexpected-provider')

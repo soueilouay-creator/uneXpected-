@@ -1,7 +1,7 @@
 from __future__ import annotations
 import http.client, json, tempfile, threading, unittest
 from unittest.mock import patch
-from unexpected_runtime.providers import AIStudioGatewayProvider, ProviderError, provider_from_env
+from unexpected_runtime.providers import AIStudioGatewayProvider, OpenAICompatibleProvider, ProviderError, provider_from_env, _NoRedirect
 from unexpected_runtime.http_api import create_server
 from unexpected_runtime.coordinator import Coordinator
 
@@ -49,6 +49,28 @@ class ProviderTests(unittest.TestCase):
         with patch("unexpected_runtime.providers.urllib.request.build_opener") as build:
             with self.assertRaises(ProviderError): p.generate(system_prompt="x"*15001,user_prompt="u",agent_id="a",task_id="t",timeout=5)
             build.assert_not_called()
+    def test_openai_compatible_provider_requires_https_and_rejects_embedded_credentials(self):
+        for url in ("http://provider.example/v1", "https://user:secret@provider.example/v1",
+                    "https://provider.example/v1?token=secret", "https://provider.example/v1#fragment"):
+            with self.subTest(url=url), self.assertRaises(ProviderError):
+                OpenAICompatibleProvider(url, "test-model", "k" * 48)
+
+    def test_openai_compatible_provider_uses_https_and_disables_redirects(self):
+        from urllib.request import Request
+        request = Request("https://provider.example/v1/chat/completions", data=b"{}",
+                          headers={"Authorization": "Bearer " + "k" * 48}, method="POST")
+        handler = _NoRedirect()
+        for code in (301, 302, 303, 307, 308):
+            self.assertIsNone(handler.redirect_request(request, None, code, "redirect", {},
+                                                       "https://other.example/collect"))
+        opener = Opener({"choices": [{"message": {"content": "direct provider response"}}]})
+        provider = OpenAICompatibleProvider("https://provider.example/v1", "test-model", "k" * 48)
+        with patch("unexpected_runtime.providers.urllib.request.build_opener", return_value=opener) as build:
+            result = provider.generate(system_prompt="S", user_prompt="U", agent_id="a", task_id="t", timeout=5)
+        self.assertIn("direct provider response", result)
+        self.assertTrue(any(isinstance(item, _NoRedirect) for item in build.call_args.args))
+        self.assertEqual(opener.request.get_header("Authorization"), "Bearer " + "k" * 48)
+
     def test_factory_uses_gateway_config(self):
         env={"UNEXPECTED_PROVIDER":"ai_studio_gateway","UNEXPECTED_GATEWAY_URL":"https://gateway.example","UNEXPECTED_GATEWAY_TOKEN":"g"*48}
         with patch.dict("os.environ",env,clear=True):
@@ -76,6 +98,25 @@ class APITests(unittest.TestCase):
     def test_auth_and_status(self):
         self.assertEqual(self.request("GET","/v1/status",token="")[0],401)
         self.assertEqual(self.request("GET","/v1/status")[0],200)
+
+    def test_non_ascii_bearer_header_is_rejected_without_server_error(self):
+        conn=http.client.HTTPConnection(self.host,self.port,timeout=8)
+        conn.putrequest("GET","/v1/status")
+        conn.putheader("Authorization","Bearer "+"é"*48)
+        conn.endheaders()
+        response=conn.getresponse(); response.read(); conn.close()
+        self.assertEqual(response.status,401)
+
+    def test_non_ascii_configured_api_token_fails_closed(self):
+        s=create_server(coordinator=self.coord,api_token="é"*48,host="127.0.0.1",port=0)
+        t=threading.Thread(target=s.serve_forever,daemon=True); t.start()
+        try:
+            c=http.client.HTTPConnection(self.host,s.server_address[1],timeout=8)
+            c.request("GET","/v1/status",headers={"Authorization":"Bearer "+"a"*48})
+            response=c.getresponse(); response.read(); c.close()
+            self.assertEqual(response.status,503)
+        finally:
+            s.shutdown(); s.server_close(); t.join(timeout=2)
     def test_unprivileged_invocation_succeeds(self):
         code,data=self.request("POST","/v1/invoke",{"agent_id":"orchestrator","objective":"Run a safe smoke test"})
         self.assertEqual(code,200); self.assertEqual(data["result"]["status"],"completed")

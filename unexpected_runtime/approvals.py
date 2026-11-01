@@ -256,7 +256,7 @@ class GitHubPullRequestApprovalVerifier:
             return False
 
 
-def approval_verifier_from_env() -> GitHubPullRequestApprovalVerifier | None:
+def approval_verifier_from_env(state_dir: str | Path | None = None) -> GitHubPullRequestApprovalVerifier | None:
     """Build the production verifier only when all required trust settings exist."""
     token = os.getenv('UNEXPECTED_GITHUB_APPROVAL_TOKEN', '').strip()
     repository = os.getenv('UNEXPECTED_GITHUB_APPROVAL_REPOSITORY', '').strip()
@@ -268,6 +268,8 @@ def approval_verifier_from_env() -> GitHubPullRequestApprovalVerifier | None:
     try:
         max_age = int(os.getenv('UNEXPECTED_GITHUB_APPROVAL_MAX_AGE_SECONDS', '3600'))
         timeout = float(os.getenv('UNEXPECTED_GITHUB_APPROVAL_TIMEOUT_SECONDS', '8'))
+        ledger_override = os.getenv('UNEXPECTED_APPROVAL_LEDGER_PATH', '').strip()
+        ledger_path = ledger_override or str(Path(state_dir or 'state') / 'approval-ledger.sqlite3')
         return GitHubPullRequestApprovalVerifier(
             repository=repository,
             token=token,
@@ -275,7 +277,7 @@ def approval_verifier_from_env() -> GitHubPullRequestApprovalVerifier | None:
             base_branch=os.getenv('UNEXPECTED_GITHUB_APPROVAL_BASE_BRANCH', 'main').strip(),
             max_age_seconds=max_age,
             timeout_seconds=timeout,
-            ledger_path=os.getenv('UNEXPECTED_APPROVAL_LEDGER_PATH', 'state/approval-ledger.sqlite3'),
+            ledger_path=ledger_path,
         )
     except (TypeError, ValueError):
         return None

@@ -140,7 +140,10 @@ class RuntimeTests(unittest.TestCase):
     def test_provider_error_does_not_leak_secret(self):
         from unexpected_runtime.providers import OpenAICompatibleProvider
         provider=OpenAICompatibleProvider('https://example.invalid/v1','test-model','DO_NOT_LEAK_SECRET')
-        with patch('urllib.request.urlopen',side_effect=OSError('simulated network error')):
+        class BrokenOpener:
+            def open(self, *args, **kwargs):
+                raise OSError('simulated network error')
+        with patch('urllib.request.build_opener',return_value=BrokenOpener()):
             with self.assertRaises(ProviderError) as ctx: provider.generate(system_prompt='s',user_prompt='u',agent_id='research-scout',task_id='t',timeout=.1)
         self.assertNotIn('DO_NOT_LEAK_SECRET',str(ctx.exception))
     def test_retry_cap_and_safe_retry(self):

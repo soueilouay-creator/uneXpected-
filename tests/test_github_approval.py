@@ -307,6 +307,28 @@ class GitHubApprovalVerifierTests(unittest.TestCase):
                 finally:
                     coordinator.close()
 
+    def test_coordinator_defaults_approval_ledger_to_runtime_state_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env = {
+                "UNEXPECTED_GITHUB_APPROVAL_TOKEN": "read-only-token",
+                "UNEXPECTED_GITHUB_APPROVAL_REPOSITORY": REPOSITORY,
+                "UNEXPECTED_GITHUB_APPROVAL_ALLOWED_REPOSITORIES": REPOSITORY,
+                "UNEXPECTED_GITHUB_APPROVAL_TRUSTED_REVIEWERS": REVIEWER,
+                "UNEXPECTED_GITHUB_APPROVAL_BASE_BRANCH": "main",
+                "UNEXPECTED_STATE_DIR": directory,
+            }
+            with patch.dict(os.environ, env, clear=True):
+                coordinator = Coordinator(
+                    manifest_path=ROOT / "agent_manifest.json", state_dir=directory,
+                    provider=DeterministicMockProvider(),
+                )
+                try:
+                    self.assertIsInstance(coordinator.approval_verifier, GitHubPullRequestApprovalVerifier)
+                    self.assertEqual(coordinator.approval_verifier.ledger_path,
+                                     Path(directory) / "approval-ledger.sqlite3")
+                finally:
+                    coordinator.close()
+
     def test_coordinator_reports_privileged_actions_fail_closed_without_token(self):
         with tempfile.TemporaryDirectory() as directory:
             with patch.dict(os.environ, {}, clear=True):

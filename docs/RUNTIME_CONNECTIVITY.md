@@ -2,7 +2,7 @@
 
 ## Real AI provider gateway
 
-The v7.3.1 Python runtime can call the existing uneXpected AI Studio service at https://unexpected-ai-studio.onrender.com/orchestrate. In `ai_studio_gateway` mode, that Node gateway holds the OpenAI, Anthropic and optional OpenRouter credentials, and Python receives only a separate bearer token. The alternative `openai_compatible` mode reads `UNEXPECTED_API_KEY` in the Python host environment; that direct-key mode is separate and must be protected by the host secret manager.
+The v7.3.1 Python runtime can call the existing uneXpected AI Studio service at https://unexpected-ai-studio.onrender.com/orchestrate. In `ai_studio_gateway` mode, that Node gateway holds the OpenAI, Anthropic and optional OpenRouter credentials, and Python receives only a separate bearer token. The alternative `openai_compatible` mode reads `UNEXPECTED_API_KEY` in the Python host environment; that direct-key mode is separate and must be protected by the host secret manager. Its base URL must use HTTPS and cannot contain embedded credentials, a query or a fragment; redirects are disabled so the authorization header cannot be forwarded to another host.
 
 The gateway supports OpenAI Responses API, Anthropic Messages API, optional OpenRouter fallback, and a public TAAFT MCP connector limited to 28 read-only search/detail operations. Public TAAFT catalog access is not a personal TAAFT account connection. It does not expose private bookmarks, account settings or write actions.
 

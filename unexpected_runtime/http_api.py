@@ -40,8 +40,15 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             self.send_header("X-Content-Type-Options","nosniff"); self.send_header("Referrer-Policy","no-referrer")
             self.end_headers(); self.wfile.write(data)
         def authorize(self):
-            if len(token)<32: self.send_json(503,{"error":"Runtime API is locked."}); return False
-            if not hmac.compare_digest(self.headers.get("Authorization",""),"Bearer "+token):
+            if len(token)<32 or not token.isascii():
+                self.send_json(503,{"error":"Runtime API is locked."}); return False
+            supplied = self.headers.get("Authorization", "")
+            try:
+                supplied_bytes = supplied.encode("ascii")
+                expected_bytes = ("Bearer " + token).encode("ascii")
+            except UnicodeEncodeError:
+                self.send_json(401,{"error":"Unauthorized."}); return False
+            if not hmac.compare_digest(supplied_bytes, expected_bytes):
                 self.send_json(401,{"error":"Unauthorized."}); return False
             return True
         def read_body(self):
