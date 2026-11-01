@@ -54,6 +54,21 @@ class WorkflowRunnerTests(unittest.TestCase):
         self.assertEqual(events.count("deliver"), 1)
         self.assertEqual(result.corrections, 1)
 
+
+    def test_invalid_improvement_iteration_budgets_are_rejected(self):
+        for value in (0, 5, True, "2"):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    WorkflowRunner(
+                        plan=lambda request, feedback=None: {},
+                        execute=lambda plan: "draft",
+                        verify=lambda candidate, plan: {"passed": True, "feedback": ""},
+                        improve=lambda candidate, feedback: candidate,
+                        deliver=lambda candidate: candidate,
+                        learn=lambda record: None,
+                        max_improvement_iterations=value,
+                    )
+
     def test_exhausted_verification_blocks_delivery_but_still_learns(self):
         events = []
         runner = WorkflowRunner(
@@ -195,7 +210,7 @@ class CoordinatorLifecycleTests(unittest.TestCase):
         coordinator, provider = self._coordinator(["PASS", "FAIL"])
         result = coordinator.run_lifecycle(
             "research-scout", "Research a sample topic", {"scope": "public sources"},
-            max_corrections=0,
+            max_corrections=0, max_improvement_iterations=1,
         )
         self.assertEqual(result.status, "blocked_verification")
         self.assertFalse(result.delivered)
@@ -204,6 +219,20 @@ class CoordinatorLifecycleTests(unittest.TestCase):
         self.assertIsNone(result.verified_output)
         events = {event["event_type"] for event in coordinator.store.events(100)}
         self.assertIn("outcome_recorded", events)
+
+
+    def test_native_lifecycle_repeats_improvement_until_latest_candidate_passes(self):
+        coordinator, provider = self._coordinator(["PASS", "FAIL", "PASS"])
+        result = coordinator.run_lifecycle(
+            "research-scout", "Research a sample topic", {"scope": "public sources"},
+            max_corrections=0, max_improvement_iterations=2,
+        )
+        self.assertEqual(result.status, "delivered")
+        self.assertEqual(result.improvement_iterations, 2)
+        self.assertEqual(provider.review_calls, 3)
+        self.assertEqual([item["iteration"] for item in result.verification_history], [0, 1, 2])
+        self.assertTrue(result.delivered)
+        self.assertIsNotNone(result.delivery)
 
     def test_authenticated_http_lifecycle_endpoint_uses_native_workflow(self):
         import json
@@ -223,6 +252,7 @@ class CoordinatorLifecycleTests(unittest.TestCase):
                 "objective": "Run a safe test workflow",
                 "inputs": {"scope": "fixture"},
                 "max_corrections": 0,
+                "max_improvement_iterations": 1,
                 "deadline_seconds": 5,
             }).encode("utf-8")
             request = urllib.request.Request(
@@ -234,6 +264,7 @@ class CoordinatorLifecycleTests(unittest.TestCase):
                 payload = json.loads(response.read().decode("utf-8"))
                 self.assertEqual(response.status, 200)
                 self.assertEqual(payload["result"]["status"], "delivered")
+                self.assertEqual(payload["result"]["improvement_iterations"], 1)
         finally:
             server.shutdown()
             server.server_close()
