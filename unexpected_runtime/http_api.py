@@ -104,8 +104,11 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             if len(objective)>MAX_OBJECTIVE_CHARS: return self.send_json(413,{"error":"Objective too large."})
             if (not isinstance(inputs,dict) or isinstance(deadline,bool) or not isinstance(deadline,(int,float))
                     or (not is_lifecycle and (isinstance(steps,bool) or not isinstance(steps,int)))
-                    or (is_lifecycle and (isinstance(corrections,bool) or not isinstance(corrections,int)
-                                           or isinstance(improvement_iterations,bool)\n                                           or not isinstance(improvement_iterations,int)))):
+                    or (is_lifecycle and (
+                        isinstance(corrections,bool) or not isinstance(corrections,int)
+                        or isinstance(improvement_iterations,bool)
+                        or not isinstance(improvement_iterations,int)
+                    )):
                 return self.send_json(400,{"error":"Invalid inputs, deadline or workflow limits."})
             if not math.isfinite(float(deadline)) or not 0 < float(deadline) <= 600:
                 return self.send_json(400,{"error":"deadline_seconds must be finite and between 0 and 600."})
