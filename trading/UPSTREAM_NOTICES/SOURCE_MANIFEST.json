@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "upstream_repository": "https://github.com/Jakeschincariol/day-trader-skill",
+  "upstream_version": "2.0.0",
+  "upstream_commit": "3d0f4ef6986f4984b7c6bd46f7ff4f87744c3abd",
+  "license": "MIT",
+  "license_notice_path": "trading/UPSTREAM_NOTICES/LICENSE",
+  "import_status": "source_inventoried_not_executed_or_installed",
+  "entries": [
+    {
+      "capability": "trader-alerts",
+      "skill_path": "trader-alerts/SKILL.md",
+      "skill_git_blob_sha": "051743789685531bbbebb87e44ab88776d5fd3d8",
+      "tool_path": "trader-alerts/alerts.py",
+      "tool_git_blob_sha": "5c503a7e976c4ce2937c70a0fbd18ed126b3eb45",
+      "purpose": "price and level alerts",
+      "copied_into_this_release": false
+    },
+    {
+      "capability": "trader-analyst",
+      "skill_path": "trader-analyst/SKILL.md",
+      "skill_git_blob_sha": "9d9b95a4a722a348e50de6a7ae69956fe128b64f",
+      "tool_path": "trader-analyst/facts.py",
+      "tool_git_blob_sha": "8dc27a68cff25e93e1ff1dae78a93a306ac9517a",
+      "purpose": "company fundamentals and earnings",
+      "copied_into_this_release": false
+    },
+    {
+      "capability": "trader-broker",
+      "skill_path": "trader-broker/SKILL.md",
+      "skill_git_blob_sha": "da8522a13c4d58ea7f76902d8547cde3f00a45d3",
+      "tool_path": "trader-broker/ticket.py",
+      "tool_git_blob_sha": "721aa2bd73f7973b6ca19d21d047333077a217a7",
+      "purpose": "order ticket and approval journal",
+      "copied_into_this_release": false
+    },
+    {
+      "capability": "trader-budget",
+      "skill_path": "trader-budget/SKILL.md",
+      "skill_git_blob_sha": "e28ec39018f84187104a6130e2f393165f8b6705",
+      "tool_path": "trader-budget/size.py",
+      "tool_git_blob_sha": "1c9ba4749ed6fc178ee836af4381472ac59eae77",
+      "purpose": "position sizing and paper budget",
+      "copied_into_this_release": false
+    },
+    {
+      "capability": "trader-entry",
+      "skill_path": "trader-entry/SKILL.md",
+      "skill_git_blob_sha": "8eb646220bb13a2732838faaa829db514a0440fa",
+      "tool_path": "trader-entry/entry.py",
+      "tool_git_blob_sha": "fa0ccc5493bff7481991cc63ec7a8b58aa62535",
+      "purpose": "entry-condition timing",
+      "copied_into_this_release": false
+    },
+    {
+      "capability": "trader-exit",
+      "skill_path": "trader-exit/SKILL.md",
+      "skill_git_blob_sha": "3ba6e92a2511d9c422eb9db5261512e8e3d28377",
+      "tool_path": "trader-exit/exit.py",
+      "tool_git_blob_sha": "e85a6ba1c570fff66daac95ce81f525913203f19",
+      "purpose": "exit planning",
+      "copied_into_this_release": false
+    },
+    {
+      "capability": "trader-news",
+      "skill_path": "trader-news/SKILL.md",
+      "skill_git_blob_sha": "45c4d616f6651f47edbb15f9d2f9319957e67a96",
+      "tool_path": "trader-news/news.py",
+      "tool_git_blob_sha": "a9fdfe9e9d33115f7e853e466e34d5016e527356",
+      "purpose": "news and SEC filing monitor",
+      "copied_into_this_release": false
+    },
+    {
+      "capability": "trader-pelosi",
+      "skill_path": "trader-pelosi/SKILL.md",
+      "skill_git_blob_sha": "f09348d540816d25620e339f00ee13169a0733a1",
+      "tool_path": "trader-pelosi/ptr.py",
+      "tool_git_blob_sha": "54a445e96b50a3139e691d8c6ea22915e551797e",
+      "purpose": "public congressional disclosure tracking",
+      "copied_into_this_release": false
+    },
+    {
+      "capability": "trader-risk",
+      "skill_path": "trader-risk/SKILL.md",
+      "skill_git_blob_sha": "8628b2f24842ee32e3632a7b72d2f3e3f8c581ab",
+      "tool_path": "trader-risk/check.py",
+      "tool_git_blob_sha": "2e51047392a491b30d3d49bcb504cd41bcee50fa",
+      "purpose": "pre-trade and portfolio risk checks",
+      "copied_into_this_release": false
+    },
+    {
+      "capability": "trader-scanner",
+      "skill_path": "trader-scanner/SKILL.md",
+      "skill_git_blob_sha": "96bc6a8906cdc4c29053430b123002f7be024eac",
+      "tool_path": "trader-scanner/scan.py",
+      "tool_git_blob_sha": "3dfc5410f7ac923f7a2ce37eaa2cd32ea4b6f419",
+      "purpose": "daily and intraday chart scanning",
+      "copied_into_this_release": false
+    },
+    {
+      "capability": "trader-timemachine",
+      "skill_path": "trader-timemachine/SKILL.md",
+      "skill_git_blob_sha": "ecef8b13f13ac43e4bb8d79886faef05ea0fdf04",
+      "tool_path": "trader-timemachine/timemachine.py",
+      "tool_git_blob_sha": "026cc782034f4489af65b4f2d80d5edbb0c53ebc",
+      "purpose": "historical replay and simulation",
+      "copied_into_this_release": false
+    }
+  ]
+}
