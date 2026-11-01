@@ -5,7 +5,7 @@ from typing import Any
 import json, os, time, uuid, hashlib, math
 from .models import TaskRequest, AgentMessage, TaskResult, CancellationToken, ApprovalContext, PermissionDenied, CycleLimitError, BudgetExceeded, UnknownAgent
 from .registry import AgentRegistry
-from .providers import provider_from_env
+from .providers import provider_from_env, ProviderResponse
 from .permissions import PermissionPolicy
 from .approvals import ApprovalVerifier, approval_verifier_from_env
 from .storage import StateStore
@@ -92,6 +92,14 @@ class Coordinator:
         active=self.store.active_version(spec.id,spec.version,spec.instruction)
         memory={k:self.store.get_memory(spec.id,k) for k in self.store.memory_keys(spec.id)}
         approved_knowledge=self.store.query_knowledge(limit=8)
+        excel_file_ids = req.inputs.get('excel_file_ids', [])
+        if excel_file_ids:
+            if not isinstance(excel_file_ids, (list, tuple)) or len(excel_file_ids) > 8:
+                return TaskResult(req.task_id, spec.id, 'failed', error='Invalid Excel attachment list.',
+                                  started_at=start, finished_at=time.time())
+            if not bool(getattr(self.provider, 'supports_excel_files', False)):
+                return TaskResult(req.task_id, spec.id, 'failed', error='The configured provider does not support attached Excel workbooks.',
+                                  started_at=start, finished_at=time.time())
         payload={'objective':req.objective,'inputs':req.inputs,'agent_id':spec.id,'task_id':req.task_id,
                  'agent_memory':memory,'reviewed_shared_knowledge':approved_knowledge,'source_refs':list(req.source_refs),
                  'runtime_capabilities':list(spec.runtime_capabilities),'unavailable_external_capabilities':list(spec.required_or_optional_capabilities),
@@ -118,13 +126,27 @@ class Coordinator:
         if skill_spec is not None:
             payload['verified_skill']={'id':skill_spec.id,'version':skill_spec.version,
                                        'source_ref':skill_spec.source_ref,'sha256':skill_spec.sha256}
-        attempts=0; output=''; error=None; status='failed'
+        attempts=0; output=''; output_artifacts=(); error=None; status='failed'
         for attempt in range(self.max_retries+1):
             attempts=attempt+1
             if token.cancelled: status='cancelled'; error='Cancelled before provider attempt.'; break
             try:
-                pf=self.provider_pool.submit(self.provider.generate,system_prompt=system,user_prompt=json.dumps(payload,ensure_ascii=False),agent_id=spec.id,task_id=req.task_id,timeout=max(0.1,req.deadline_seconds-(time.time()-start)))
-                output=pf.result(timeout=max(0.1,req.deadline_seconds-(time.time()-start)))
+                provider_kwargs = {
+                    'system_prompt': system,
+                    'user_prompt': json.dumps(payload, ensure_ascii=False),
+                    'agent_id': spec.id,
+                    'task_id': req.task_id,
+                    'timeout': max(0.1, req.deadline_seconds - (time.time() - start)),
+                }
+                if excel_file_ids:
+                    provider_kwargs['excel_file_ids'] = list(excel_file_ids)
+                pf = self.provider_pool.submit(self.provider.generate, **provider_kwargs)
+                provider_result = pf.result(timeout=max(0.1,req.deadline_seconds-(time.time()-start)))
+                if isinstance(provider_result, ProviderResponse):
+                    output = provider_result.text
+                    output_artifacts = provider_result.excel_artifacts
+                else:
+                    output = str(provider_result)
                 if token.cancelled: status='cancelled'; error='Cancelled while provider call was in flight; result discarded.'
                 else: status='completed'
                 break
@@ -136,7 +158,7 @@ class Coordinator:
                 if attempt<self.max_retries and bool(getattr(self.provider, 'retry_safe', False)) and not token.cancelled:
                     self.store.log_event('provider_retry',req.task_id,spec.id,{'attempt':attempts}); continue
                 break
-        result=TaskResult(req.task_id,spec.id,status,output=output,provenance=tuple(req.source_refs),attempts=attempts,error=error,started_at=start,finished_at=time.time())
+        result=TaskResult(req.task_id,spec.id,status,output=output,provenance=tuple(req.source_refs),attempts=attempts,error=error,started_at=start,finished_at=time.time(),output_artifacts=tuple(output_artifacts))
         persisted = self.store.mark_task(req.task_id,status,result.to_dict())
         if not persisted:
             row = self.store.get_task(req.task_id)
