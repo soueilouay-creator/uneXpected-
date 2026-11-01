@@ -78,7 +78,7 @@ class EvidenceEngine:
             seen.add(criterion_id)
             if not isinstance(description, str) or not description.strip():
                 raise EvidenceContractError(f"Criterion {criterion_id} requires a description.")
-            if kind not in EVIDENCE_KINDS:
+            if not isinstance(kind, str) or kind not in EVIDENCE_KINDS:
                 raise EvidenceContractError(
                     f"Criterion {criterion_id} has unsupported kind; expected one of {sorted(EVIDENCE_KINDS)}."
                 )
@@ -96,6 +96,14 @@ class EvidenceEngine:
         if not any(item["required"] for item in normalized):
             raise EvidenceContractError("At least one acceptance criterion must be required.")
         return normalized
+
+    @staticmethod
+    def _is_json_value(value: Any) -> bool:
+        try:
+            json.dumps(value, ensure_ascii=False, allow_nan=False)
+            return True
+        except (TypeError, ValueError):
+            return False
 
     @staticmethod
     def _check_artifact(candidate: Any, criterion: dict[str, Any],
@@ -159,8 +167,11 @@ class EvidenceEngine:
                 continue
 
             missing = []
-            if "actual" not in raw or raw.get("actual") is None:
+            actual = raw.get("actual")
+            if actual is None:
                 missing.append("actual")
+            elif not self._is_json_value(actual):
+                missing.append("actual_json_value")
             evidence_ref = raw.get("evidence_ref")
             if not isinstance(evidence_ref, str) or not evidence_ref.strip():
                 missing.append("evidence_ref")
@@ -175,8 +186,8 @@ class EvidenceEngine:
                 "required": criterion["required"],
                 "status": status,
                 "passed": status == "passed",
-                "expected": raw.get("expected", criterion["target"]),
-                "actual": raw.get("actual"),
+                "expected": criterion["target"],
+                "actual": actual if self._is_json_value(actual) else None,
                 "evidence_ref": evidence_ref if isinstance(evidence_ref, str) else None,
                 "candidate_sha256": fingerprint,
                 "missing_fields": missing,
@@ -222,18 +233,35 @@ class EvidenceEngine:
             return False
         required_total = report.get("required_total")
         required_passed = report.get("required_passed")
+        criteria_total = report.get("criteria_total")
         if (isinstance(required_total, bool) or not isinstance(required_total, int)
-                or required_total < 1 or required_passed != required_total
+                or required_total < 1 or isinstance(required_passed, bool)
+                or not isinstance(required_passed, int) or required_passed != required_total
+                or isinstance(criteria_total, bool) or not isinstance(criteria_total, int)
+                or criteria_total < required_total or criteria_total != len(evidence)
                 or report.get("failed_criteria") != []):
             return False
-        required_records = [item for item in evidence if isinstance(item, dict) and item.get("required") is True]
+        if any(
+            not isinstance(item, dict)
+            or not isinstance(item.get("criterion_id"), str)
+            or not item.get("criterion_id").strip()
+            or item.get("candidate_sha256") != fingerprint
+            or type(item.get("required")) is not bool
+            or item.get("status") not in {"passed", "failed", "unverified"}
+            for item in evidence
+        ):
+            return False
+        ids = [item["criterion_id"] for item in evidence]
+        if len(ids) != len(set(ids)):
+            return False
+        required_records = [item for item in evidence if item.get("required") is True]
         if len(required_records) != required_total:
             return False
         return all(
             item.get("status") == "passed"
-            and item.get("candidate_sha256") == fingerprint
             and isinstance(item.get("evidence_ref"), str)
             and bool(item.get("evidence_ref").strip())
             and item.get("actual") is not None
+            and EvidenceEngine._is_json_value(item.get("actual"))
             for item in required_records
         )
