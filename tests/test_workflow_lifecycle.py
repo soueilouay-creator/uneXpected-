@@ -73,6 +73,69 @@ class WorkflowRunnerTests(unittest.TestCase):
 
 
 
+    def test_improves_and_reverifies_same_candidate_until_it_passes(self):
+        events = []
+        checks = iter([
+            {"passed": True, "feedback": "Initial candidate meets the baseline."},
+            {"passed": False, "feedback": "Add missing evidence and tighten the conclusion."},
+            {"passed": True, "feedback": "The revised candidate now meets every criterion."},
+        ])
+
+        def improve(candidate, feedback):
+            events.append(("improve", candidate, feedback))
+            return candidate + "-v" + str(sum(1 for event in events if event[0] == "improve"))
+
+        runner = WorkflowRunner(
+            plan=lambda request, feedback=None: events.append("plan") or {"steps": ["work"]},
+            execute=lambda plan: events.append("execute") or "draft",
+            verify=lambda candidate, plan: events.append(("verify", candidate)) or next(checks),
+            improve=improve,
+            deliver=lambda candidate: events.append(("deliver", candidate)) or candidate,
+            learn=lambda record: events.append(("learn", record)),
+            max_improvements=3,
+        )
+        result = runner.run({"objective": "prepare a sourced report"})
+
+        self.assertEqual(result.status, "delivered")
+        self.assertTrue(result.delivered)
+        self.assertEqual(result.improvements, 2)
+        self.assertEqual(result.verified_output, "draft-v1-v2")
+        self.assertEqual(result.delivery, "draft-v1-v2")
+        self.assertEqual(
+            [item["phase"] for item in result.verification_history],
+            ["before_improvement", "after_improvement", "after_improvement_2"],
+        )
+        self.assertEqual([item["passed"] for item in result.verification_history],
+                         [True, False, True])
+        self.assertEqual([event[1] for event in events if isinstance(event, tuple) and event[0] == "verify"],
+                         ["draft", "draft-v1", "draft-v1-v2"])
+
+    def test_exhausted_improvement_budget_blocks_delivery_and_records_count(self):
+        events = []
+        checks = iter([
+            {"passed": True, "feedback": "Initial baseline passed."},
+            {"passed": False, "feedback": "Still missing citations."},
+            {"passed": False, "feedback": "Citation coverage remains incomplete."},
+        ])
+        runner = WorkflowRunner(
+            plan=lambda request, feedback=None: {},
+            execute=lambda plan: "draft",
+            verify=lambda candidate, plan: next(checks),
+            improve=lambda candidate, feedback: candidate + "-revised",
+            deliver=lambda candidate: self.fail("must not deliver after exhausted improvement budget"),
+            learn=lambda record: events.append(record),
+            max_improvements=2,
+            max_corrections=0,
+        )
+        result = runner.run({"objective": "prepare a sourced report"})
+
+        self.assertEqual(result.status, "blocked_verification")
+        self.assertFalse(result.delivered)
+        self.assertEqual(result.improvements, 2)
+        self.assertEqual(len(result.verification_history), 3)
+        self.assertEqual(events[0]["improvements"], 2)
+
+
 class CoordinatorLifecycleTests(unittest.TestCase):
     def _coordinator(self, reviewer_verdicts):
         import tempfile
