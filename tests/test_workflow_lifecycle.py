@@ -164,8 +164,6 @@ class CoordinatorLifecycleTests(unittest.TestCase):
             server.server_close()
             thread.join(timeout=2)
 
-if __name__ == "__main__":
-    unittest.main()
     def test_default_deterministic_mock_cannot_pass_verification_gate(self):
         import tempfile
         from pathlib import Path
@@ -188,3 +186,7 @@ if __name__ == "__main__":
                 self.assertFalse(result.verification_history[0]["passed"])
             finally:
                 coordinator.close()
+
+
+if __name__ == "__main__":
+    unittest.main()
