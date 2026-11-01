@@ -49,7 +49,9 @@ class WorkflowRunnerTests(unittest.TestCase):
         self.assertEqual(result.status, "delivered")
         self.assertEqual(events[0], ("plan", None))
         self.assertEqual(events[3], ("plan", "missing source evidence"))
-        self.assertNotIn(("deliver", "verified-draft"), events)
+        self.assertEqual(result.verified_output, "verified-draft-fixed")
+        self.assertEqual(result.delivery, "verified-draft-fixed")
+        self.assertEqual(events.count("deliver"), 1)
         self.assertEqual(result.corrections, 1)
 
     def test_exhausted_verification_blocks_delivery_but_still_learns(self):
@@ -163,6 +165,82 @@ class CoordinatorLifecycleTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
             thread.join(timeout=2)
+
+    def test_lifecycle_concurrency_guard_preserves_capacity_for_invoke(self):
+        import json
+        import threading
+        import urllib.error
+        import urllib.request
+        from unexpected_runtime.http_api import create_server
+
+        class Result:
+            def __init__(self, status):
+                self.status = status
+            def to_dict(self):
+                return {"status": self.status, "delivered": self.status == "delivered"}
+
+        class BlockingCoordinator:
+            max_workers = 2
+            def __init__(self):
+                self.started = threading.Event()
+                self.release = threading.Event()
+            def run_lifecycle(self, *args, **kwargs):
+                if self.started.is_set():
+                    return Result("delivered")
+                self.started.set()
+                self.release.wait(timeout=5)
+                return Result("delivered")
+            def invoke(self, *args, **kwargs):
+                return Result("completed")
+
+        coordinator = BlockingCoordinator()
+        token = "c" * 40
+        server = create_server(coordinator=coordinator, api_token=token,
+                               host="127.0.0.1", port=0)
+        server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+        server_thread.start()
+        base_url = "http://127.0.0.1:{}".format(server.server_address[1])
+
+        def post(route):
+            body = json.dumps({
+                "agent_id": "research-scout",
+                "objective": "Exercise the worker-capacity guard",
+                "inputs": {},
+                "max_corrections": 0,
+                "deadline_seconds": 5,
+            }).encode("utf-8")
+            request = urllib.request.Request(
+                base_url + route, data=body,
+                headers={"Authorization": "Bearer " + token,
+                         "Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=3) as response:
+                    return response.status, json.loads(response.read().decode("utf-8"))
+            except urllib.error.HTTPError as exc:
+                return exc.code, json.loads(exc.read().decode("utf-8"))
+
+        first_result = []
+        lifecycle_thread = threading.Thread(
+            target=lambda: first_result.append(post("/v1/lifecycle")), daemon=True
+        )
+        lifecycle_thread.start()
+        try:
+            self.assertTrue(coordinator.started.wait(timeout=2))
+            busy_status, busy_payload = post("/v1/lifecycle")
+            self.assertEqual(busy_status, 503, busy_payload)
+            invoke_status, invoke_payload = post("/v1/invoke")
+            self.assertEqual(invoke_status, 200, invoke_payload)
+        finally:
+            coordinator.release.set()
+            lifecycle_thread.join(timeout=4)
+            server.shutdown()
+            server.server_close()
+            server_thread.join(timeout=2)
+
+        self.assertEqual(len(first_result), 1)
+        self.assertEqual(first_result[0][0], 200)
 
     def test_default_deterministic_mock_cannot_pass_verification_gate(self):
         import tempfile
