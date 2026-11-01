@@ -30,7 +30,7 @@ class Coordinator:
         for token in list(self._tokens.values()): token.cancel()
         self.task_pool.shutdown(wait=True,cancel_futures=True); self.provider_pool.shutdown(wait=True,cancel_futures=True)
     def status(self):
-        return {'ecosystem_version':'7.3.1','registered_agents':len(self.registry),'provider':getattr(self.provider,'name',type(self.provider).__name__),
+        return {'ecosystem_version':'7.3.2','registered_agents':len(self.registry),'provider':getattr(self.provider,'name',type(self.provider).__name__),
                 'mode':'local-runtime-scaffold','max_workers':self.max_workers,'max_retries':self.max_retries,
                 'state_db':str(self.store.path),'background_service':'not running unless separately hosted','external_connectors':'not configured',
                 'approval_verifier':'github-pr-review' if self.approval_verifier else 'not configured (privileged actions fail closed)'}
