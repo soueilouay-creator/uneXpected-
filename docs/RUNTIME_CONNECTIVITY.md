@@ -23,7 +23,8 @@ Run with `python -m unexpected_runtime.http_api`. The built-in server speaks pla
 
 - GET /health: public, non-secret health metadata.
 - GET /v1/status: bearer authenticated.
-- POST /v1/invoke: bearer authenticated; accepts agent_id, objective, inputs, deadline_seconds, max_steps, idempotency_key and source_refs.\n- POST /v1/lifecycle: bearer authenticated; accepts agent_id, objective, optional inputs, deadline_seconds (per stage) and max_corrections (0–2). It runs project-manager → selected specialist → code-reviewer → specialist improvement → code-reviewer final check, then records the outcome. HTTP 200 requires a delivered result; blocked verification returns 502. Each retry may cause another set of provider requests.
+- POST /v1/invoke: bearer authenticated; accepts agent_id, objective, inputs, deadline_seconds, max_steps, idempotency_key and source_refs.
+- POST /v1/lifecycle: bearer authenticated; accepts agent_id, objective, optional inputs, deadline_seconds (per stage) and max_corrections (0–2). It runs project-manager → selected specialist → code-reviewer → specialist improvement → code-reviewer final check, then records the outcome. HTTP 200 requires a delivered result; blocked verification returns 502. Each retry may cause another set of provider requests.
 
 The API rejects permission scopes, approval claims and unknown fields. It exposes only unprivileged agent invocation and the local-result lifecycle. Lifecycle delivery returns a result to the caller; it does not publish or perform external actions. The API does not permit publishing, payment, account changes, repository writes, deletes, deployment or policy changes.
 
