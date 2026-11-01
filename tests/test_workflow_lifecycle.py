@@ -73,6 +73,41 @@ class WorkflowRunnerTests(unittest.TestCase):
 
 
 
+    def test_exhausted_improvement_rounds_replan_when_correction_budget_remains(self):
+        plans = []
+        executions = []
+        checks = iter([
+            {'passed': True, 'feedback': 'Initial candidate is sound.'},
+            {'passed': False, 'feedback': 'The first revision is still incomplete.'},
+            {'passed': True, 'feedback': 'Second execution meets the criteria.'},
+            {'passed': True, 'feedback': 'The improved second execution passes.'},
+        ])
+
+        def plan(request, feedback=None):
+            plans.append(feedback)
+            return {'iteration': len(plans)}
+
+        def execute(current_plan):
+            executions.append(current_plan['iteration'])
+            return 'draft-' + str(current_plan['iteration'])
+
+        runner = WorkflowRunner(
+            plan=plan, execute=execute,
+            verify=lambda candidate, current_plan: next(checks),
+            improve=lambda candidate, feedback: candidate + '-improved',
+            deliver=lambda candidate: candidate, learn=lambda record: None,
+            max_corrections=1, max_improvements=1,
+        )
+        result = runner.run({'objective': 'prepare a report'})
+
+        self.assertEqual(result.status, 'delivered')
+        self.assertEqual(result.corrections, 1)
+        self.assertEqual(result.improvements, 2)
+        self.assertEqual(plans[0], None)
+        self.assertIn('Post-improvement verification failed', plans[1])
+        self.assertEqual(executions, [1, 2])
+        self.assertEqual(result.verified_output, 'draft-2-improved')
+
     def test_improvement_budget_must_be_a_bounded_integer(self):
         kwargs = dict(
             plan=lambda request, feedback=None: {},
