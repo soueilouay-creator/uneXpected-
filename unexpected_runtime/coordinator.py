@@ -219,11 +219,12 @@ class Coordinator:
         return out
     def run_lifecycle(self, agent_id:str, objective:str, inputs:dict[str,Any]|None=None, *,
                       max_corrections:int=1, max_improvement_iterations:int=2, deadline_seconds:float=60.0):
-        """Run Request -> Plan -> Execute -> Verify -> Improve & Deliver -> Learn.
+        """Run Request -> Plan -> Execute -> Verify -> repeated Improve/Verify -> Deliver -> Learn.
 
-        The planner, worker, and independent reviewer are real registered roles.
-        Delivery is returned as a local result; this method does not publish or
-        perform other consequential external actions.
+        Planning and the selected specialist execute the task. The independent
+        code-reviewer checks the initial candidate and every improved candidate.
+        Delivery is local only; consequential external actions remain separately
+        authorized and are not performed by this lifecycle.
         """
         from .workflow import WorkflowRunner
         from .improvement import ImprovementGovernor
@@ -231,7 +232,8 @@ class Coordinator:
         self.registry.get(agent_id)
         if isinstance(max_corrections, bool) or not isinstance(max_corrections, int) or not 0 <= max_corrections <= 2:
             raise ValueError("max_corrections must be an integer between 0 and 2.")
-        if (isinstance(max_improvement_iterations, bool) or not isinstance(max_improvement_iterations, int)
+        if (isinstance(max_improvement_iterations, bool)
+                or not isinstance(max_improvement_iterations, int)
                 or not 1 <= max_improvement_iterations <= 4):
             raise ValueError("max_improvement_iterations must be an integer between 1 and 4.")
         if not isinstance(objective, str) or not objective.strip():
@@ -241,7 +243,7 @@ class Coordinator:
         request = {"agent_id": agent_id, "objective": objective, "inputs": dict(inputs or {})}
         stage_task_ids: list[str] = []
         worker_task_ids: list[str] = []
-        improvement_stage_count = 0        improvement_stage_count = 0
+        improvement_stage_count = 0
 
         def invoke_stage(stage:str, role_id:str, stage_objective:str, payload:dict[str,Any]) -> tuple[str, str]:
             result = self.invoke(role_id, stage_objective, payload,
@@ -297,6 +299,13 @@ class Coordinator:
             return {"passed": passed, "feedback": review, "task_id": task_id,
                     "verification_type": "role_based_model_review", "reviewer_agent": "code-reviewer"}
 
+        plan_context: dict[str,Any] = {}
+
+        def bound_plan(task_request:dict[str,Any], feedback:str|None):
+            nonlocal plan_context
+            plan_context = plan_stage(task_request, feedback)
+            return plan_context
+
         def improve_stage(execution:dict[str,Any], feedback:str):
             nonlocal improvement_stage_count
             improvement_stage_count += 1
@@ -311,13 +320,6 @@ class Coordinator:
             worker_task_ids.append(task_id)
             return {"text": output, "task_id": task_id, "phase": "after_improvement",
                     "improvement_iterations": improvement_stage_count}
-
-        plan_context: dict[str,Any] = {}
-
-        def bound_plan(task_request:dict[str,Any], feedback:str|None):
-            nonlocal plan_context
-            plan_context = plan_stage(task_request, feedback)
-            return plan_context
 
         def deliver_stage(improved:dict[str,Any]):
             return {"status": "delivered", "agent_id": agent_id,
@@ -342,7 +344,11 @@ class Coordinator:
                                  worker_task_ids[-1] if worker_task_ids else None,
                                  agent_id,
                                  {"status": record.get("status"),
-                                  "stage_count":        self.store.log_event("workflow_cycle_started", agent_id=agent_id,
+                                  "stage_count": len(stage_task_ids),
+                                  "improvement_iterations": record.get("improvement_iterations", 0),
+                                  "delivered": bool(record.get("delivered"))})
+
+        self.store.log_event("workflow_cycle_started", agent_id=agent_id,
                              payload={"agent_id": agent_id, "max_corrections": max_corrections,
                                       "max_improvement_iterations": max_improvement_iterations})
         runner = WorkflowRunner(plan=bound_plan, execute=execute_stage, verify=verify_stage,
