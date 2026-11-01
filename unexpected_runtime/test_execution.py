@@ -302,8 +302,8 @@ class RenderSandboxTestExecutor:
 
     async def _execute(self, criterion: dict[str, Any]) -> dict[str, Any]:
         profile_id, profile = _profile(criterion)
-        staging = _stage_profile(self.workspace_root, profile)
         sandboxes = self._client()
+        staging = _stage_profile(self.workspace_root, profile)
         sandbox_id = None
         output_parts: list[str] = []
         exit_code: int | None = None
@@ -335,9 +335,8 @@ class RenderSandboxTestExecutor:
                     if hasattr(event, "exit_code"):
                         exit_code = event.exit_code
                     elif hasattr(event, "data"):
-                        output_parts.append(str(event.data))
-                        # Keep reading the stream so the guest command reaches its
-                        # timeout, but retain a strict output budget in the host.
+                        output_parts.append(str(event.data)[-12000:])
+                        # Retain a strict output budget in the host.
                         while sum(len(part) for part in output_parts) > 12000:
                             output_parts.pop(0)
 
@@ -350,6 +349,7 @@ class RenderSandboxTestExecutor:
                 timed_out = True
                 failure = failure or "sandbox stream ended without an exit event"
         except Exception as exc:
+            sandbox_id = sandbox_id or getattr(exc, "sandbox_id", None)
             failure = f"Render Sandbox operation failed: {type(exc).__name__}"
         finally:
             if sandbox_id is not None:
@@ -365,7 +365,7 @@ class RenderSandboxTestExecutor:
         passed = (
             failure is None
             and not timed_out
-            and exit_code == 0
+            and type(exit_code) is int and exit_code == 0
             and tests_run > 0
             and summary_passed
             and cleanup_confirmed
@@ -387,7 +387,7 @@ class RenderSandboxTestExecutor:
         return {
             "passed": passed,
             "actual": actual,
-            "expected": criterion["target"],
+            "expected": criterion.get("target", "all tests in the fixed profile pass"),
             "evidence_ref": "render-sandbox://sha256/" + digest,
             "details": failure or (
                 "Isolated Render Sandbox test profile completed with network egress denied."
