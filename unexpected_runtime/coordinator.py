@@ -376,6 +376,7 @@ class Coordinator:
         def learn_stage(record:dict[str,Any]):
             feedback = json.dumps({"status": record.get("status"),
                                    "verification_history": record.get("verification_history", []),
+                                   "evidence_history": record.get("evidence_history", []),
                                    "corrections": record.get("corrections", 0),
                                    "improvements": record.get("improvements", 0),
                                    "error": record.get("error")}, ensure_ascii=False)
