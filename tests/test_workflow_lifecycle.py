@@ -1,5 +1,6 @@
 import unittest
 import tempfile
+import json
 from pathlib import Path
 
 from unexpected_runtime.workflow import WorkflowRunner
@@ -187,7 +188,7 @@ class WorkflowRunnerTests(unittest.TestCase):
 
 
 class CoordinatorLifecycleTests(unittest.TestCase):
-    def _coordinator(self, reviewer_verdicts):
+    def _coordinator(self, reviewer_verdicts, evidence_checkers=None):
         import tempfile
         from pathlib import Path
         from unexpected_runtime.coordinator import Coordinator
@@ -201,7 +202,16 @@ class CoordinatorLifecycleTests(unittest.TestCase):
             def generate(self, **kwargs):
                 agent = kwargs["agent_id"]
                 if agent == "project-manager":
-                    return "1. Define the task. 2. Produce the requested output. 3. Review it."
+                    return json.dumps({
+                        "steps": ["Produce the deliverable", "Verify the deliverable"],
+                        "acceptance_criteria": [{
+                            "id": "ARTIFACT-01",
+                            "description": "Candidate is non-empty",
+                            "kind": "artifact",
+                            "target": "non-empty text",
+                            "required": True,
+                        }],
+                    })
                 if agent == "code-reviewer":
                     verdict = reviewer_verdicts[self.review_calls]
                     self.review_calls += 1
@@ -213,7 +223,8 @@ class CoordinatorLifecycleTests(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         provider = LifecycleProvider()
         coordinator = Coordinator(manifest_path=Path(__file__).resolve().parents[1] / "agent_manifest.json",
-                                  state_dir=temp.name, provider=provider)
+                                  state_dir=temp.name, provider=provider,
+                                  evidence_checkers=evidence_checkers)
         self.addCleanup(temp.cleanup)
         self.addCleanup(coordinator.close)
         return coordinator, provider
@@ -373,6 +384,73 @@ class CoordinatorLifecycleTests(unittest.TestCase):
         self.assertEqual(len(first_result), 1)
         self.assertEqual(first_result[0][0], 200)
 
+    def test_reviewer_pass_cannot_override_missing_required_test_and_source_evidence(self):
+        coordinator, provider = self._coordinator(["PASS"])
+        criteria = [
+            {"id": "ARTIFACT-01", "description": "Deliverable exists", "kind": "artifact",
+             "target": "non-empty text", "required": True},
+            {"id": "TEST-01", "description": "Regression tests pass", "kind": "test",
+             "target": "0 failures", "required": True},
+            {"id": "SOURCE-01", "description": "Sources support factual claims", "kind": "source",
+             "target": "Every material claim is supported", "required": True},
+        ]
+
+        result = coordinator.run_lifecycle(
+            "research-scout", "Research a sample topic", {"acceptance_criteria": criteria},
+            max_corrections=0,
+        )
+
+        self.assertEqual(provider.review_calls, 1)
+        self.assertEqual(result.status, "blocked_verification")
+        self.assertFalse(result.delivered)
+        self.assertIsNone(result.delivery)
+        self.assertFalse(result.verification_history[0]["passed"])
+        self.assertFalse(result.verification_history[0]["evidence_passed"])
+        self.assertEqual(result.evidence_history[0]["failed_criteria"], ["TEST-01", "SOURCE-01"])
+
+    def test_registered_test_and_source_checkers_allow_delivery_only_for_current_candidate(self):
+        checker_calls = []
+
+        def test_checker(candidate, criterion, context):
+            checker_calls.append((criterion["id"], candidate))
+            return {"passed": True, "actual": "0 failures", "expected": criterion["target"],
+                    "evidence_ref": "ci://run/456", "details": "Trusted host test adapter result."}
+
+        def source_checker(candidate, criterion, context):
+            checker_calls.append((criterion["id"], candidate))
+            return {"passed": True, "actual": "2 sources checked", "expected": criterion["target"],
+                    "evidence_ref": "sources://verification/789", "details": "Trusted source adapter result."}
+
+        coordinator, provider = self._coordinator(
+            ["PASS", "PASS"], evidence_checkers={"test": test_checker, "source": source_checker}
+        )
+        criteria = [
+            {"id": "ARTIFACT-01", "description": "Deliverable exists", "kind": "artifact",
+             "target": "non-empty text", "required": True},
+            {"id": "TEST-01", "description": "Regression tests pass", "kind": "test",
+             "target": "0 failures", "required": True},
+            {"id": "SOURCE-01", "description": "Sources support factual claims", "kind": "source",
+             "target": "Every material claim is supported", "required": True},
+        ]
+
+        result = coordinator.run_lifecycle(
+            "research-scout", "Research a sample topic", {"acceptance_criteria": criteria},
+            max_corrections=0,
+        )
+
+        self.assertEqual(result.status, "delivered")
+        self.assertTrue(result.delivered)
+        self.assertEqual(len(result.evidence_history), 2)
+        self.assertTrue(all(report["passed"] for report in result.evidence_history))
+        self.assertNotEqual(
+            result.evidence_history[0]["candidate_sha256"],
+            result.evidence_history[1]["candidate_sha256"],
+        )
+        self.assertEqual({call[0] for call in checker_calls}, {"TEST-01", "SOURCE-01"})
+        review_prompt = provider.requests[1]["user_prompt"]
+        self.assertIn("evidence_report", review_prompt)
+        self.assertIn("SOURCE-01", review_prompt)
+
     def test_default_deterministic_mock_cannot_pass_verification_gate(self):
         import tempfile
         from pathlib import Path
@@ -389,10 +467,10 @@ class CoordinatorLifecycleTests(unittest.TestCase):
                     "research-scout", "Research a test topic", {"scope": "fixture"},
                     max_corrections=0,
                 )
-                self.assertEqual(result.status, "blocked_verification")
+                self.assertEqual(result.status, "blocked_execution")
                 self.assertFalse(result.delivered)
                 self.assertIsNone(result.delivery)
-                self.assertFalse(result.verification_history[0]["passed"])
+                self.assertEqual(result.verification_history, [])
             finally:
                 coordinator.close()
 
