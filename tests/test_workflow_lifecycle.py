@@ -71,3 +71,63 @@ class WorkflowRunnerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CoordinatorLifecycleTests(unittest.TestCase):
+    def _coordinator(self, reviewer_verdicts):
+        import tempfile
+        from pathlib import Path
+        from unexpected_runtime.coordinator import Coordinator
+
+        class LifecycleProvider:
+            name = "test-lifecycle-provider"
+            configured = True
+            retry_safe = False
+            def __init__(self):
+                self.review_calls = 0
+            def generate(self, **kwargs):
+                agent = kwargs["agent_id"]
+                if agent == "project-manager":
+                    return "1. Define the task. 2. Produce the requested output. 3. Review it."
+                if agent == "code-reviewer":
+                    verdict = reviewer_verdicts[self.review_calls]
+                    self.review_calls += 1
+                    return f"VERDICT: {verdict}\\nReview evidence for {verdict.lower()}."
+                if agent == "research-scout":
+                    return "Research deliverable, version " + str(self.review_calls)
+                return "Test response."
+
+        temp = tempfile.TemporaryDirectory()
+        provider = LifecycleProvider()
+        coordinator = Coordinator(manifest_path=Path(__file__).resolve().parents[1] / "agent_manifest.json",
+                                  state_dir=temp.name, provider=provider)
+        self.addCleanup(coordinator.close)
+        self.addCleanup(temp.cleanup)
+        return coordinator, provider
+
+    def test_native_lifecycle_routes_through_plan_execute_review_improve_and_learning(self):
+        coordinator, provider = self._coordinator(["PASS", "PASS"])
+        result = coordinator.run_lifecycle(
+            "research-scout", "Research a sample topic", {"scope": "public sources"},
+            max_corrections=0,
+        )
+        self.assertEqual(result.status, "delivered")
+        self.assertTrue(result.delivered)
+        self.assertEqual(provider.review_calls, 2)
+        self.assertEqual([item["phase"] for item in result.verification_history],
+                         ["before_improvement", "after_improvement"])
+        events = {event["event_type"] for event in coordinator.store.events(100)}
+        self.assertIn("outcome_recorded", events)
+
+    def test_native_lifecycle_blocks_delivery_when_improvement_fails_final_review(self):
+        coordinator, provider = self._coordinator(["PASS", "FAIL"])
+        result = coordinator.run_lifecycle(
+            "research-scout", "Research a sample topic", {"scope": "public sources"},
+            max_corrections=0,
+        )
+        self.assertEqual(result.status, "blocked_verification")
+        self.assertFalse(result.delivered)
+        self.assertEqual(provider.review_calls, 2)
+        self.assertIsNone(result.delivery)
+        events = {event["event_type"] for event in coordinator.store.events(100)}
+        self.assertIn("outcome_recorded", events)
