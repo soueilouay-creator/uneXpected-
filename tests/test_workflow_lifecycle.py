@@ -266,6 +266,17 @@ class CoordinatorLifecycleTests(unittest.TestCase):
             with self.assertRaisesRegex(ProviderError, "token is not configured"):
                 reviewer_provider_from_env(primary)
 
+    def test_bare_reviewer_pass_cannot_deliver_lifecycle(self):
+        coordinator, provider = self._coordinator(["PASS", "PASS"])
+        coordinator.reviewer_provider.generate = lambda **kwargs: "VERDICT: PASS"
+        result = coordinator.run_lifecycle(
+            "research-scout", "Research a sample topic", {"scope": "public sources"},
+            max_corrections=0,
+        )
+        self.assertEqual(result.status, "blocked_verification")
+        self.assertFalse(result.delivered)
+        self.assertIsNone(result.delivery)
+
     def test_native_lifecycle_routes_through_plan_execute_review_improve_and_learning(self):
         coordinator, provider = self._coordinator(["PASS", "PASS"])
         result = coordinator.run_lifecycle(
