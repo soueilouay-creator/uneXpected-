@@ -145,6 +145,30 @@ class SkillRegistryTests(unittest.TestCase):
             finally:
                 coordinator.close()
 
+
+    def test_excel_skill_resolves_only_for_mapped_existing_roles(self):
+        registry = SkillRegistry.load(ROOT / 'skill_manifest.json', ROOT)
+        for role in ('orchestrator', 'data-analyst', 'automation-architect', 'coding-engineer'):
+            selected = registry.resolve(role, 'Inspect this Excel workbook and validate spreadsheet formulas')
+            self.assertIsNotNone(selected, role)
+            self.assertEqual(selected.id, 'excel-engineering')
+        self.assertIsNone(registry.resolve('self-improvement-governor', 'Inspect this Excel workbook'))
+
+    def test_coordinator_injects_excel_skill_only_for_excel_tasks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = DeterministicMockProvider()
+            coordinator = Coordinator(manifest_path=ROOT / 'agent_manifest.json', state_dir=tmp,
+                                       provider=provider, skill_manifest_path=ROOT / 'skill_manifest.json')
+            try:
+                coordinator.invoke('data-analyst', 'Inspect this Excel workbook and identify data-quality issues')
+                self.assertIn('Excel Engineering Skill', provider.requests[-1]['system_prompt'])
+                coordinator.invoke('data-analyst', 'Summarize this market research brief')
+                self.assertNotIn('Excel Engineering Skill', provider.requests[-1]['system_prompt'])
+                events = coordinator.store.events(100)
+                self.assertIn('excel-engineering', {e['payload'].get('skill_id') for e in events if e['event_type'] == 'skill_context_attached'})
+            finally:
+                coordinator.close()
+
     def test_skill_module_is_visible_to_runtime(self):
         self.assertIsNotNone(importlib.util.find_spec('unexpected_runtime.skills'))
 
