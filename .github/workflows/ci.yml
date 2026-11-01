@@ -12,11 +12,29 @@ permissions:
 jobs:
   runtime-tests:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: unexpected_test
+          POSTGRES_PASSWORD: unexpected_test
+          POSTGRES_DB: unexpected_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U unexpected_test -d unexpected_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      UNEXPECTED_TEST_POSTGRES_URL: postgresql://unexpected_test:unexpected_test@localhost:5432/unexpected_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install runtime dependencies
+        run: python -m pip install -r requirements.txt
       - name: Compile runtime
         run: python -m compileall -q unexpected_runtime trading_engine
       - name: Build package integrity fixture
@@ -50,7 +68,7 @@ jobs:
               'workflow_profiles/trading-ops.md', 'tests/test_structure.py',
               'tests/test_trading_package.py', 'tests/test_trading_engine.py',
               'trading/README.md', 'trading/config/paper.example.json',
-              'trading_engine/__init__.py', 'trading_engine/models.py', 'trading_engine/data.py',
+              'requirements.txt', 'trading_engine/__init__.py', 'trading_engine/models.py', 'trading_engine/data.py', 'trading_engine/postgres_portfolio.py',
               'trading_engine/risk.py', 'trading_engine/scanner.py', 'trading_engine/backtest.py',
               'trading_engine/portfolio.py', 'trading_engine/service.py',
               'unexpected_runtime/cli.py', 'unexpected_runtime/http_api.py',

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
+import uuid
 from decimal import Decimal
 from pathlib import Path
 from threading import Thread
@@ -14,6 +16,7 @@ from trading_engine import (
     RiskRequest, TradingService, evaluate_risk, run_backtest,
 )
 from trading_engine.scanner import scan_batch
+from trading_engine.postgres_portfolio import PostgresPaperPortfolio
 from unexpected_runtime.http_api import create_server
 
 
@@ -157,6 +160,81 @@ class PaperPortfolioTests(unittest.TestCase):
             self.assertEqual(restored.snapshot("demo")["positions"]["DEMO"]["quantity"], 2)
             restored.close()
 
+
+
+@unittest.skipUnless(os.getenv("UNEXPECTED_TEST_POSTGRES_URL"), "Postgres integration service not configured")
+class PostgresPaperPortfolioTests(unittest.TestCase):
+    def setUp(self):
+        self.url = os.environ["UNEXPECTED_TEST_POSTGRES_URL"]
+        self.schema = "paper_test_" + uuid.uuid4().hex
+        self.store = PostgresPaperPortfolio(self.url, schema=self.schema)
+
+    def tearDown(self):
+        try:
+            self.store.close()
+        finally:
+            import psycopg
+            with psycopg.connect(self.url, autocommit=True) as connection:
+                connection.execute(f'DROP SCHEMA IF EXISTS "{self.schema}" CASCADE')
+
+    def test_postgres_ledger_persists_idempotently_and_calculates_realized_pnl(self):
+        self.store.open_account("demo", "2000")
+        self.store.buy("demo", "DEMO", 10, "100", "1", "postgres-buy")
+        duplicate = self.store.buy("demo", "DEMO", 10, "100", "1", "postgres-buy")
+        self.assertTrue(duplicate["duplicate"])
+        self.store.sell("demo", "DEMO", 5, "110", "1", "postgres-sell")
+        snapshot = self.store.snapshot("demo")
+        self.assertEqual(snapshot["realized_pnl_usd"], Decimal("48.5"))
+        self.assertEqual(snapshot["positions"]["DEMO"]["quantity"], 5)
+        entries = self.store.journal("demo")
+        self.assertEqual(len(entries), 2)
+        self.assertTrue(all(row["record_type"] == "SIMULATED_FILL" for row in entries))
+        self.store.close()
+        self.store = PostgresPaperPortfolio(self.url, schema=self.schema)
+        self.assertEqual(self.store.snapshot("demo"), snapshot)
+        self.assertEqual(self.store.integrity_check(), "ok")
+
+    def test_postgres_ledger_rejects_short_sells_and_mutation(self):
+        self.store.open_account("demo", "1000")
+        with self.assertRaisesRegex(ValueError, "short position"):
+            self.store.sell("demo", "DEMO", 1, "100", "0", "postgres-short")
+        self.store.buy("demo", "DEMO", 2, "100", "0", "postgres-buy-lock")
+        with self.assertRaises(Exception):
+            self.store.connection.execute(
+                "UPDATE paper_orders SET quantity=quantity+1 WHERE idempotency_key=%s",
+                ("postgres-buy-lock",),
+            )
+        with self.assertRaises(Exception):
+            self.store.connection.execute(
+                "DELETE FROM paper_orders WHERE idempotency_key=%s",
+                ("postgres-buy-lock",),
+            )
+
+
+@unittest.skipUnless(os.getenv("UNEXPECTED_TEST_POSTGRES_URL"), "Postgres integration service not configured")
+class PostgresServiceGateTests(unittest.TestCase):
+    def test_journal_writes_require_database_durable_mode_and_explicit_flag(self):
+        from unittest.mock import patch
+        settings = {
+            "UNEXPECTED_TRADING_DATA_PROVIDER": "fixture",
+            "UNEXPECTED_TRADING_DATABASE_URL": os.environ["UNEXPECTED_TEST_POSTGRES_URL"],
+            "UNEXPECTED_TRADING_STORAGE_MODE": "ephemeral",
+            "UNEXPECTED_TRADING_ALLOW_JOURNAL_WRITES": "true",
+        }
+        with patch.dict(os.environ, settings, clear=False):
+            service = TradingService.from_env()
+            try:
+                self.assertFalse(service.health()["journal_writes_enabled"])
+            finally:
+                service.close()
+        settings["UNEXPECTED_TRADING_STORAGE_MODE"] = "durable"
+        settings["UNEXPECTED_TRADING_ALLOW_JOURNAL_WRITES"] = "false"
+        with patch.dict(os.environ, settings, clear=False):
+            service = TradingService.from_env()
+            try:
+                self.assertFalse(service.health()["journal_writes_enabled"])
+            finally:
+                service.close()
 
 class RuntimeTradingApiTests(unittest.TestCase):
     def _request(self, base, path, token, payload=None):
