@@ -71,4 +71,6 @@ The built-in `artifact` checker only proves that the candidate is non-empty and 
 
 Checkers are trusted host code and must enforce their own least-privilege scope, timeouts, bounded output and provenance rules. Do not pass user credentials in candidate text or evidence context. Do not run untrusted candidate commands directly in the runtime process. The current local scaffold and HTTP API do not automatically configure source retrieval, a test sandbox or domain-specific measurement adapters. A successful mock CI workflow tests the evidence engine; it does not prove a hosted provider or host checker is connected.
 
+The authenticated `GET /v1/status` response lists configured `evidence_checkers` so operators can see which evidence kinds are actually executable. By default, only `artifact` is available; absent test/source/measurement adapters are not represented as active.
+
 The normal invoke endpoint is unchanged. The authenticated lifecycle endpoint and CLI already accept an `inputs` object, so callers can pass `acceptance_criteria` there without widening the HTTP endpoint's top-level fields.
