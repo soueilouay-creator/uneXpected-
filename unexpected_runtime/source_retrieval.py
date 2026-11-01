@@ -104,7 +104,10 @@ def _read_response_bounded(connection: http.client.HTTPSConnection, response: ht
             raise SourceRetrievalError("Source response exceeded its overall deadline.")
         if connection.sock is not None:
             connection.sock.settimeout(remaining)
-        chunk = response.read(min(8192, max_bytes + 1 - len(body)))
+        # HTTPResponse.read() can perform multiple socket reads before it returns.
+        # read1() performs at most one underlying read, so the next iteration
+        # recalculates the absolute deadline after each response-body chunk.
+        chunk = response.read1(min(8192, max_bytes + 1 - len(body)))
         if not chunk:
             return bytes(body)
         body.extend(chunk)
