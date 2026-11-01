@@ -36,6 +36,7 @@ TEST_PROFILES: dict[str, dict[str, Any]] = {
             "-v",
         ),
         "guest_timeout_seconds": 120,
+        "trusted_files": {"tests/test_evidence_engine.py": "82ad386c633e5c8854d5b1f0824dcd09b5cc5a89a0d78e3c10acf668c56c0e13"},
     }
 }
 
@@ -75,6 +76,13 @@ def _stage_profile(workspace_root: Path, profile: dict[str, Any]) -> tempfile.Te
                 ) from None
             if not resolved.is_file():
                 raise TestExecutionConfigurationError("Fixed test profile files must be regular non-symlink files.")
+            expected_digest = profile.get("trusted_files", {}).get(relative)
+            if expected_digest is not None:
+                actual_digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
+                if actual_digest != expected_digest:
+                    raise TestExecutionConfigurationError(
+                        "A pinned test profile file changed; review and update the trusted profile digest before execution."
+                    )
             destination = stage_root / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.parent.chmod(0o755)
@@ -122,8 +130,14 @@ class DockerTestExecutor:
         timeout_seconds: int = 180,
         docker_binary: str | None = None,
     ) -> None:
-        if not isinstance(image_digest, str) or not _IMAGE_DIGEST.fullmatch(image_digest):
-            raise TestExecutionConfigurationError("Docker test image must be pinned by an immutable SHA-256 digest.")
+        if (
+            not isinstance(image_digest, str)
+            or not _IMAGE_DIGEST.fullmatch(image_digest)
+            or image_digest.removeprefix("docker.io/library/").split("@", 1)[0].split(":", 1)[0] != "python"
+        ):
+            raise TestExecutionConfigurationError(
+                "Docker test image must be the official Python image pinned by an immutable SHA-256 digest."
+            )
         if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, int) or not 30 <= timeout_seconds <= 600:
             raise TestExecutionConfigurationError("Docker test timeout must be between 30 and 600 seconds.")
         resolved_binary = docker_binary or shutil.which("docker")
@@ -206,6 +220,7 @@ class DockerTestExecutor:
                     "capabilities": "all_dropped",
                     "no_new_privileges": True,
                     "memory_limit": "256m",
+                    "test_profile_sha256": profile["trusted_files"]["tests/test_evidence_engine.py"],
                     "cpu_limit": 1,
                     "pids_limit": 64,
                 },
@@ -362,6 +377,7 @@ class RenderSandboxTestExecutor:
             "tests_run": tests_run,
             "status": "completed" if not timed_out and failure is None else "failed",
             "network_policy": "deny-all",
+            "test_profile_sha256": profile["trusted_files"]["tests/test_evidence_engine.py"],
             "cleanup_confirmed": cleanup_confirmed,
             "output_tail": output[-4000:],
         }
