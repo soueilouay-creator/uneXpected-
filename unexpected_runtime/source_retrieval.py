@@ -169,7 +169,19 @@ class _VisibleHTMLText(html.parser.HTMLParser):
 
 def _select_excerpt(text: str, max_chars: int) -> str:
     """Prefer a bounded passage near test-discovery material when present."""
-    match = re.search(r"(?i)(?:unittest supports simple test discovery|when executed without arguments.{0,100}discovery|test\s+discovery|discovery|discovering|find.{0,80}tests)", text)
+    patterns = (
+        r"unittest supports simple test discovery",
+        r"when executed without arguments.{0,100}discovery",
+        r"test\s+discovery",
+        r"discovery",
+        r"discovering",
+        r"find.{0,80}tests",
+    )
+    match = None
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match is not None:
+            break
     if match is None or len(text) <= max_chars:
         return text[:max_chars]
     start = max(0, match.start() - max_chars // 3)
