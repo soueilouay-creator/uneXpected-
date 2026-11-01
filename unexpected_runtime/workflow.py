@@ -59,8 +59,8 @@ class WorkflowRunner:
                                                     'task_id': verification.get('task_id'), 'verification_type': verification.get('verification_type'),
                                                     'reviewer_agent': verification.get('reviewer_agent')})
                 if verification['passed']:
-                    result.verified_output = self.improve_stage(result.execution, feedback)
-                    final_verification = self.verify_stage(result.verified_output, result.plan)
+                    candidate_output = self.improve_stage(result.execution, feedback)
+                    final_verification = self.verify_stage(candidate_output, result.plan)
                     if not isinstance(final_verification, dict) or type(final_verification.get('passed')) is not bool:
                         raise ValueError('verify must return a dictionary with a boolean passed field.')
                     final_feedback = str(final_verification.get('feedback') or '')
@@ -72,6 +72,7 @@ class WorkflowRunner:
                                                         'verification_type': final_verification.get('verification_type'),
                                                         'reviewer_agent': final_verification.get('reviewer_agent')})
                     if final_verification['passed']:
+                        result.verified_output = candidate_output
                         result.delivery = self.deliver_stage(result.verified_output)
                         result.status, result.delivered = 'delivered', True
                         break
