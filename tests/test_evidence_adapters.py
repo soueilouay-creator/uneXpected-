@@ -42,6 +42,19 @@ class EvidenceAdapterConfigurationTests(unittest.TestCase):
         self.assertNotIn("test", checkers)
         self.assertTrue(status["test_backend"].startswith("blocked: TestExecutionConfigurationError"))
 
+    def test_render_sandbox_is_blocked_when_sdk_is_missing(self):
+        env = {
+            "UNEXPECTED_TEST_EXECUTOR": "render-sandbox",
+            "RENDER_API_KEY": "r" * 48,
+            "RENDER_WORKSPACE_ID": "test-workspace",
+        }
+        with patch.dict("os.environ", env, clear=True), \\
+             patch("importlib.util.find_spec", return_value=None):
+            checkers, status = evidence_adapters_from_env()
+        self.assertNotIn("test", checkers)
+        self.assertEqual(status["test_backend"],
+                         "blocked: TestExecutionConfigurationError")
+
     def test_invalid_source_allowlist_is_blocked_not_reported_enabled(self):
         env = {"UNEXPECTED_SOURCE_ALLOWED_DOMAINS": "localhost"}
         with patch.dict("os.environ", env, clear=True):
