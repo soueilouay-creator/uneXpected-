@@ -160,7 +160,7 @@ class RuntimeTradingApiTests(unittest.TestCase):
                 status, _ = self._request(base, "/v1/trading/health", "")
                 self.assertEqual(status, 401)
                 status, health = self._request(base, "/v1/trading/health", token)
-                self.assertEqual(status, 200)
+                self.assertEqual(status, 200, health)
                 self.assertTrue(health["broker_connection"] is False)
                 status, scan = self._request(base, "/v1/trading/scan", token, {"symbols": ["DEMO"]})
                 self.assertEqual(status, 200)
