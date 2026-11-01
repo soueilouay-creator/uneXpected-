@@ -125,6 +125,18 @@ class TrustedSourceRetrieverTests(unittest.TestCase):
             checker("candidate", criterion, {"source_refs": ["https://docs.python.org/1"] * 6})
         self.assertEqual(calls, [])
 
+    def test_long_source_excerpt_preserves_context_near_test_discovery(self):
+        from unexpected_runtime.source_retrieval import _select_excerpt
+
+        text = ("General documentation background. " * 200
+                + "The unittest framework supports test discovery and finds matching test modules. "
+                + "Additional reference material. " * 200)
+
+        excerpt = _select_excerpt(text, 1200)
+
+        self.assertLessEqual(len(excerpt), 1200)
+        self.assertIn("test discovery", excerpt.lower())
+
     def test_environment_factory_is_disabled_without_an_allowlist(self):
         with patch.dict("os.environ", {}, clear=True):
             self.assertIsNone(source_retriever_from_env())
