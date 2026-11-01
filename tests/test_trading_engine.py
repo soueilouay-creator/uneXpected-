@@ -152,6 +152,10 @@ class RuntimeTradingApiTests(unittest.TestCase):
         token = "t" * 40
         with tempfile.TemporaryDirectory() as tmp:
             service = TradingService(FixtureProvider(), Path(tmp) / "paper.sqlite3", journal_writes=True)
+            self.assertTrue(service.health()["ok"])
+            from unexpected_runtime.trading_api import dispatch_trading_get
+            direct_code, direct_payload = dispatch_trading_get("/v1/trading/health", "", service)
+            self.assertEqual(direct_code, 200, direct_payload)
             server = create_server(coordinator=object(), trading_service=service, api_token=token)
             thread = Thread(target=server.serve_forever, daemon=True)
             thread.start()
