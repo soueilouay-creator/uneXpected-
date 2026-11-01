@@ -263,7 +263,11 @@ class Coordinator:
             return {"request": task_request, "text": plan_text, "task_id": task_id,
                     "correction_feedback": feedback or ""}
 
+        improvement_round = 0
+
         def execute_stage(plan:dict[str,Any]):
+            nonlocal improvement_round
+            improvement_round = 0
             output, task_id = invoke_stage(
                 "execute", agent_id,
                 "Execute the user's request using the supplied plan. Produce the requested work, "
@@ -296,6 +300,8 @@ class Coordinator:
                     "verification_type": "role_based_model_review", "reviewer_agent": "code-reviewer"}
 
         def improve_stage(execution:dict[str,Any], feedback:str):
+            nonlocal improvement_round
+            improvement_round += 1
             output, task_id = invoke_stage(
                 "improve", agent_id,
                 "Improve the current candidate using the latest independent reviewer feedback. "
@@ -306,7 +312,8 @@ class Coordinator:
                  "candidate": execution.get("text", ""), "review_feedback": feedback},
             )
             worker_task_ids.append(task_id)
-            return {"text": output, "task_id": task_id, "phase": "after_improvement"}
+            return {"text": output, "task_id": task_id,
+                    "phase": "after_improvement" if improvement_round == 1 else f"after_improvement_{improvement_round}"}
 
         plan_context: dict[str,Any] = {}
 
