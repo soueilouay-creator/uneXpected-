@@ -145,6 +145,7 @@ class RenderSandboxTestExecutorTests(unittest.TestCase):
         create = next(call for call in sandbox_api.calls if call[0] == "create")
         self.assertEqual(create[1]["network_policy"], "deny-all")
         self.assertNotIn("env", create[1])
+        self.assertIn("python3 -m unittest discover", next(call[2] for call in sandbox_api.calls if call[0] == "exec"))
         self.assertEqual([call[0] for call in sandbox_api.calls],
                          ["create", "wait", "copy", "exec", "terminate"])
         copied = next(call[2] for call in sandbox_api.calls if call[0] == "copy")
