@@ -205,19 +205,35 @@ class EvidenceEngine:
             ),
         }
 
-    def is_current(self, report: Any, candidate: Any) -> bool:
-        if not isinstance(report, dict):
+    @staticmethod
+    def is_current(report: Any, candidate: Any) -> bool:
+        if not isinstance(report, dict) or report.get("schema_version") != "1.0":
+            return False
+        if report.get("passed") is not True:
             return False
         try:
-            fingerprint = self.fingerprint(candidate)
+            fingerprint = EvidenceEngine.fingerprint(candidate)
         except EvidenceContractError:
             return False
         if report.get("candidate_sha256") != fingerprint:
             return False
         evidence = report.get("evidence")
-        if not isinstance(evidence, list):
+        if not isinstance(evidence, list) or not evidence:
+            return False
+        required_total = report.get("required_total")
+        required_passed = report.get("required_passed")
+        if (isinstance(required_total, bool) or not isinstance(required_total, int)
+                or required_total < 1 or required_passed != required_total
+                or report.get("failed_criteria") != []):
+            return False
+        required_records = [item for item in evidence if isinstance(item, dict) and item.get("required") is True]
+        if len(required_records) != required_total:
             return False
         return all(
-            isinstance(item, dict) and item.get("candidate_sha256") == fingerprint
-            for item in evidence
+            item.get("status") == "passed"
+            and item.get("candidate_sha256") == fingerprint
+            and isinstance(item.get("evidence_ref"), str)
+            and bool(item.get("evidence_ref").strip())
+            and item.get("actual") is not None
+            for item in required_records
         )
