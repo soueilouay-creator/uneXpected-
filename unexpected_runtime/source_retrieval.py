@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import html.parser
+import io
 import http.client
 import ipaddress
 import json
@@ -9,6 +10,7 @@ import os
 import re
 import socket
 import ssl
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 import time
@@ -73,12 +75,129 @@ def _resolve_public_addresses(host: str, port: int) -> list[str]:
     return addresses
 
 
+class _DeadlineSocketRaw(io.RawIOBase):
+    """Socket read adapter that recalculates the absolute deadline per recv."""
+
+    def __init__(self, owner: "_DeadlineSocket") -> None:
+        super().__init__()
+        self._owner = owner
+        self._released = False
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, buffer: Any) -> int:
+        if self.closed:
+            raise ValueError("I/O operation on closed source socket stream.")
+        if not buffer:
+            return 0
+        return self._owner._recv_into(buffer)
+
+    def close(self) -> None:
+        if not self.closed:
+            try:
+                super().close()
+            finally:
+                if not self._released:
+                    self._released = True
+                    self._owner._release_file()
+
+
+class _DeadlineSocket:
+    """Preserve socket-like behavior while bounding every blocking I/O operation."""
+
+    def __init__(
+        self,
+        sock: Any,
+        deadline: float,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._sock = sock
+        self._deadline = deadline
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._file_refs = 0
+        self._owner_closed = False
+        self._socket_closed = False
+
+    def _remaining(self) -> float:
+        remaining = self._deadline - self._clock()
+        if remaining <= 0:
+            raise SourceRetrievalError("Source response exceeded its overall deadline.")
+        return remaining
+
+    def settimeout(self, timeout: float | None) -> None:
+        remaining = self._remaining()
+        effective = remaining if timeout is None else min(max(float(timeout), 0.0), remaining)
+        self._sock.settimeout(effective)
+
+    def sendall(self, data: bytes) -> None:
+        self.settimeout(None)
+        try:
+            self._sock.sendall(data)
+        except (socket.timeout, TimeoutError):
+            raise SourceRetrievalError("Source request exceeded its overall deadline.") from None
+
+    def _recv_into(self, buffer: Any) -> int:
+        self.settimeout(None)
+        try:
+            return self._sock.recv_into(buffer)
+        except (socket.timeout, TimeoutError):
+            raise SourceRetrievalError("Source response exceeded its overall deadline.") from None
+
+    def makefile(
+        self,
+        mode: str = "r",
+        buffering: int | None = None,
+        *,
+        encoding: str | None = None,
+        errors: str | None = None,
+        newline: str | None = None,
+    ) -> Any:
+        if mode != "rb":
+            raise ValueError("Source HTTPS response streams must be opened in binary read mode.")
+        with self._lock:
+            if self._owner_closed or self._socket_closed:
+                raise OSError("Source socket is closed.")
+            self._file_refs += 1
+        raw = _DeadlineSocketRaw(self)
+        if buffering == 0:
+            return raw
+        buffer_size = io.DEFAULT_BUFFER_SIZE if buffering is None or buffering < 0 else buffering
+        return io.BufferedReader(raw, buffer_size=buffer_size)
+
+    def _release_file(self) -> None:
+        close_socket = False
+        with self._lock:
+            self._file_refs = max(0, self._file_refs - 1)
+            if self._owner_closed and self._file_refs == 0 and not self._socket_closed:
+                self._socket_closed = True
+                close_socket = True
+        if close_socket:
+            self._sock.close()
+
+    def close(self) -> None:
+        close_socket = False
+        with self._lock:
+            self._owner_closed = True
+            if self._file_refs == 0 and not self._socket_closed:
+                self._socket_closed = True
+                close_socket = True
+        if close_socket:
+            self._sock.close()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._sock, name)
+
+
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
     """TLS connection pinned to an already validated public IP address."""
 
-    def __init__(self, host: str, address: str, timeout_seconds: float) -> None:
+    def __init__(self, host: str, address: str, timeout_seconds: float, *, deadline: float) -> None:
         super().__init__(host, port=443, timeout=timeout_seconds, context=ssl.create_default_context())
         self._pinned_address = address
+        self._deadline = deadline
 
     def connect(self) -> None:
         raw = socket.create_connection(
@@ -87,7 +206,8 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
             self.source_address,
         )
         try:
-            self.sock = self._context.wrap_socket(raw, server_hostname=self.host)
+            tls_socket = self._context.wrap_socket(raw, server_hostname=self.host)
+            self.sock = _DeadlineSocket(tls_socket, self._deadline)
         except BaseException:
             raw.close()
             raise
@@ -123,7 +243,8 @@ def _fetch_pinned_https(
     max_bytes: int,
 ) -> tuple[int, dict[str, str], bytes]:
     deadline = time.monotonic() + timeout_seconds
-    connection = _PinnedHTTPSConnection(host, address, timeout_seconds)
+    connection = _PinnedHTTPSConnection(host, address, timeout_seconds, deadline=deadline)
+    response: http.client.HTTPResponse | None = None
     try:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -162,6 +283,8 @@ def _fetch_pinned_https(
     except (OSError, http.client.HTTPException, ssl.SSLError, TimeoutError):
         raise SourceRetrievalError("Source HTTPS request failed.") from None
     finally:
+        if response is not None:
+            response.close()
         connection.close()
 
 
