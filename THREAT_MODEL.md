@@ -1,4 +1,8 @@
-# Threat Model and Safety Boundaries — uneXpected v7.3.1
+# Threat Model and Safety Boundaries — uneXpected v7.3.2
+
+## Excel workbook boundary (v7.3.2)
+
+XLSX files are untrusted data. Upload and artifact routes require the runtime bearer token, cap payloads and transfer count, validate ZIP signatures and identifiers, bind each uploaded ID to the current runtime process, and expire records after 30 minutes. Workbook content is forwarded only to the configured Excel gateway. Provider secrets remain in the Node gateway; runtime tokens are never inserted into prompts or logs. Server-side VBA/macros, DDE and external connections are not executed. Temporary file references are process-local and not durable across restarts or replicas.
 
 ## Assets
 User data and files, environment secrets, agent instructions, local SQLite state, shared knowledge, provider requests, generated artifacts, external account actions.

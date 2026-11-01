@@ -1,4 +1,4 @@
-# Architecture — uneXpected v7.3.1
+# Architecture — uneXpected v7.3.2
 
 ```mermaid
 flowchart TD
@@ -9,6 +9,8 @@ flowchart TD
   W --> PA[Provider abstraction]
   PA --> M[Deterministic mock provider]
   PA --> O[Optional OpenAI-compatible adapter]
+  PA --> X[Authenticated AI Studio Excel gateway]
+  X --> XF[Bounded XLSX attachments and verified artifact handoff]
   W --> A[38 registered agent specs]
   A --> AM[Isolated per-agent memory namespace]
   A --> SK[Reviewed shared knowledge + provenance]
@@ -37,3 +39,8 @@ SQLite stores queue state, events, idempotency results, isolated agent memory, p
 The `ApprovalVerifier` protocol is `verify(approval: ApprovalContext, permission: str, action_digest: str) -> bool`. The v7.3.1 package includes `GitHubPullRequestApprovalVerifier` and `approval_verifier_from_env()`, which checks GitHub-authenticated reviewer identity, current repository admin permission, the exact reviewed commit, action digest and one-use ledger. It remains disabled until the host supplies a read-only token, exact repository allowlist, trusted reviewers and durable ledger storage. With no valid verifier, privileged direct invocation, shared-knowledge approval, protected promotion and rollback fail closed. Privileged durable queue requests remain denied because this release has no durable approval-reference revalidation path.
 
 The capability registry stores provenance and lifecycle metadata. A transition is not an external installation or execution; `enabled` requires a registered adapter verifier. No TAAFT or MCP adapter is shipped in this Python runtime.
+
+
+## Excel tool boundary (v7.3.2)
+
+The Python coordinator invokes the existing authenticated AI Studio gateway through `AIStudioGatewayProvider`. When the provider supports Excel, raw XLSX uploads are proxied to the Node `/excel/upload` route, explicit temporary file IDs are passed to `/orchestrate`, and generated artifact metadata is retained in `TaskResult.output_artifacts`. The Python API registers those artifact IDs in its own process-local allowlist before exposing the authenticated `/v1/excel/artifacts/{id}` download proxy. It never accepts an arbitrary remote gateway artifact ID for download. The Excel workflow is a reusable skill mapped to existing canonical roles; it does not add an agent process or privilege.

@@ -1,4 +1,4 @@
-# Install uneXpected v7.3.1 (local scaffold)
+# Install uneXpected v7.3.2 (local scaffold)
 
 ## Requirements
 - Python 3.10+ (standard library only); no upstream app dependencies are installed.
@@ -9,7 +9,7 @@
 1. Extract the ZIP to a dedicated directory; keep `/uneXpected/` legacy files unchanged.
 2. Create a private environment configuration based on `.env.example` if using a real provider. The default is `UNEXPECTED_PROVIDER=mock`.
 3. From the package root run `python -m unexpected_runtime.cli status`, `python -m unexpected_runtime.cli list`, then `python -m unexpected_runtime.cli run orchestrator --objective 'Plan a safe test task'` and `python -m unexpected_runtime.cli eval`.
-4. Keep `uneXpected_v7.3.1_governed_runtime.zip` beside the extracted `uneXpected_v7/` directory (or set `UNEXPECTED_PACKAGE_ZIP` to its path), then run `python -m unittest discover -s tests -v`.
+4. Keep `uneXpected_v7.3.2_governed_runtime.zip` beside the extracted `uneXpected_v7/` directory (or set `UNEXPECTED_PACKAGE_ZIP` to its path), then run `python -m unittest discover -s tests -v`.
 5. Review `TEST_RESULTS.md`, `CAPABILITY_MATRIX.md` and `THREAT_MODEL.md`.
 
 ## State
