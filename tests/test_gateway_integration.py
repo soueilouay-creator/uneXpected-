@@ -100,6 +100,8 @@ class APITests(unittest.TestCase):
         code, status = self.request("GET","/v1/status")
         self.assertEqual(code,200)
         self.assertEqual(status["evidence_checkers"], ["artifact"])
+        self.assertEqual(status["test_backend"], "not configured")
+        self.assertEqual(status["source_backend"], "not configured")
 
     def test_non_ascii_bearer_header_is_rejected_without_server_error(self):
         conn=http.client.HTTPConnection(self.host,self.port,timeout=8)
