@@ -290,7 +290,8 @@ class Coordinator:
                 review = ("Reviewer returned no valid verdict line; verification failed closed. "
                           "Raw reviewer response: " + review)
                 passed = False
-            return {"passed": passed, "feedback": review, "task_id": task_id}
+            return {"passed": passed, "feedback": review, "task_id": task_id,
+                    "verification_type": "role_based_model_review", "reviewer_agent": "code-reviewer"}
 
         def improve_stage(execution:dict[str,Any], feedback:str):
             output, task_id = invoke_stage(
@@ -314,7 +315,9 @@ class Coordinator:
         def deliver_stage(improved:dict[str,Any]):
             return {"status": "delivered", "agent_id": agent_id,
                     "task_id": improved.get("task_id"), "output": improved.get("text", ""),
-                    "verification": "passed_before_and_after_improvement"}
+                    "verification": "passed_before_and_after_improvement",
+                    "verification_type": "role_based_model_review",
+                    "reviewer_agent": "code-reviewer"}
 
         def learn_stage(record:dict[str,Any]):
             feedback = json.dumps({"status": record.get("status"),
