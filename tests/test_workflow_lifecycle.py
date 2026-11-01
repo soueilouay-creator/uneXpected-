@@ -199,7 +199,9 @@ class CoordinatorLifecycleTests(unittest.TestCase):
             retry_safe = False
             def __init__(self):
                 self.review_calls = 0
+                self.requests = []
             def generate(self, **kwargs):
+                self.requests.append(dict(kwargs))
                 agent = kwargs["agent_id"]
                 if agent == "project-manager":
                     return json.dumps({
