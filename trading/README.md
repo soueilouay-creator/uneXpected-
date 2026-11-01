@@ -14,9 +14,9 @@ This isolated project branch adds a native paper-trading engine behind uneXpecte
 
 ## Safety and operating boundaries
 
-The engine is strictly `PAPER_ONLY`. It has no broker connector, no live order endpoint, and no ability to place, modify, cancel or close a real order. No options, crypto, margin, leverage, short selling, background polling or unattended alerts are enabled.
+The engine is strictly `PAPER_ONLY`. There is no live or paper broker connector; the paper functionality is a local simulated ledger with no broker link. There is no live order endpoint and no ability to place, modify, cancel or close a real order. No options, crypto, margin, leverage, short selling, background polling or unattended alerts are enabled.
 
-The upstream Python executables are inventoried by Git blob SHA but are **not copied, installed, executed or exposed as tools**. The native engine here is a separately implemented package, not those upstream scripts.
+The upstream Python executables are inventoried by Git blob SHA but are **not copied, installed, executed or exposed as tools**. This is not a Python execution engine for those upstream scripts; the native engine here is a separately implemented package.
 
 Paper journal writes are disabled by default. The API returns a fail-closed error until an operator has configured a genuinely durable database path and explicitly set both storage flags. The currently known Render Free test service has ephemeral storage; keep journal writes disabled there. Do not treat a local or CI test database as hosted persistence.
 
