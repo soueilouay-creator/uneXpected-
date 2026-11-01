@@ -105,8 +105,12 @@ def reviewer_provider_from_env(primary_provider):
             endpoint, token, mode=mode,
             default_timeout=float(os.getenv("UNEXPECTED_REVIEW_GATEWAY_TIMEOUT_SECONDS", "200")),
         )
+        if not reviewer.configured:
+            raise ProviderError("Independent reviewer gateway token is not configured in the runtime host.")
         same_gateway = isinstance(primary_provider, AIStudioGatewayProvider) and primary_provider.endpoint == reviewer.endpoint
-        if same_gateway and (primary_provider.mode == "both" or primary_provider.mode == reviewer.mode):
+        if (primary_provider.mode == "both" or primary_provider.mode == reviewer.mode) and (
+            same_gateway or isinstance(primary_provider, AIStudioGatewayProvider)
+        ):
             raise ProviderError("Reviewer route must use a different live model provider than the primary route.")
         reviewer.independence_label = f"{reviewer.name}/{reviewer.mode}"
         return reviewer
