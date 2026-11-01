@@ -8,6 +8,7 @@ from .backtest import BacktestConfig, run_backtest
 from .data import AlpacaMarketDataProvider, FixtureProvider
 from .models import as_decimal, validate_symbol
 from .portfolio import PaperPortfolio
+from .postgres_portfolio import PostgresPaperPortfolio
 from .risk import RiskRequest, evaluate_risk
 from .scanner import scan_batch
 
@@ -19,11 +20,15 @@ class JournalDisabledError(RuntimeError):
 class TradingService:
     """Typed service boundary used by the runtime API and CLI."""
 
-    def __init__(self, provider=None, database_path=":memory:", journal_writes=False):
+    def __init__(self, provider=None, database_path=":memory:", journal_writes=False, database_url=None):
         self.provider = provider or FixtureProvider()
-        self.portfolio_store = PaperPortfolio(database_path)
-        self.journal_writes = bool(journal_writes)
         self.database_path = str(database_path)
+        self.database_backend = "postgresql" if database_url else "sqlite"
+        self.portfolio_store = (
+            PostgresPaperPortfolio(database_url) if database_url
+            else PaperPortfolio(database_path)
+        )
+        self.journal_writes = bool(journal_writes)
         self.storage_mode = "durable" if self.journal_writes else "read-only"
 
     @classmethod
@@ -36,11 +41,12 @@ class TradingService:
         else:
             raise ValueError("UNEXPECTED_TRADING_DATA_PROVIDER must be fixture or alpaca")
         database_path = os.getenv("UNEXPECTED_TRADING_DB_PATH", "./state/trading.sqlite3")
+        database_url = (os.getenv("UNEXPECTED_TRADING_DATABASE_URL") or os.getenv("DATABASE_URL") or "").strip() or None
         storage_mode = os.getenv("UNEXPECTED_TRADING_STORAGE_MODE", "ephemeral").strip().lower()
         writes_requested = os.getenv("UNEXPECTED_TRADING_ALLOW_JOURNAL_WRITES", "false").strip().lower() == "true"
         # This is an explicit operator attestation after a persistent volume has been configured.
         journal_writes = writes_requested and storage_mode == "durable"
-        service = cls(provider=provider, database_path=database_path, journal_writes=journal_writes)
+        service = cls(provider=provider, database_path=database_path, journal_writes=journal_writes, database_url=database_url)
         service.storage_mode = storage_mode
         return service
 
@@ -53,6 +59,7 @@ class TradingService:
             "fixture_data_is_synthetic": self.provider.name == "fixture",
             "storage_mode": self.storage_mode,
             "journal_writes_enabled": self.journal_writes,
+            "database_backend": self.database_backend,
             "database_integrity": self.portfolio_store.integrity_check(),
             "broker_connection": False,
             "live_order_execution": False,
