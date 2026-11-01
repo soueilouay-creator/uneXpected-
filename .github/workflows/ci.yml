@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,14 +15,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        if: hashFiles('unexpected_runtime/*.py') != ''
         with:
           python-version: '3.12'
       - name: Compile runtime
-        if: hashFiles('unexpected_runtime/*.py') != ''
         run: python -m compileall -q unexpected_runtime
       - name: Build package integrity fixture
-        if: hashFiles('unexpected_runtime/*.py') != ''
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -30,20 +28,20 @@ jobs:
           target = Path(__import__('os').environ['RUNNER_TEMP']) / 'uneXpected_v7.3.1_governed_runtime.zip'
           with ZipFile(target, 'w', ZIP_DEFLATED) as archive:
               for path in sorted(root.rglob('*')):
-                  if not path.is_file() or '__pycache__' in path.parts or path.suffix == '.pyc':
+                  if not path.is_file() or '__pycache__' in path.parts or path.suffix in {'.pyc', '.sqlite3', '.db'}:
                       continue
                   relative = path.relative_to(root)
-                  if relative.parts[0] == '.git':
+                  if any(part in {'.git', '.venv', 'venv', 'state'} for part in relative.parts):
+                      continue
+                  if relative.name == '.env' or (relative.name.startswith('.env.') and relative.name != '.env.example'):
                       continue
                   archive.write(path, Path('uneXpected_v7') / relative)
           print(f'Built {target} ({target.stat().st_size} bytes)')
           PY
           echo "UNEXPECTED_PACKAGE_ZIP=$RUNNER_TEMP/uneXpected_v7.3.1_governed_runtime.zip" >> "$GITHUB_ENV"
       - name: Run regression suite
-        if: hashFiles('unexpected_runtime/*.py') != ''
         run: python -m unittest discover -s tests -v
       - name: CLI smoke tests
-        if: hashFiles('unexpected_runtime/*.py') != ''
         run: |
           python -m unexpected_runtime.cli status
           python -m unexpected_runtime.cli list
