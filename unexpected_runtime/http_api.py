@@ -1,10 +1,11 @@
 from __future__ import annotations
 import hmac, json, os, threading, time, math
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any
 from urllib.parse import urlsplit
 from . import __version__
 from .coordinator import Coordinator
+from .trading_api import dispatch_trading_get, dispatch_trading_post
+from trading_engine import TradingService
 
 MAX_BODY_BYTES=64*1024
 MAX_OBJECTIVE_CHARS=16000
@@ -23,8 +24,9 @@ class _RateLimiter:
             if len(self.entries)>2000: self.entries={k:v for k,v in self.entries.items() if now-v[0]<60}
             return count<=RATE_LIMIT_PER_MINUTE
 
-def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0):
+def create_server(*, coordinator=None, trading_service=None, api_token=None, host="127.0.0.1", port=0):
     active=coordinator or Coordinator()
+    trading=trading_service or TradingService.from_env()
     token=(os.getenv("UNEXPECTED_RUNTIME_API_TOKEN","") if api_token is None else str(api_token or "")).strip()
     limiter=_RateLimiter()
     class Handler(BaseHTTPRequestHandler):
@@ -34,7 +36,7 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
         server_version="uneXpectedRuntime/7"; sys_version=""
         def log_message(self, fmt, *args): return
         def send_json(self, code, obj):
-            data=json.dumps(obj,ensure_ascii=False).encode()
+            data=json.dumps(obj,ensure_ascii=False,default=str).encode()
             self.send_response(code); self.send_header("Content-Type","application/json; charset=utf-8")
             self.send_header("Content-Length",str(len(data))); self.send_header("Cache-Control","no-store")
             self.send_header("X-Content-Type-Options","nosniff"); self.send_header("Referrer-Policy","no-referrer")
@@ -63,6 +65,8 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             except (UnicodeDecodeError,json.JSONDecodeError): self.send_json(400,{"error":"Body must be valid UTF-8 JSON."}); return None
             if not isinstance(obj,dict): self.send_json(400,{"error":"Body must be a JSON object."}); return None
             return obj
+        def _identity(self):
+            return self.client_address[0] if self.client_address else "unknown"
         def do_GET(self):
             path=urlsplit(self.path).path
             if path=="/health":
@@ -71,16 +75,28 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                     "provider":getattr(provider,"name",type(provider).__name__ if provider else "unavailable"),
                     "provider_configured":bool(getattr(provider,"configured",True)),
                     "authentication_configured":len(token)>=32,"privileged_actions":"fail-closed"})
+            if path.startswith("/v1/trading/"):
+                if not self.authorize(): return
+                if not limiter.allow(self._identity()): return self.send_json(429,{"error":"Request rate limit exceeded."})
+                code,payload=dispatch_trading_get(path,urlsplit(self.path).query,trading)
+                return self.send_json(code,payload)
             if path=="/v1/status":
                 if not self.authorize(): return
                 status=active.status()
                 return self.send_json(200,{k:status.get(k) for k in ("ecosystem_version","registered_agents","provider","mode","max_workers","max_retries","approval_verifier")})
             return self.send_json(404,{"error":"Not found."})
         def do_POST(self):
-            if urlsplit(self.path).path!="/v1/invoke": return self.send_json(404,{"error":"Not found."})
+            path=urlsplit(self.path).path
+            if path.startswith("/v1/trading/"):
+                if not self.authorize(): return
+                if not limiter.allow(self._identity()): return self.send_json(429,{"error":"Request rate limit exceeded."})
+                body=self.read_body()
+                if body is None: return
+                code,payload=dispatch_trading_post(path,body,trading)
+                return self.send_json(code,payload)
+            if path!="/v1/invoke": return self.send_json(404,{"error":"Not found."})
             if not self.authorize(): return
-            identity=self.client_address[0] if self.client_address else "unknown"
-            if not limiter.allow(identity): return self.send_json(429,{"error":"Request rate limit exceeded."})
+            if not limiter.allow(self._identity()): return self.send_json(429,{"error":"Request rate limit exceeded."})
             body=self.read_body()
             if body is None: return
             allowed={"agent_id","objective","inputs","deadline_seconds","max_steps","idempotency_key","source_refs"}
@@ -104,7 +120,9 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                 return self.send_json(200 if result.get("status")=="completed" else 502,{"result":result})
             except Exception as exc: return self.send_json(400,{"error":f"Task rejected or failed ({type(exc).__name__})."})
     server=ThreadingHTTPServer((host,int(port)),Handler)
-    server.daemon_threads=True; server.allow_reuse_address=True; server.coordinator=active; server.owns_coordinator=coordinator is None
+    server.daemon_threads=True; server.allow_reuse_address=True
+    server.coordinator=active; server.owns_coordinator=coordinator is None
+    server.trading_service=trading; server.owns_trading_service=trading_service is None
     return server
 
 def main():
@@ -114,6 +132,7 @@ def main():
     finally:
         server.shutdown(); server.server_close()
         if server.owns_coordinator: server.coordinator.close()
+        if server.owns_trading_service: server.trading_service.close()
     return 0
 
 if __name__=="__main__": raise SystemExit(main())

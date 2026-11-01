@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from decimal import Decimal
 from pathlib import Path
+from threading import Thread
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
-from trading_engine import FixtureProvider, PaperPortfolio, RiskRequest, evaluate_risk, run_backtest, BacktestConfig
+from trading_engine import (
+    AlpacaMarketDataProvider, BacktestConfig, FixtureProvider, PaperPortfolio,
+    RiskRequest, TradingService, evaluate_risk, run_backtest,
+)
 from trading_engine.scanner import scan_batch
+from unexpected_runtime.http_api import create_server
 
 
 class RiskEngineTests(unittest.TestCase):
@@ -31,6 +39,18 @@ class RiskEngineTests(unittest.TestCase):
                 max_loss_usd=Decimal("100"), max_position_pct=Decimal("20"),
             ))
 
+    def test_daily_loss_cap_blocks_new_risk(self):
+        result = evaluate_risk(RiskRequest(
+            symbol="DEMO", equity_usd=Decimal("10000"),
+            cash_available_usd=Decimal("10000"), entry_price=Decimal("100"),
+            stop_price=Decimal("95"), target_price=Decimal("110"),
+            max_loss_usd=Decimal("100"), max_position_pct=Decimal("20"),
+            current_daily_loss_usd=Decimal("500"), max_daily_loss_usd=Decimal("500"),
+        ))
+        self.assertFalse(result.approved)
+        self.assertEqual(result.quantity, 0)
+        self.assertEqual(result.reason, "daily loss limit reached")
+
 
 class MarketDataAndScanTests(unittest.TestCase):
     def test_fixture_source_is_explicitly_synthetic_and_scanner_returns_provenanced_signal(self):
@@ -45,6 +65,18 @@ class MarketDataAndScanTests(unittest.TestCase):
         self.assertEqual(result.feed_type, "synthetic")
         self.assertIsNotNone(result.retrieved_at)
 
+    def test_unconfigured_alpaca_adapter_fails_closed_without_network_access(self):
+        provider = AlpacaMarketDataProvider(key_id="", secret_key="")
+        with self.assertRaisesRegex(RuntimeError, "credentials are not configured"):
+            provider.fetch_bars("AAPL")
+
+    def test_backtest_refuses_partial_market_data(self):
+        from dataclasses import replace
+        batch = FixtureProvider().fetch_bars("DEMO")
+        partial = replace(batch, status="partial", gaps=("fixture gap",))
+        with self.assertRaisesRegex(ValueError, "partial or empty"):
+            run_backtest(partial, BacktestConfig(initial_cash=Decimal("10000")))
+
 
 class BacktestTests(unittest.TestCase):
     def test_backtest_is_reproducible_and_records_data_and_config_fingerprints(self):
@@ -57,6 +89,7 @@ class BacktestTests(unittest.TestCase):
         self.assertEqual(first.metrics, second.metrics)
         self.assertGreaterEqual(first.metrics["trades"], 0)
         self.assertGreaterEqual(first.metrics["max_drawdown_pct"], Decimal("0"))
+        self.assertEqual(len(first.dataset_sha256), 64)
 
 
 class PaperPortfolioTests(unittest.TestCase):
@@ -82,9 +115,80 @@ class PaperPortfolioTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             store = PaperPortfolio(Path(tmp) / "paper.sqlite3")
             store.open_account("demo", Decimal("1000"))
-            with self.assertRaises(ValueError):
+            with self.assertRaisesRegex(ValueError, "short position"):
                 store.sell("demo", "DEMO", 1, Decimal("100"), Decimal("0"), "sell-1")
             store.close()
+
+    def test_backup_is_integrity_checked_and_restorable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "paper.sqlite3"
+            backup = Path(tmp) / "backup" / "paper-copy.sqlite3"
+            store = PaperPortfolio(path)
+            store.open_account("demo", "1000")
+            store.buy("demo", "DEMO", 2, "100", "0", "backup-order")
+            result = store.backup(backup)
+            self.assertEqual(result["integrity"], "ok")
+            store.close()
+            restored = PaperPortfolio(backup)
+            self.assertEqual(restored.integrity_check(), "ok")
+            self.assertEqual(restored.snapshot("demo")["positions"]["DEMO"]["quantity"], 2)
+            restored.close()
+
+
+class RuntimeTradingApiTests(unittest.TestCase):
+    def _request(self, base, path, token, payload=None):
+        data = None if payload is None else json.dumps(payload).encode("utf-8")
+        headers = {"Authorization": "Bearer " + token}
+        if data is not None:
+            headers["Content-Type"] = "application/json"
+        request = Request(base + path, data=data, headers=headers)
+        try:
+            with urlopen(request, timeout=3) as response:
+                return response.status, json.loads(response.read().decode("utf-8"))
+        except HTTPError as error:
+            return error.code, json.loads(error.read().decode("utf-8"))
+
+    def test_runtime_exposes_authenticated_scans_and_paper_only_journal(self):
+        token = "t" * 40
+        with tempfile.TemporaryDirectory() as tmp:
+            service = TradingService(FixtureProvider(), Path(tmp) / "paper.sqlite3", journal_writes=True)
+            server = create_server(coordinator=object(), trading_service=service, api_token=token)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            base = f"http://127.0.0.1:{server.server_address[1]}"
+            try:
+                status, _ = self._request(base, "/v1/trading/health", "")
+                self.assertEqual(status, 401)
+                status, health = self._request(base, "/v1/trading/health", token)
+                self.assertEqual(status, 200)
+                self.assertTrue(health["broker_connection"] is False)
+                status, scan = self._request(base, "/v1/trading/scan", token, {"symbols": ["DEMO"]})
+                self.assertEqual(status, 200)
+                self.assertEqual(scan["results"][0]["feed_type"], "synthetic")
+                status, account = self._request(base, "/v1/trading/accounts", token, {
+                    "account_id": "demo", "initial_cash_usd": "1000",
+                })
+                self.assertEqual(status, 201)
+                status, order = self._request(base, "/v1/trading/paper-orders", token, {
+                    "account_id": "demo", "symbol": "DEMO", "side": "buy",
+                    "quantity": 1, "price_usd": "100", "fees_usd": "1",
+                    "idempotency_key": "api-order-1",
+                })
+                self.assertEqual(status, 201)
+                self.assertFalse(order["duplicate"])
+                status, _ = self._request(base, "/v1/trading/paper-orders", token, {
+                    "account_id": "demo", "symbol": "DEMO", "side": "buy",
+                    "quantity": 1, "price_usd": "100", "fees_usd": "1",
+                    "idempotency_key": "api-order-live", "mode": "live",
+                })
+                self.assertEqual(status, 400)
+                status, portfolio = self._request(base, "/v1/trading/portfolio?account_id=demo", token)
+                self.assertEqual(status, 200)
+                self.assertEqual(portfolio["cash_usd"], "899")
+            finally:
+                server.shutdown()
+                server.server_close()
+                service.close()
 
 
 if __name__ == "__main__":
