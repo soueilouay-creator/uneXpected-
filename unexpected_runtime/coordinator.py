@@ -237,7 +237,7 @@ class Coordinator:
             raise TypeError("inputs must be a dictionary.")
         request = {"agent_id": agent_id, "objective": objective, "inputs": dict(inputs or {})}
         stage_task_ids: list[str] = []
-        worker_task_ids: list[str] = []
+        worker_task_ids: list[str] = []\n        improvement_stage_count = 0
 
         def invoke_stage(stage:str, role_id:str, stage_objective:str, payload:dict[str,Any]) -> tuple[str, str]:
             result = self.invoke(role_id, stage_objective, payload,
@@ -303,7 +303,7 @@ class Coordinator:
                  "candidate": execution.get("text", ""), "review_feedback": feedback},
             )
             worker_task_ids.append(task_id)
-            return {"text": output, "task_id": task_id, "phase": "after_improvement"}
+            return {"text": output, "task_id": task_id, "phase": "after_improvement",\n                    "improvement_iterations": improvement_stage_count}
 
         plan_context: dict[str,Any] = {}
 
@@ -337,7 +337,7 @@ class Coordinator:
                                   "delivered": bool(record.get("delivered"))})
 
         self.store.log_event("workflow_cycle_started", agent_id=agent_id,
-                             payload={"agent_id": agent_id, "max_corrections": max_corrections})
+                             payload={"agent_id": agent_id, "max_corrections": max_corrections,\n                                      "max_improvement_iterations": max_improvement_iterations})
         runner = WorkflowRunner(plan=bound_plan, execute=execute_stage, verify=verify_stage,
                                  improve=improve_stage, deliver=deliver_stage, learn=learn_stage,
                                  max_corrections=max_corrections)
