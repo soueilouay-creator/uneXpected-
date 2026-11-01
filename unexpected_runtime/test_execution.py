@@ -202,7 +202,7 @@ class DockerTestExecutor:
                 cleanup_confirmed = self._remove_container(container_name)
             passed = (
                 not timed_out
-                and exit_code == 0
+                and type(exit_code) is int and exit_code == 0
                 and tests_run > 0
                 and summary_passed
                 and cleanup_confirmed
@@ -233,7 +233,7 @@ class DockerTestExecutor:
             return {
                 "passed": passed,
                 "actual": actual,
-                "expected": criterion["target"],
+                "expected": criterion.get("target", "all tests in the fixed profile pass"),
                 "evidence_ref": "docker-test://sha256/" + digest,
                 "details": (
                     "Isolated Docker test profile executed with network disabled."
@@ -418,6 +418,7 @@ class TestEvidenceChecker:
         passed = (
             result.get("passed") is True
             and isinstance(actual, dict)
+            and type(actual.get("exit_code")) is int
             and actual.get("exit_code") == 0
             and isinstance(actual.get("tests_run"), int)
             and not isinstance(actual.get("tests_run"), bool)
