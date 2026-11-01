@@ -46,4 +46,8 @@
 - Runtime integration exposed SQLite cross-thread `ProgrammingError`; fixed by using one SQLite connection protected by a re-entrant lock.
 - Runtime API tests then passed, including authenticated HTTP and rejection of live-mode fields.
 - Journal P&L test was observed red because the journal did not yet expose realized P&L; the ledger was enhanced to label simulated fills and derive average-cost realized P&L including fees.
-- Focused trading/API CI passed after these changes. Final full-suite results and release commit must be recorded before claiming completion.
+- Final branch CI run #41308601652 completed successfully on GitHub Actions with Python 3.12 at source commit 1a977a0d21218a407619aefab41bedcba82ac893.
+- Final full regression result: 148 tests run, all passed, 1 existing optional legacy fixture skipped, 0 failures.
+- Compile check passed for unexpected_runtime and trading_engine; the package-integrity ZIP was built and validated; CLI smoke checks passed for status, list, eval, trading health, synthetic scan and backtest.
+- The branch head, changed source files, updated skill hash and 123-entry SHA-256 inventory were read back from GitHub. Protected main remains at 0a92f3571ffba01473813b4e4a39edc97e298be1; v0.1.0 remains at 7efaa235f18d76c22e3b64489c9a94d2cc761bd8.
+- Host deployment was not performed. The existing Render Free smoke service is pinned to integration/v7.3.1-governed-runtime, has auto-deploy disabled and an ephemeral filesystem; changing it or creating a new public service would be a separate deployment decision. Journal writes must remain disabled there.
