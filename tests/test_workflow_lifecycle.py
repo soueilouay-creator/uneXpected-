@@ -266,6 +266,55 @@ class CoordinatorLifecycleTests(unittest.TestCase):
             with self.assertRaisesRegex(ProviderError, "token is not configured"):
                 reviewer_provider_from_env(primary)
 
+    def test_gateway_reviewer_payload_is_bounded_and_preserves_verdict_evidence(self):
+        import hashlib
+        import json
+        from unexpected_runtime.coordinator import Coordinator
+
+        payload = {
+            "request": {
+                "agent_id": "research-scout",
+                "objective": "o" * 2400,
+                "inputs": {"notes": "n" * 3000, "source_refs": ["https://docs.python.org/3/"] * 3},
+            },
+            "plan": "p" * 5000,
+            "acceptance_criteria": [
+                {"id": "SOURCE-01", "description": "Verify sources", "kind": "source",
+                 "target": "Relevant evidence", "required": True},
+                {"id": "TEST-01", "description": "Run tests", "kind": "test",
+                 "target": "0 failures", "required": True},
+            ],
+            "evidence_report": {
+                "summary": "2 of 2 required evidence checks passed.",
+                "candidate_sha256": hashlib.sha256(b"candidate").hexdigest(),
+                "evidence": [
+                    {"criterion_id": "SOURCE-01", "kind": "source", "required": True,
+                     "status": "passed", "evidence_ref": "source-bundle://sha256/" + "a" * 64,
+                     "actual": {"source_count": 3, "sources": [
+                         {"url": "https://docs.python.org/3/", "domain": "docs.python.org",
+                          "title": "Python docs", "excerpt": "e" * 2400, "sha256": "b" * 64}
+                         for _ in range(3)
+                     ]}},
+                    {"criterion_id": "TEST-01", "kind": "test", "required": True,
+                     "status": "passed", "evidence_ref": "ci://run/123",
+                     "actual": {"exit_code": 0, "tests_run": 12, "output_tail": "t" * 4000}},
+                ],
+            },
+            "candidate": "c" * 16000,
+            "review_phase": "before_improvement",
+        }
+
+        bounded = Coordinator._compact_reviewer_payload(payload, max_code_units=9000)
+        encoded = json.dumps(bounded, ensure_ascii=False, separators=(",", ":"))
+        self.assertLessEqual(len(encoded.encode("utf-16-le")) // 2, 9000)
+        self.assertEqual(bounded["evidence_report"]["summary"], "2 of 2 required evidence checks passed.")
+        by_id = {item["criterion_id"]: item for item in bounded["evidence_report"]["evidence"]}
+        self.assertEqual(by_id["SOURCE-01"]["status"], "passed")
+        self.assertEqual(by_id["TEST-01"]["status"], "passed")
+        self.assertTrue(by_id["SOURCE-01"]["evidence_ref"].startswith("source-bundle://"))
+        self.assertTrue(bounded["candidate_truncated"])
+        self.assertEqual(bounded["candidate_sha256"], hashlib.sha256(b"c" * 16000).hexdigest())
+
     def test_bare_reviewer_pass_cannot_deliver_lifecycle(self):
         coordinator, provider = self._coordinator(["PASS", "PASS"])
         coordinator.reviewer_provider.generate = lambda **kwargs: "VERDICT: PASS"
