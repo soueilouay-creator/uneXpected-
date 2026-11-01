@@ -13,7 +13,7 @@ SOCKET_TIMEOUT_SECONDS=10
 MAX_SOURCE_REF_CHARS=2048
 
 class _RateLimiter:
-    def __init__(self): self.lock=threading.Lock(); self.entries={}
+    def __init__(self, limit=RATE_LIMIT_PER_MINUTE): self.lock=threading.Lock(); self.entries={}; self.limit=limit
     def allow(self, identity):
         now=time.monotonic()
         with self.lock:
@@ -21,12 +21,13 @@ class _RateLimiter:
             if now-start>=60: start,count=now,0
             count+=1; self.entries[identity]=(start,count)
             if len(self.entries)>2000: self.entries={k:v for k,v in self.entries.items() if now-v[0]<60}
-            return count<=RATE_LIMIT_PER_MINUTE
+            return count<=self.limit
 
 def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0):
     active=coordinator or Coordinator()
     token=(os.getenv("UNEXPECTED_RUNTIME_API_TOKEN","") if api_token is None else str(api_token or "")).strip()
     limiter=_RateLimiter()
+    lifecycle_limiter=_RateLimiter(limit=3)
     class Handler(BaseHTTPRequestHandler):
         def setup(self):
             self.request.settimeout(SOCKET_TIMEOUT_SECONDS)
@@ -82,7 +83,8 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             is_lifecycle=route=="/v1/lifecycle"
             if not self.authorize(): return
             identity=self.client_address[0] if self.client_address else "unknown"
-            if not limiter.allow(identity): return self.send_json(429,{"error":"Request rate limit exceeded."})
+            active_limiter=lifecycle_limiter if is_lifecycle else limiter
+            if not active_limiter.allow(identity): return self.send_json(429,{"error":"Request rate limit exceeded."})
             body=self.read_body()
             if body is None: return
             allowed=({"agent_id","objective","inputs","deadline_seconds","max_corrections"}
@@ -103,6 +105,8 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                 return self.send_json(400,{"error":"Invalid inputs, deadline or workflow limits."})
             if not math.isfinite(float(deadline)) or not 0 < float(deadline) <= 600:
                 return self.send_json(400,{"error":"deadline_seconds must be finite and between 0 and 600."})
+            if is_lifecycle and float(deadline) > 120:
+                return self.send_json(400,{"error":"Lifecycle per-stage deadline must not exceed 120 seconds."})
             if is_lifecycle:
                 if not 0 <= corrections <= 2:
                     return self.send_json(400,{"error":"max_corrections must be between 0 and 2 for the HTTP workflow endpoint."})
