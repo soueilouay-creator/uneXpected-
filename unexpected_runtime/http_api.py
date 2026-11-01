@@ -13,7 +13,7 @@ SOCKET_TIMEOUT_SECONDS=10
 MAX_SOURCE_REF_CHARS=2048
 
 class _RateLimiter:
-    def __init__(self, limit=RATE_LIMIT_PER_MINUTE): self.lock=threading.Lock(); self.entries={}; self.limit=limit
+    def __init__(self, limit=None): self.lock=threading.Lock(); self.entries={}; self.limit=limit
     def allow(self, identity):
         now=time.monotonic()
         with self.lock:
@@ -21,7 +21,7 @@ class _RateLimiter:
             if now-start>=60: start,count=now,0
             count+=1; self.entries[identity]=(start,count)
             if len(self.entries)>2000: self.entries={k:v for k,v in self.entries.items() if now-v[0]<60}
-            return count<=self.limit
+            return count<=(self.limit if self.limit is not None else RATE_LIMIT_PER_MINUTE)
 
 def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0):
     active=coordinator or Coordinator()
