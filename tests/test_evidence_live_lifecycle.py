@@ -150,6 +150,7 @@ class LiveEvidenceLifecycleTests(unittest.TestCase):
         self.assertEqual(os.getenv("UNEXPECTED_SOURCE_ALLOWED_DOMAINS"), "docs.python.org")
 
         provider = EvidenceLifecycleTaskProvider()
+        reviewer_provider = EvidenceLifecycleTaskProvider()
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         env = {
@@ -167,6 +168,7 @@ class LiveEvidenceLifecycleTests(unittest.TestCase):
                 manifest_path=ROOT / "agent_manifest.json",
                 state_dir=temp.name,
                 provider=provider,
+                reviewer_provider=reviewer_provider,
                 max_workers=2,
                 max_retries=0,
             )
@@ -195,7 +197,8 @@ class LiveEvidenceLifecycleTests(unittest.TestCase):
 
         self.assertEqual(result.status, "delivered", result.error)
         self.assertTrue(result.delivered)
-        self.assertEqual(provider.review_calls, 2)
+        self.assertEqual(reviewer_provider.review_calls, 2)
+        self.assertIsNot(provider, reviewer_provider)
         self.assertEqual(provider.worker_calls, 2)
         self.assertEqual(len(result.evidence_history), 2)
         self.assertEqual(

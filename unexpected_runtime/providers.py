@@ -91,6 +91,39 @@ class AIStudioGatewayProvider:
                 return f"[Live AI result: {item.get('label') or key}; model={item.get('model') or 'provider model'}]\n{item['text'].strip()}"
         raise ProviderError("Gateway returned no live provider response; simulated or failed output was rejected.")
 
+def reviewer_provider_from_env(primary_provider):
+    """Build a reviewer on a distinct model route; never silently reuse the worker provider."""
+    requested = os.getenv("UNEXPECTED_REVIEW_PROVIDER", "").strip().lower()
+    if not requested:
+        return None
+    if requested in ("ai_studio_gateway", "unexpected_gateway", "unexpected-ai-studio"):
+        endpoint = os.getenv("UNEXPECTED_REVIEW_GATEWAY_URL", os.getenv(
+            "UNEXPECTED_GATEWAY_URL", "https://unexpected-ai-studio.onrender.com/orchestrate"))
+        token = os.getenv("UNEXPECTED_REVIEW_GATEWAY_TOKEN") or os.getenv("UNEXPECTED_GATEWAY_TOKEN", "")
+        mode = os.getenv("UNEXPECTED_REVIEW_GATEWAY_MODE", "claude").strip().lower()
+        reviewer = AIStudioGatewayProvider(
+            endpoint, token, mode=mode,
+            default_timeout=float(os.getenv("UNEXPECTED_REVIEW_GATEWAY_TIMEOUT_SECONDS", "200")),
+        )
+        same_gateway = isinstance(primary_provider, AIStudioGatewayProvider) and primary_provider.endpoint == reviewer.endpoint
+        if same_gateway and (primary_provider.mode == "both" or primary_provider.mode == reviewer.mode):
+            raise ProviderError("Reviewer route must use a different live model provider than the primary route.")
+        reviewer.independence_label = f"{reviewer.name}/{reviewer.mode}"
+        return reviewer
+    if requested in ("openai_compatible", "openai-compatible"):
+        reviewer = OpenAICompatibleProvider(
+            os.getenv("UNEXPECTED_REVIEW_BASE_URL", ""),
+            os.getenv("UNEXPECTED_REVIEW_MODEL", ""),
+            os.getenv("UNEXPECTED_REVIEW_API_KEY", ""),
+            float(os.getenv("UNEXPECTED_REVIEW_TIMEOUT_SECONDS", "60")),
+        )
+        if isinstance(primary_provider, OpenAICompatibleProvider) and primary_provider.base_url == reviewer.base_url and primary_provider.model == reviewer.model:
+            raise ProviderError("Reviewer route must not use the primary provider endpoint and model.")
+        reviewer.independence_label = f"{reviewer.name}/{reviewer.model}"
+        return reviewer
+    raise ProviderError("UNEXPECTED_REVIEW_PROVIDER must be ai_studio_gateway or openai_compatible.")
+
+
 def provider_from_env():
     mode=os.getenv("UNEXPECTED_PROVIDER","mock").strip().lower()
     if mode=="mock": return DeterministicMockProvider()

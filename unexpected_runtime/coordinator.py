@@ -5,7 +5,7 @@ from typing import Any
 import json, os, time, uuid, hashlib, math
 from .models import TaskRequest, AgentMessage, TaskResult, CancellationToken, ApprovalContext, PermissionDenied, CycleLimitError, BudgetExceeded, UnknownAgent
 from .registry import AgentRegistry
-from .providers import provider_from_env
+from .providers import provider_from_env, reviewer_provider_from_env, ProviderError
 from .permissions import PermissionPolicy
 from .approvals import ApprovalVerifier, approval_verifier_from_env
 from .storage import StateStore
@@ -14,7 +14,7 @@ from .evidence import EvidenceEngine
 from .evidence_adapters import evidence_adapters_from_env
 
 class Coordinator:
-    def __init__(self, manifest_path=None, state_dir=None, provider=None, max_workers=None, max_retries=None, skill_manifest_path=None, approval_verifier:ApprovalVerifier|None=None, evidence_checkers=None):
+    def __init__(self, manifest_path=None, state_dir=None, provider=None, max_workers=None, max_retries=None, skill_manifest_path=None, approval_verifier:ApprovalVerifier|None=None, evidence_checkers=None, reviewer_provider=None):
         self.registry=AgentRegistry.load(manifest_path)
         workers=max(1,min(int(max_workers or os.getenv('UNEXPECTED_MAX_WORKERS','4')),8))
         retries=max(0,min(int(max_retries if max_retries is not None else os.getenv('UNEXPECTED_MAX_RETRIES','1')),2))
@@ -22,6 +22,21 @@ class Coordinator:
         root.mkdir(parents=True,exist_ok=True)
         self.store=StateStore(root/'uneXpected.sqlite3')
         self.provider=provider or provider_from_env()
+        if reviewer_provider is self.provider and reviewer_provider is not None:
+            raise ValueError("Reviewer provider must be a distinct provider instance.")
+        self.reviewer_provider = reviewer_provider
+        if self.reviewer_provider is not None:
+            self.reviewer_provider_status = "enabled: injected separate provider"
+        else:
+            try:
+                self.reviewer_provider = reviewer_provider_from_env(self.provider)
+                self.reviewer_provider_status = (
+                    "enabled: " + getattr(self.reviewer_provider, "independence_label", getattr(self.reviewer_provider, "name", type(self.reviewer_provider).__name__))
+                    if self.reviewer_provider is not None else "not configured"
+                )
+            except (ProviderError, TypeError, ValueError) as exc:
+                self.reviewer_provider = None
+                self.reviewer_provider_status = f"blocked: {type(exc).__name__}"
         if evidence_checkers is None:
             self.evidence_checkers, self.evidence_adapter_status = evidence_adapters_from_env()
         else:
@@ -47,7 +62,8 @@ class Coordinator:
                 'approval_verifier':'github-pr-review' if self.approval_verifier else 'not configured (privileged actions fail closed)',
                 'evidence_checkers':sorted(self.evidence_engine.checkers),
                 'test_backend':self.evidence_adapter_status.get('test_backend','not configured'),
-                'source_backend':self.evidence_adapter_status.get('source_backend','not configured')}
+                'source_backend':self.evidence_adapter_status.get('source_backend','not configured'),
+                'reviewer_provider':self.reviewer_provider_status}
     def list_agents(self):
         return [{'id':a.id,'name':a.name,'version':a.version,'capability_label':a.capability_label,'status':a.status} for a in self.registry.list()]
     def enqueue(self, request:TaskRequest):
@@ -70,7 +86,7 @@ class Coordinator:
     def shared_knowledge_action_details(knowledge_id:str):
         return {'action':'shared_knowledge.approve','knowledge_id':knowledge_id,'required_permissions':['approve_knowledge']}
     def invoke(self, agent_id:str, objective:str, inputs:dict[str,Any]|None=None, *, required_permissions=(), deadline_seconds=30.0,
-               max_steps=6,idempotency_key=None,source_refs=(),token:CancellationToken|None=None,approval:ApprovalContext|None=None):
+               max_steps=6,idempotency_key=None,source_refs=(),token:CancellationToken|None=None,approval:ApprovalContext|None=None,_provider=None):
         spec=self.registry.get(agent_id)
         if max_steps<1 or max_steps>12: raise BudgetExceeded('max_steps must be between 1 and 12.')
         if not math.isfinite(float(deadline_seconds)) or deadline_seconds<=0 or deadline_seconds>600: raise ValueError('deadline_seconds must be >0 and <=600.')
@@ -79,18 +95,19 @@ class Coordinator:
         if len(set(required_permissions)) > 1:
             raise PermissionDenied('A single action may request only one privileged permission scope; split and approve separate actions.')
         for scope in required_permissions: self.permissions.authorize(spec,scope,approval,action_details=action_details)
-        request_hash=hashlib.sha256(json.dumps({'agent_id':agent_id,'objective':objective,'inputs':inputs or {},'required_permissions':list(required_permissions),'source_refs':list(source_refs)},sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+        provider_route = getattr(_provider, "independence_label", getattr(_provider, "name", None)) if _provider is not None else "primary"
+        request_hash=hashlib.sha256(json.dumps({'agent_id':agent_id,'objective':objective,'inputs':inputs or {},'required_permissions':list(required_permissions),'source_refs':list(source_refs),'provider_route':provider_route},sort_keys=True,ensure_ascii=False).encode()).hexdigest()
         if idempotency_key:
             cached=self.store.get_idempotent(idempotency_key,request_hash)
             if cached:
                 r=TaskResult.from_dict(cached); r.idempotent_replay=True; self.store.log_event('idempotency_replay',r.task_id,agent_id,{'key_hash':hashlib.sha256(idempotency_key.encode()).hexdigest()[:12]}); return r
         req=TaskRequest.create(agent_id,objective,inputs=inputs or {},required_permissions=tuple(required_permissions),deadline_seconds=deadline_seconds,max_steps=max_steps,idempotency_key=idempotency_key,source_refs=tuple(source_refs))
-        self.store.enqueue(req); result=self._execute_with_deadline(req,token or CancellationToken())
+        self.store.enqueue(req); result=self._execute_with_deadline(req,token or CancellationToken(),_provider)
         if idempotency_key and result.status=='completed': self.store.set_idempotent(idempotency_key,request_hash,result.to_dict())
         return result
-    def _execute_with_deadline(self,req:TaskRequest,token:CancellationToken)->TaskResult:
+    def _execute_with_deadline(self,req:TaskRequest,token:CancellationToken,provider=None)->TaskResult:
         self._tokens[req.task_id]=token
-        future=self.task_pool.submit(self._execute,req,token)
+        future=self.task_pool.submit(self._execute,req,token,provider)
         try: result=future.result(timeout=req.deadline_seconds)
         except FutureTimeout:
             token.cancel(); future.cancel()
@@ -98,7 +115,8 @@ class Coordinator:
             self.store.mark_task(req.task_id,'timeout',result.to_dict()); self.store.log_event('task_timeout',req.task_id,req.agent_id,{'deadline_seconds':req.deadline_seconds})
         finally: self._tokens.pop(req.task_id,None)
         return result
-    def _execute(self,req:TaskRequest,token:CancellationToken)->TaskResult:
+    def _execute(self,req:TaskRequest,token:CancellationToken,provider=None)->TaskResult:
+        selected_provider=provider or self.provider
         start=time.time(); spec=self.registry.get(req.agent_id); self.store.mark_task(req.task_id,'running')
         self.store.log_event('task_started',req.task_id,req.agent_id,{'objective':req.objective[:200],'source_refs':list(req.source_refs)})
         if token.cancelled:
@@ -137,7 +155,7 @@ class Coordinator:
             attempts=attempt+1
             if token.cancelled: status='cancelled'; error='Cancelled before provider attempt.'; break
             try:
-                pf=self.provider_pool.submit(self.provider.generate,system_prompt=system,user_prompt=json.dumps(payload,ensure_ascii=False),agent_id=spec.id,task_id=req.task_id,timeout=max(0.1,req.deadline_seconds-(time.time()-start)))
+                pf=self.provider_pool.submit(selected_provider.generate,system_prompt=system,user_prompt=json.dumps(payload,ensure_ascii=False),agent_id=spec.id,task_id=req.task_id,timeout=max(0.1,req.deadline_seconds-(time.time()-start)))
                 output=pf.result(timeout=max(0.1,req.deadline_seconds-(time.time()-start)))
                 if token.cancelled: status='cancelled'; error='Cancelled while provider call was in flight; result discarded.'
                 else: status='completed'
@@ -147,7 +165,7 @@ class Coordinator:
             except Exception as e:
                 error=f'{type(e).__name__}: provider invocation failed'
                 self.store.log_event('provider_error',req.task_id,spec.id,{'attempt':attempts,'error_type':type(e).__name__})
-                if attempt<self.max_retries and bool(getattr(self.provider, 'retry_safe', False)) and not token.cancelled:
+                if attempt<self.max_retries and bool(getattr(selected_provider, 'retry_safe', False)) and not token.cancelled:
                     self.store.log_event('provider_retry',req.task_id,spec.id,{'attempt':attempts}); continue
                 break
         result=TaskResult(req.task_id,spec.id,status,output=output,provenance=tuple(req.source_refs),attempts=attempts,error=error,started_at=start,finished_at=time.time())
@@ -256,12 +274,18 @@ class Coordinator:
         worker_task_ids: list[str] = []
 
         def invoke_stage(stage:str, role_id:str, stage_objective:str, payload:dict[str,Any]) -> tuple[str, str]:
+            stage_provider = None
+            if stage == "verify":
+                if self.reviewer_provider is None:
+                    raise RuntimeError("Independent reviewer provider is not configured; lifecycle delivery is blocked.")
+                stage_provider = self.reviewer_provider
             result = self.invoke(role_id, stage_objective, payload,
                                  deadline_seconds=deadline_seconds, max_steps=6,
-                                 source_refs=(f"workflow-stage:{stage}",))
+                                 source_refs=(f"workflow-stage:{stage}",), _provider=stage_provider)
             stage_task_ids.append(result.task_id)
             self.store.log_event("workflow_stage_result", result.task_id, role_id,
-                                 {"stage": stage, "status": result.status})
+                                 {"stage": stage, "status": result.status,
+                                  "provider": getattr(stage_provider, "independence_label", getattr(stage_provider, "name", "primary")) if stage_provider is not None else getattr(self.provider, "name", type(self.provider).__name__)})
             if result.status != "completed":
                 raise RuntimeError(f"{stage} stage did not complete ({result.status}).")
             return result.output, result.task_id
@@ -352,8 +376,9 @@ class Coordinator:
                 feedback_parts.append("Independent reviewer feedback: " + review)
             return {"passed": reviewer_passed and evidence_passed,
                     "feedback": "\n".join(feedback_parts), "evidence_report": evidence_report,
-                    "task_id": task_id, "verification_type": "deterministic_evidence_plus_role_based_review",
-                    "reviewer_agent": "code-reviewer"}
+                    "task_id": task_id, "verification_type": "deterministic_evidence_plus_separate_provider_review",
+                    "reviewer_agent": "code-reviewer",
+                    "reviewer_provider": getattr(self.reviewer_provider, "independence_label", getattr(self.reviewer_provider, "name", type(self.reviewer_provider).__name__))}
 
         def improve_stage(execution:dict[str,Any], feedback:str):
             nonlocal improvement_round
@@ -382,8 +407,9 @@ class Coordinator:
             return {"status": "delivered", "agent_id": agent_id,
                     "task_id": improved.get("task_id"), "output": improved.get("text", ""),
                     "verification": "passed_initial_and_improved_candidate_evidence_and_independent_review",
-                    "verification_type": "deterministic_evidence_plus_role_based_review",
-                    "reviewer_agent": "code-reviewer"}
+                    "verification_type": "deterministic_evidence_plus_separate_provider_review",
+                    "reviewer_agent": "code-reviewer",
+                    "reviewer_provider": getattr(self.reviewer_provider, "independence_label", getattr(self.reviewer_provider, "name", type(self.reviewer_provider).__name__))}
 
         def learn_stage(record:dict[str,Any]):
             feedback = json.dumps({"status": record.get("status"),

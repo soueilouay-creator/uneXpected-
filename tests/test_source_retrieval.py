@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from unexpected_runtime.source_retrieval import (
     SourceEvidenceChecker,
+    _read_response_bounded,
     SourceRetrievalError,
     TrustedSourceRetriever,
     source_retriever_from_env,
@@ -138,6 +139,26 @@ class TrustedSourceRetrieverTests(unittest.TestCase):
 
         self.assertLessEqual(len(excerpt), 1200)
         self.assertIn("unittest supports simple test discovery", excerpt.lower())
+
+    def test_response_body_uses_one_absolute_deadline_across_slow_chunks(self):
+        class FakeSocket:
+            def __init__(self): self.timeouts = []
+            def settimeout(self, value): self.timeouts.append(value)
+        class FakeConnection:
+            def __init__(self): self.sock = FakeSocket()
+        class SlowResponse:
+            def __init__(self): self.calls = 0
+            def read(self, size):
+                self.calls += 1
+                return b"data"
+        times = iter([0.0, 0.3, 0.6, 0.9, 1.2])
+        connection, response = FakeConnection(), SlowResponse()
+        with self.assertRaisesRegex(SourceRetrievalError, "overall deadline"):
+            _read_response_bounded(connection, response, deadline=1.0, max_bytes=1024,
+                                   clock=lambda: next(times))
+        self.assertEqual(response.calls, 4)
+        self.assertEqual(len(connection.sock.timeouts), 4)
+        self.assertGreater(connection.sock.timeouts[0], connection.sock.timeouts[-1])
 
     def test_environment_factory_is_disabled_without_an_allowlist(self):
         with patch.dict("os.environ", {}, clear=True):

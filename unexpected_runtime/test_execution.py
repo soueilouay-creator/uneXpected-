@@ -3,10 +3,13 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
+import os
 import re
+import selectors
 import shutil
 import subprocess
 import tempfile
+import time
 import uuid
 from pathlib import Path
 from typing import Any, Callable
@@ -115,6 +118,57 @@ def _parse_result(output: str) -> tuple[int, bool]:
     return tests_run, success
 
 
+def _run_bounded_process(argv: list[str], *, timeout_seconds: int,
+                         max_output_bytes: int = 12000) -> tuple[int | None, str, bool]:
+    """Drain a child incrementally and retain only a fixed-size output tail."""
+    process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                               bufsize=0, shell=False)
+    if process.stdout is None:
+        process.kill()
+        process.wait(timeout=5)
+        raise OSError("Could not open the test process output stream.")
+    output = bytearray()
+    timed_out = False
+    selector = selectors.DefaultSelector()
+    descriptor = process.stdout.fileno()
+    os.set_blocking(descriptor, False)
+    selector.register(descriptor, selectors.EVENT_READ)
+    deadline = time.monotonic() + timeout_seconds
+    try:
+        while selector.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                timed_out = True
+                if process.poll() is None:
+                    process.kill()
+                break
+            for key, _ in selector.select(min(remaining, 0.2)):
+                try:
+                    chunk = os.read(key.fd, 4096)
+                except BlockingIOError:
+                    continue
+                if not chunk:
+                    selector.unregister(key.fd)
+                    continue
+                output.extend(chunk)
+                if len(output) > max_output_bytes:
+                    del output[:-max_output_bytes]
+        remaining = deadline - time.monotonic()
+        try:
+            exit_code = process.wait(timeout=max(0.0, remaining))
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            process.kill()
+            try:
+                exit_code = process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                exit_code = None
+    finally:
+        selector.close()
+        process.stdout.close()
+    return exit_code, output.decode("utf-8", errors="replace"), timed_out
+
+
 class DockerTestExecutor:
     """Run a named fixed test profile in a disposable, offline Docker container.
 
@@ -175,31 +229,14 @@ class DockerTestExecutor:
         ]
         try:
             try:
-                completed = subprocess.run(
-                    argv,
-                    capture_output=True,
-                    text=True,
-                    errors="replace",
-                    timeout=self.timeout_seconds,
-                    check=False,
-                    shell=False,
+                exit_code, output, timed_out = _run_bounded_process(
+                    argv, timeout_seconds=self.timeout_seconds, max_output_bytes=12000,
                 )
-                output = _bounded_output(completed.stdout, completed.stderr)
                 tests_run, summary_passed = _parse_result(output)
-                exit_code = completed.returncode
-                timed_out = False
-                cleanup_confirmed = True
-            except subprocess.TimeoutExpired as exc:
-                output = _bounded_output(exc.stdout, exc.stderr)
-                tests_run, _ = _parse_result(output)
-                exit_code = None
-                timed_out = True
-                cleanup_confirmed = self._remove_container(container_name)
-                summary_passed = False
-            # A normal docker run leaves an exited container because this backend
-            # does not use --rm; always confirm explicit removal after capturing logs.
-            if not timed_out:
-                cleanup_confirmed = self._remove_container(container_name)
+            except (OSError, subprocess.TimeoutExpired):
+                exit_code, output, timed_out = None, "", True
+                tests_run, summary_passed = 0, False
+            cleanup_confirmed = self._remove_container(container_name)
             passed = (
                 not timed_out
                 and type(exit_code) is int and exit_code == 0
@@ -236,7 +273,7 @@ class DockerTestExecutor:
                 "expected": criterion.get("target", "all tests in the fixed profile pass"),
                 "evidence_ref": "docker-test://sha256/" + digest,
                 "details": (
-                    "Isolated Docker test profile executed with network disabled."
+                    "Isolated Docker test profile executed with network disabled and bounded host-side output."
                     if passed else
                     "Docker test profile failed, timed out, returned no parsed unittest results, or cleanup was unconfirmed."
                 ),

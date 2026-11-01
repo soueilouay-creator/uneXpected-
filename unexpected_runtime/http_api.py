@@ -77,7 +77,7 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             if path=="/v1/status":
                 if not self.authorize(): return
                 status=active.status()
-                return self.send_json(200,{k:status.get(k) for k in ("ecosystem_version","registered_agents","provider","mode","max_workers","max_retries","approval_verifier","evidence_checkers","test_backend","source_backend")})
+                return self.send_json(200,{k:status.get(k) for k in ("ecosystem_version","registered_agents","provider","mode","max_workers","max_retries","approval_verifier","evidence_checkers","test_backend","source_backend","reviewer_provider")})
             return self.send_json(404,{"error":"Not found."})
         def do_POST(self):
             route=urlsplit(self.path).path

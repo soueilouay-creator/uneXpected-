@@ -93,7 +93,7 @@ class WorkflowRunner:
                     'phase': 'before_improvement', 'passed': verification['passed'], 'feedback': feedback,
                     'attempt': len(result.verification_history) + 1,
                     'task_id': verification.get('task_id'), 'verification_type': verification.get('verification_type'),
-                    'reviewer_agent': verification.get('reviewer_agent'),
+                    'reviewer_agent': verification.get('reviewer_agent'), 'reviewer_provider': verification.get('reviewer_provider'),
                     'evidence_passed': (verification.get('evidence_report') or {}).get('passed')
                         if isinstance(verification.get('evidence_report'), dict) else None,
                     'evidence_summary': (verification.get('evidence_report') or {}).get('summary')
@@ -125,7 +125,7 @@ class WorkflowRunner:
                         'improvement_iteration': improvement_iteration,
                         'task_id': final_verification.get('task_id'),
                         'verification_type': final_verification.get('verification_type'),
-                        'reviewer_agent': final_verification.get('reviewer_agent'),
+                        'reviewer_agent': final_verification.get('reviewer_agent'), 'reviewer_provider': final_verification.get('reviewer_provider'),
                         'evidence_passed': (final_verification.get('evidence_report') or {}).get('passed')
                             if isinstance(final_verification.get('evidence_report'), dict) else None,
                         'evidence_summary': (final_verification.get('evidence_report') or {}).get('summary')

@@ -1,5 +1,6 @@
 import asyncio
 import subprocess
+import sys
 import shutil
 import tempfile
 import unittest
@@ -13,6 +14,7 @@ from unexpected_runtime.test_execution import (
     TestExecutionConfigurationError,
     TestEvidenceChecker,
     test_executor_from_env,
+    _run_bounded_process,
 )
 
 
@@ -40,6 +42,16 @@ def make_workspace():
 
 
 class DockerTestExecutorTests(unittest.TestCase):
+    def test_subprocess_output_is_bounded_while_the_child_is_running(self):
+        code = "import sys; sys.stdout.write('x' * 500000)"
+        exit_code, output, timed_out = _run_bounded_process(
+            [sys.executable, "-c", code], timeout_seconds=10, max_output_bytes=12000,
+        )
+        self.assertEqual(exit_code, 0)
+        self.assertFalse(timed_out)
+        self.assertEqual(len(output.encode("utf-8")), 12000)
+        self.assertEqual(output, "x" * 12000)
+
     def test_requires_immutable_image_digest(self):
         temp, root = make_workspace()
         self.addCleanup(temp.cleanup)
@@ -57,10 +69,12 @@ class DockerTestExecutorTests(unittest.TestCase):
             image_digest="python:3.12-slim@sha256:" + "d" * 64,
             docker_binary="/usr/bin/docker",
         )
-        with patch("unexpected_runtime.test_execution.subprocess.run") as run:
+        with patch("unexpected_runtime.test_execution._run_bounded_process") as run, \
+             patch("unexpected_runtime.test_execution.subprocess.run") as cleanup:
             with self.assertRaises(TestExecutionConfigurationError):
                 executor("candidate", {"profile": "evidence-engine"}, {})
         run.assert_not_called()
+        cleanup.assert_not_called()
 
     def test_non_python_image_family_is_rejected_even_with_a_digest(self):
         temp, root = make_workspace()
@@ -76,7 +90,8 @@ class DockerTestExecutorTests(unittest.TestCase):
             args=["docker"], returncode=0, stdout=PASS_OUTPUT, stderr="",
         )
         with patch("unexpected_runtime.test_execution.shutil.which", return_value="/usr/bin/docker"), \
-             patch("unexpected_runtime.test_execution.subprocess.run", return_value=completed) as run:
+             patch("unexpected_runtime.test_execution._run_bounded_process", return_value=(0, PASS_OUTPUT, False)) as run, \
+             patch("unexpected_runtime.test_execution.subprocess.run", return_value=completed):
             executor = DockerTestExecutor(root, image_digest=image)
             result = executor("candidate", {"profile": "evidence-engine"}, {})
         self.assertTrue(result["passed"])
@@ -90,7 +105,7 @@ class DockerTestExecutorTests(unittest.TestCase):
         self.assertIn("--memory=256m", argv)
         self.assertIn("--cpus=1", argv)
         self.assertIn("--user=65532:65532", argv)
-        self.assertEqual(run.call_args_list[0].kwargs["shell"], False)
+        self.assertEqual(run.call_args.kwargs["timeout_seconds"], 180)
         self.assertIn("test_evidence_engine.py", argv)
         self.assertNotIn("candidate", " ".join(argv))
 
@@ -113,12 +128,14 @@ class DockerTestExecutorTests(unittest.TestCase):
         failed = subprocess.CompletedProcess(args=["docker"], returncode=1,
                                               stdout="Ran 1 test in 0.01s\n\nFAILED (failures=1)\n",
                                               stderr="")
-        with patch("unexpected_runtime.test_execution.subprocess.run", return_value=failed):
+        cleanup = subprocess.CompletedProcess(args=["docker rm"], returncode=0, stdout="", stderr="")
+        with patch("unexpected_runtime.test_execution._run_bounded_process", return_value=(1, failed.stdout, False)), \
+             patch("unexpected_runtime.test_execution.subprocess.run", return_value=cleanup):
             result = executor("candidate", {"profile": "evidence-engine"}, {})
         self.assertFalse(result["passed"])
         self.assertEqual(result["actual"]["exit_code"], 1)
-        with patch("unexpected_runtime.test_execution.subprocess.run",
-                   side_effect=subprocess.TimeoutExpired(["docker"], 1)):
+        with patch("unexpected_runtime.test_execution._run_bounded_process", return_value=(None, "", True)), \
+             patch("unexpected_runtime.test_execution.subprocess.run", return_value=cleanup):
             timed_out = executor("candidate", {"profile": "evidence-engine"}, {})
         self.assertFalse(timed_out["passed"])
         self.assertEqual(timed_out["actual"]["status"], "timeout")

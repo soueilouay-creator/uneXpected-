@@ -199,6 +199,7 @@ class CoordinatorLifecycleTests(unittest.TestCase):
             retry_safe = False
             def __init__(self):
                 self.review_calls = 0
+                self.worker_calls = 0
                 self.requests = []
             def generate(self, **kwargs):
                 self.requests.append(dict(kwargs))
@@ -219,17 +220,47 @@ class CoordinatorLifecycleTests(unittest.TestCase):
                     self.review_calls += 1
                     return f"VERDICT: {verdict}" + chr(10) + f"Review evidence for {verdict.lower()}."
                 if agent == "research-scout":
-                    return "Research deliverable, version " + str(self.review_calls)
+                    self.worker_calls += 1
+                    return "Research deliverable, version " + str(self.worker_calls)
                 return "Test response."
 
         temp = tempfile.TemporaryDirectory()
         provider = LifecycleProvider()
+        reviewer = LifecycleProvider()
         coordinator = Coordinator(manifest_path=Path(__file__).resolve().parents[1] / "agent_manifest.json",
-                                  state_dir=temp.name, provider=provider,
+                                  state_dir=temp.name, provider=provider, reviewer_provider=reviewer,
                                   evidence_checkers=evidence_checkers)
         self.addCleanup(temp.cleanup)
         self.addCleanup(coordinator.close)
         return coordinator, provider
+
+    def test_same_provider_instance_cannot_be_used_as_its_own_reviewer(self):
+        import tempfile
+        from pathlib import Path
+        from unexpected_runtime.coordinator import Coordinator
+        provider = type("Provider", (), {"name": "same", "generate": lambda self, **kwargs: ""})()
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        with self.assertRaisesRegex(ValueError, "distinct provider"):
+            Coordinator(manifest_path=Path(__file__).resolve().parents[1] / "agent_manifest.json",
+                        state_dir=temp.name, provider=provider, reviewer_provider=provider)
+
+    def test_gateway_reviewer_factory_requires_a_distinct_model_route(self):
+        import os
+        from unittest.mock import patch
+        from unexpected_runtime.providers import AIStudioGatewayProvider, ProviderError, reviewer_provider_from_env
+        env = {"UNEXPECTED_REVIEW_PROVIDER":"ai_studio_gateway", "UNEXPECTED_REVIEW_GATEWAY_MODE":"claude",
+               "UNEXPECTED_GATEWAY_TOKEN":"test-token", "UNEXPECTED_GATEWAY_URL":"https://gateway.example/orchestrate"}
+        with patch.dict(os.environ, env, clear=True):
+            primary = AIStudioGatewayProvider(env["UNEXPECTED_GATEWAY_URL"], "test-token", mode="openai")
+            reviewer = reviewer_provider_from_env(primary)
+            self.assertIsNot(primary, reviewer)
+            self.assertEqual(reviewer.mode, "claude")
+            self.assertNotEqual(primary.mode, reviewer.mode)
+        with patch.dict(os.environ, {**env, "UNEXPECTED_REVIEW_GATEWAY_MODE":"openai"}, clear=True):
+            primary = AIStudioGatewayProvider(env["UNEXPECTED_GATEWAY_URL"], "test-token", mode="openai")
+            with self.assertRaisesRegex(ProviderError, "different live model provider"):
+                reviewer_provider_from_env(primary)
 
     def test_native_lifecycle_routes_through_plan_execute_review_improve_and_learning(self):
         coordinator, provider = self._coordinator(["PASS", "PASS"])
@@ -239,7 +270,7 @@ class CoordinatorLifecycleTests(unittest.TestCase):
         )
         self.assertEqual(result.status, "delivered")
         self.assertTrue(result.delivered)
-        self.assertEqual(provider.review_calls, 2)
+        self.assertEqual(coordinator.reviewer_provider.review_calls, 2)
         self.assertEqual([item["phase"] for item in result.verification_history],
                          ["before_improvement", "after_improvement"])
         events = {event["event_type"] for event in coordinator.store.events(100)}
@@ -254,7 +285,7 @@ class CoordinatorLifecycleTests(unittest.TestCase):
         )
         self.assertEqual(result.status, "blocked_verification")
         self.assertFalse(result.delivered)
-        self.assertEqual(provider.review_calls, 2)
+        self.assertEqual(coordinator.reviewer_provider.review_calls, 2)
         self.assertIsNone(result.delivery)
         self.assertIsNone(result.verified_output)
         events = {event["event_type"] for event in coordinator.store.events(100)}
@@ -267,7 +298,7 @@ class CoordinatorLifecycleTests(unittest.TestCase):
             max_corrections=0, max_improvements=2,
         )
         self.assertEqual(result.status, "delivered")
-        self.assertEqual(provider.review_calls, 3)
+        self.assertEqual(coordinator.reviewer_provider.review_calls, 3)
         self.assertEqual(result.improvements, 2)
         self.assertEqual([item["phase"] for item in result.verification_history],
                          ["before_improvement", "after_improvement", "after_improvement_2"])
@@ -389,6 +420,7 @@ class CoordinatorLifecycleTests(unittest.TestCase):
     def test_runtime_status_discloses_registered_evidence_checker_kinds(self):
         coordinator, provider = self._coordinator(["PASS"])
         self.assertEqual(coordinator.status()["evidence_checkers"], ["artifact"])
+        self.assertIn("enabled: injected separate provider", coordinator.status()["reviewer_provider"])
 
         configured, configured_provider = self._coordinator(
             ["PASS"], evidence_checkers={"test": lambda candidate, criterion, context: {}}
@@ -413,7 +445,7 @@ class CoordinatorLifecycleTests(unittest.TestCase):
             max_corrections=0,
         )
 
-        self.assertEqual(provider.review_calls, 1)
+        self.assertEqual(coordinator.reviewer_provider.review_calls, 1)
         self.assertEqual(result.status, "blocked_verification")
         self.assertFalse(result.delivered)
         self.assertIsNone(result.delivery)

@@ -93,6 +93,25 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
             raise
 
 
+def _read_response_bounded(connection: http.client.HTTPSConnection, response: http.client.HTTPResponse,
+                           *, deadline: float, max_bytes: int,
+                           clock: Callable[[], float] = time.monotonic) -> bytes:
+    """Read with one absolute deadline; slow chunks cannot reset the full timeout."""
+    body = bytearray()
+    while True:
+        remaining = deadline - clock()
+        if remaining <= 0:
+            raise SourceRetrievalError("Source response exceeded its overall deadline.")
+        if connection.sock is not None:
+            connection.sock.settimeout(remaining)
+        chunk = response.read(min(8192, max_bytes + 1 - len(body)))
+        if not chunk:
+            return bytes(body)
+        body.extend(chunk)
+        if len(body) > max_bytes:
+            raise SourceRetrievalError("Source response exceeds the configured byte limit.")
+
+
 def _fetch_pinned_https(
     host: str,
     address: str,
@@ -100,8 +119,13 @@ def _fetch_pinned_https(
     timeout_seconds: float,
     max_bytes: int,
 ) -> tuple[int, dict[str, str], bytes]:
+    deadline = time.monotonic() + timeout_seconds
     connection = _PinnedHTTPSConnection(host, address, timeout_seconds)
     try:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise SourceRetrievalError("Source request exceeded its overall deadline.")
+        connection.timeout = remaining
         connection.request(
             "GET",
             request_target,
@@ -113,6 +137,11 @@ def _fetch_pinned_https(
                 "User-Agent": "uneXpected-source-retriever/1.0",
             },
         )
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise SourceRetrievalError("Source response headers exceeded the overall deadline.")
+        if connection.sock is not None:
+            connection.sock.settimeout(remaining)
         response = connection.getresponse()
         headers = {key.lower(): value for key, value in response.getheaders()}
         declared_length = headers.get("content-length")
@@ -123,7 +152,7 @@ def _fetch_pinned_https(
                 raise SourceRetrievalError("Source response has an invalid content length.") from None
             if declared_size < 0 or declared_size > max_bytes:
                 raise SourceRetrievalError("Source response exceeds the configured byte limit.")
-        body = response.read(max_bytes + 1)
+        body = _read_response_bounded(connection, response, deadline=deadline, max_bytes=max_bytes)
         return response.status, headers, body
     except SourceRetrievalError:
         raise
