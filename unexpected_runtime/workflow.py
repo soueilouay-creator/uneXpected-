@@ -56,7 +56,7 @@ class WorkflowRunner:
                 feedback = str(verification.get('feedback') or '')
                 result.verification_history.append({'phase': 'before_improvement', 'passed': verification['passed'], 'feedback': feedback,
                                                     'attempt': len(result.verification_history) + 1,
-                                                    'task_id': verification.get('task_id')})
+                                                    'task_id': verification.get('task_id'), 'verification_type': verification.get('verification_type'),\n                                                    'reviewer_agent': verification.get('reviewer_agent')})
                 if verification['passed']:
                     result.verified_output = self.improve_stage(result.execution, feedback)
                     final_verification = self.verify_stage(result.verified_output, result.plan)
@@ -67,7 +67,7 @@ class WorkflowRunner:
                                                         'passed': final_verification['passed'],
                                                         'feedback': final_feedback,
                                                         'attempt': len(result.verification_history) + 1,
-                                                        'task_id': final_verification.get('task_id')})
+                                                        'task_id': final_verification.get('task_id'),\n                                                        'verification_type': final_verification.get('verification_type'),\n                                                        'reviewer_agent': final_verification.get('reviewer_agent')})
                     if final_verification['passed']:
                         result.delivery = self.deliver_stage(result.verified_output)
                         result.status, result.delivered = 'delivered', True
