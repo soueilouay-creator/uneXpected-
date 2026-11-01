@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 import uuid
 from pathlib import Path
 from typing import Any, Callable
@@ -61,6 +62,11 @@ def _stage_profile(workspace_root: Path, profile: dict[str, Any]) -> tempfile.Te
     try:
         for relative in profile["files"]:
             source = root / relative
+            current = root
+            for component in Path(relative).parts:
+                current = current / component
+                if current.is_symlink():
+                    raise TestExecutionConfigurationError("Fixed test profile paths cannot contain symlinks.")
             try:
                 resolved = source.resolve(strict=True)
                 resolved.relative_to(root)
@@ -68,7 +74,7 @@ def _stage_profile(workspace_root: Path, profile: dict[str, Any]) -> tempfile.Te
                 raise TestExecutionConfigurationError(
                     "A fixed test profile file is missing or escapes the workspace."
                 ) from None
-            if source.is_symlink() or not resolved.is_file():
+            if not resolved.is_file():
                 raise TestExecutionConfigurationError("Fixed test profile files must be regular non-symlink files.")
             destination = stage_root / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -154,7 +160,7 @@ class DockerTestExecutor:
             self.image_digest,
             *profile["argv"],
         ]
-        started = asyncio.get_running_loop().time() if _has_running_loop() else None
+        started = time.monotonic()
         try:
             try:
                 completed = subprocess.run(
@@ -178,11 +184,7 @@ class DockerTestExecutor:
                 timed_out = True
                 cleanup_confirmed = self._remove_container(container_name)
                 summary_passed = False
-            duration_seconds = (
-                max(0.0, asyncio.get_running_loop().time() - started)
-                if started is not None and _has_running_loop()
-                else None
-            )
+            duration_seconds = max(0.0, time.monotonic() - started)
             # A normal docker run leaves an exited container because this backend
             # does not use --rm; always confirm explicit removal after capturing logs.
             if not timed_out:
