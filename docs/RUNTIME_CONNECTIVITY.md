@@ -2,7 +2,7 @@
 
 ## Real AI provider gateway
 
-The v7.3.1 Python runtime can call the existing uneXpected AI Studio service at https://unexpected-ai-studio.onrender.com/orchestrate. In `ai_studio_gateway` mode, that Node gateway holds the OpenAI, Anthropic and optional OpenRouter credentials, and Python receives only a separate bearer token. The alternative `openai_compatible` mode reads `UNEXPECTED_API_KEY` in the Python host environment; that direct-key mode is separate and must be protected by the host secret manager. Its base URL must use HTTPS and cannot contain embedded credentials, a query or a fragment; redirects are disabled so the authorization header cannot be forwarded to another host.
+The v7.3.2 Python runtime can call the existing uneXpected AI Studio service at https://unexpected-ai-studio.onrender.com/orchestrate. In `ai_studio_gateway` mode, that Node gateway holds the OpenAI, Anthropic and optional OpenRouter credentials, and Python receives only a separate bearer token. The alternative `openai_compatible` mode reads `UNEXPECTED_API_KEY` in the Python host environment; that direct-key mode is separate and must be protected by the host secret manager. Its base URL must use HTTPS and cannot contain embedded credentials, a query or a fragment; redirects are disabled so the authorization header cannot be forwarded to another host.
 
 The gateway supports OpenAI Responses API, Anthropic Messages API, optional OpenRouter fallback, and a public TAAFT MCP connector limited to 28 read-only search/detail operations. Public TAAFT catalog access is not a personal TAAFT account connection. It does not expose private bookmarks, account settings or write actions.
 
@@ -35,7 +35,7 @@ The TAAFT catalog tools are reachable indirectly through the existing OpenAI/Ant
 
 ## Render test and production boundary
 
-Create a separate Python service from soueilouay-creator/uneXpected-, branch integration/v7.3.1-governed-runtime. Do not replace unexpected-ai-studio. Keep auto-deploy disabled during review. A Free Render service is for testing only: it sleeps after 15 minutes idle, has an ephemeral filesystem and no persistent disks; runtime SQLite state and approval replay ledger are not durable. Do not enable privileged actions there. Production needs persistent storage or a managed transactional database and one active instance for the current SQLite approval ledger.
+Create a separate Python service from soueilouay-creator/uneXpected-, branch integration/v7.3.2-governed-runtime. Do not replace unexpected-ai-studio. Keep auto-deploy disabled during review. A Free Render service is for testing only: it sleeps after 15 minutes idle, has an ephemeral filesystem and no persistent disks; runtime SQLite state and approval replay ledger are not durable. Do not enable privileged actions there. Production needs persistent storage or a managed transactional database and one active instance for the current SQLite approval ledger.
 
 ## Secret handoff and smoke test
 
@@ -47,3 +47,10 @@ Create a separate Python service from soueilouay-creator/uneXpected-, branch int
 6. Send a low-cost POST /v1/invoke using a harmless test objective, with Authorization: Bearer and the API token. Require a completed result and an explicitly LIVE model/provider label. /health alone never proves a live provider call.
 
 Never put either bearer token in chat, Git, PR comments, screenshots or workflow logs.
+
+
+## Excel workbook upload and artifact handoff (v7.3.2)
+
+The runtime exposes `POST /v1/excel/upload` for raw XLSX bytes with the runtime bearer token and the spreadsheet MIME type. The response contains a temporary file ID. Attach one or more of those IDs as `inputs.excel_file_ids` on `POST /v1/invoke`; the runtime confirms that each ID was uploaded through the same process before it forwards the IDs to the configured Excel-capable Node gateway. When the gateway returns generated workbooks, the runtime adds `output_artifacts` and `artifacts` metadata with an authenticated relative `download_path`. Download through `GET /v1/excel/artifacts/{id}` using the same runtime bearer token.
+
+The Excel bridge is available only when the configured provider supports workbook transfer. Deterministic mock and generic OpenAI-compatible modes fail closed. XLSX only, 20 MiB maximum per file, at most eight attachments per invocation, and 30-minute temporary expiry. Files are stored by the Node gateway and references are kept in the Python runtime process; restarts and replicas can invalidate the references. Do not treat these temporary files as persistent storage or a source of record. The Excelize worker does not execute VBA/macros or provide full Excel formula recalculation.

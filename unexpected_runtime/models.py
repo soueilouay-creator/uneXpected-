@@ -55,16 +55,19 @@ class TaskResult:
     idempotent_replay: bool = False
     started_at: float | None = None
     finished_at: float | None = None
+    output_artifacts: tuple[dict[str, Any], ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {'task_id':self.task_id,'agent_id':self.agent_id,'status':self.status,'output':self.output,
                 'provenance':list(self.provenance),'attempts':self.attempts,'error':self.error,
-                'idempotent_replay':self.idempotent_replay,'started_at':self.started_at,'finished_at':self.finished_at}
+                'idempotent_replay':self.idempotent_replay,'started_at':self.started_at,'finished_at':self.finished_at,
+                'output_artifacts':[dict(x) for x in self.output_artifacts]}
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> 'TaskResult':
         return cls(task_id=d['task_id'],agent_id=d['agent_id'],status=d['status'],output=d.get('output',''),
                    provenance=tuple(d.get('provenance',[])),attempts=d.get('attempts',0),error=d.get('error'),
-                   idempotent_replay=d.get('idempotent_replay',False),started_at=d.get('started_at'),finished_at=d.get('finished_at'))
+                   idempotent_replay=d.get('idempotent_replay',False),started_at=d.get('started_at'),finished_at=d.get('finished_at'),
+                   output_artifacts=tuple(dict(x) for x in d.get('output_artifacts',[]) if isinstance(x,dict)))
 
 @dataclass(frozen=True)
 class ApprovalContext:

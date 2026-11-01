@@ -1,7 +1,7 @@
 from __future__ import annotations
 import http.client, json, tempfile, threading, unittest
 from unittest.mock import patch
-from unexpected_runtime.providers import AIStudioGatewayProvider, OpenAICompatibleProvider, ProviderError, provider_from_env, _NoRedirect
+from unexpected_runtime.providers import AIStudioGatewayProvider, OpenAICompatibleProvider, ProviderError, ProviderResponse, provider_from_env, _NoRedirect
 from unexpected_runtime.http_api import create_server
 from unexpected_runtime.coordinator import Coordinator
 
@@ -20,12 +20,53 @@ class ProviderTests(unittest.TestCase):
         p=AIStudioGatewayProvider("https://unexpected-ai-studio.onrender.com/orchestrate","g"*48,mode="openai")
         with patch("unexpected_runtime.providers.urllib.request.build_opener",return_value=opener):
             out=p.generate(system_prompt="S",user_prompt="U",agent_id="orchestrator",task_id="t",timeout=12)
-        self.assertIn("real answer",out); self.assertEqual(opener.request.get_header("Authorization"),"Bearer "+"g"*48)
+        self.assertIsInstance(out, ProviderResponse); self.assertIn("real answer",out.text); self.assertEqual(opener.request.get_header("Authorization"),"Bearer "+"g"*48)
     def test_dual_mode_prefers_live_synthesis(self):
         p=AIStudioGatewayProvider("https://gateway.example/orchestrate","g"*48,mode="both")
         op=Opener({"ok":True,"results":{"synthesis":{"status":"LIVE · verified response","text":"combined"}}})
         with patch("unexpected_runtime.providers.urllib.request.build_opener",return_value=op):
-            self.assertIn("combined",p.generate(system_prompt="S",user_prompt="U",agent_id="a",task_id="t",timeout=5))
+            self.assertIn("combined",p.generate(system_prompt="S",user_prompt="U",agent_id="a",task_id="t",timeout=5).text)
+    def test_excel_provider_forwards_only_explicit_uploaded_file_ids_and_returns_artifacts(self):
+        file_id = "123e4567-e89b-42d3-a456-426614174000"
+        artifact_id = "223e4567-e89b-42d3-a456-426614174000"
+        artifact = {"id": artifact_id, "fileName": "report.xlsx", "sizeBytes": 1024,
+                    "expiresInSeconds": 1800, "downloadPath": "/excel/download/" + artifact_id}
+        opener = Opener({"ok": True,
+                         "results": {"openai": {"status": "LIVE · verified response",
+                                                "text": "Workbook inspected.", "model": "gpt-4.1"}},
+                         "excelArtifacts": [artifact]})
+        provider = AIStudioGatewayProvider("https://gateway.example/orchestrate", "g" * 48, mode="openai")
+        with patch("unexpected_runtime.providers.urllib.request.build_opener", return_value=opener):
+            result = provider.generate(system_prompt="S", user_prompt="U", agent_id="data-analyst",
+                                       task_id="t", timeout=5, excel_file_ids=[file_id])
+        request = json.loads(opener.request.data.decode())
+        self.assertEqual(request["excelFiles"], [file_id])
+        self.assertEqual(result.text, "[Live AI result: openai; model=gpt-4.1]\nWorkbook inspected.")
+        self.assertEqual(result.excel_artifacts[0]["id"], artifact_id)
+        self.assertEqual(result.excel_artifacts[0]["fileName"], "report.xlsx")
+
+    def test_excel_provider_uploads_xlsx_to_gateway_with_authentication(self):
+        file_id = "123e4567-e89b-42d3-a456-426614174000"
+        opener = Opener({"ok": True, "file": {"id": file_id, "name": "source.xlsx",
+                                                "sizeBytes": 8, "expiresInSeconds": 1800}})
+        provider = AIStudioGatewayProvider("https://gateway.example/orchestrate", "g" * 48)
+        with patch("unexpected_runtime.providers.urllib.request.build_opener", return_value=opener):
+            result = provider.upload_workbook(bytes((0x50, 0x4b, 0x03, 0x04)) + b"test", "source.xlsx", timeout=5)
+        self.assertEqual(result["id"], file_id)
+        self.assertEqual(opener.request.full_url, "https://gateway.example/excel/upload")
+        self.assertEqual(opener.request.get_header("Authorization"), "Bearer " + "g" * 48)
+        self.assertEqual(opener.request.get_header("Content-type"),
+                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        self.assertEqual(opener.request.data, bytes((0x50, 0x4b, 0x03, 0x04)) + b"test")
+
+    def test_excel_provider_rejects_invalid_attachment_ids_before_network_call(self):
+        provider = AIStudioGatewayProvider("https://gateway.example/orchestrate", "g" * 48)
+        with patch("unexpected_runtime.providers.urllib.request.build_opener") as build:
+            with self.assertRaises(ProviderError):
+                provider.generate(system_prompt="S", user_prompt="U", agent_id="a", task_id="t",
+                                  timeout=5, excel_file_ids=["not-a-uuid"])
+            build.assert_not_called()
+
     def test_missing_token_and_non_live_result_fail_closed(self):
         p=AIStudioGatewayProvider("https://gateway.example/orchestrate","")
         with self.assertRaises(ProviderError): p.generate(system_prompt="S",user_prompt="U",agent_id="a",task_id="t",timeout=5)
