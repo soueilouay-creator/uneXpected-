@@ -16,9 +16,10 @@
       const taskStatus = body?.result?.status;
       const taskError = body?.result?.error;
       const message = body?.error ||
+        (body?.report?.failure_reason ? "Quality evaluation blocked: "+body.report.failure_reason :
         (taskStatus ? "Task "+taskStatus+(taskError ? ": "+taskError : " did not complete.") :
-        ("Request failed ("+response.status+")"));
-      throw new Error(message);
+        ("Request failed ("+response.status+")")));
+      const error = new Error(message); error.body = body; throw error;
     }
     return body;
   }
@@ -64,9 +65,10 @@
   async function refresh() {
     $("refresh").disabled=true;
     try {
-      const [status,agents,tasks,events,providers,caps,improvements,approvals]=await Promise.all([
+      const [status,agents,tasks,events,providers,caps,improvements,approvals,resources,qualityRuns]=await Promise.all([
         api("/v1/status"),api("/v1/agents"),api("/v1/tasks?limit=8"),api("/v1/events?limit=8"),
-        api("/v1/providers"),api("/v1/capabilities"),api("/v1/improvements"),api("/v1/approvals")
+        api("/v1/providers"),api("/v1/capabilities"),api("/v1/improvements"),api("/v1/approvals"),
+        api("/v1/resources?limit=100"),api("/v1/quality-evaluations?limit=20")
       ]);
       state.status=status; state.agents=agents.items||[];
       $("metric-health").textContent=status.health?.status||"Ready";
@@ -90,6 +92,11 @@
       $("capability-list").innerHTML=(caps.items||[]).length?caps.items.map(c=>row(c.name||c.capability_id,c.source||c.description||"",c.status||"registered")).join(""):'<div class="empty">No capabilities registered. Catalog entries do not imply live integrations.</div>';
       $("improvement-list").innerHTML=(improvements.items||[]).length?improvements.items.map(p=>row(p.proposal_id,p.agent_id+" · "+p.changes,p.status)).join(""):'<div class="empty">No improvement proposals recorded.</div>';
       $("approval-list").innerHTML=(approvals.items||[]).length?approvals.items.map(a=>row(a.approval_id,a.permission,a.status)).join(""):'<div class="empty">'+esc(approvals.message||"No pending approval records are exposed. Privileged execution remains disabled.")+'</div>';
+      $("resource-list").innerHTML=(resources.items||[]).length?(resources.items||[]).map(item=>row(item.name,item.expected_benefit+" · source: "+item.source_list_url,item.adoption_status)).join(""):'<div class="empty">No resource references are indexed yet.</div>';
+      $("quality-evaluation-list").innerHTML=(qualityRuns.items||[]).length?(qualityRuns.items||[]).map(item=>{
+        const failures=(item.failure_classes||[]).join(", ")||item.failure_reason||"No failure class";
+        return row(item.evaluation_id,item.provider_route+" · "+item.execution_mode+" · "+failures,(item.status||"unknown")+" · "+Math.round((item.score||0)*100)+"%");
+      }).join(""):'<div class="empty">No AI quality evaluations recorded yet.</div>';
       $("approval-state").textContent=status.governance?.approval_authority||"Not verified";
       $("replay-state").textContent=status.governance?.replay_protection||"Not verified";
       $("recovery-state").textContent=status.storage?.recovery||"Not verified";
@@ -106,9 +113,9 @@
   function showView(name) {
     document.querySelectorAll(".view").forEach(v=>v.classList.toggle("active",v.id==="view-"+name));
     document.querySelectorAll(".nav").forEach(v=>v.classList.toggle("active",v.dataset.view===name));
-    const titles={overview:"System overview",agents:"Agent registry",tasks:"Tasks & workflows",providers:"AI providers",capabilities:"Capabilities",governance:"Governance",audit:"Audit & learning"};
+    const titles={overview:"System overview",agents:"Agent registry",tasks:"Tasks & workflows",providers:"AI providers",capabilities:"Capabilities",intelligence:"Resource & AI quality",governance:"Governance",audit:"Audit & learning"};
     $("page-title").textContent=titles[name]||"System overview";
-    if (name==="tasks"||name==="audit"||name==="governance") refresh();
+    if (name==="tasks"||name==="audit"||name==="governance"||name==="intelligence") refresh();
   }
   document.querySelectorAll("[data-view]").forEach(link=>link.addEventListener("click",e=>{e.preventDefault();const name=link.dataset.view;showView(name);history.replaceState(null,"","#"+name);}));
   $("refresh").addEventListener("click",refresh);
@@ -122,6 +129,28 @@
       await refresh();
     } catch(error) { toast(error.message); }
     finally { button.disabled=false;button.textContent="Test connection"; }
+  });
+  $("quality-evaluation-form").addEventListener("submit",async e=>{
+    e.preventDefault();
+    const button=$("quality-evaluation-submit");
+    const route=$("quality-provider").value;
+    const output=$("quality-evaluation-result");
+    if(!route){output.textContent="Choose a verified live provider route first.";return;}
+    button.disabled=true;output.textContent="Running the bounded read-only AI quality suite…";
+    const renderReport=report=>{
+      const failures=(report.failure_classes||[]).join(", ")||report.failure_reason||"No failed checks";
+      output.textContent="Evaluation "+report.status+" · "+report.passed_cases+"/"+report.scenario_count+" cases passed · score "+Math.round((report.score||0)*100)+"% · "+report.execution_mode+". "+failures;
+    };
+    try {
+      const response=await api("/v1/quality-evaluations",{method:"POST",body:JSON.stringify({provider_route:route})});
+      renderReport(response.report||{status:"unknown"});
+      toast("AI quality evaluation "+(response.report?.status||"finished"));
+      await refresh();
+    } catch(error) {
+      if(error.body?.report)renderReport(error.body.report);
+      else output.textContent="Evaluation could not run: "+error.message;
+      toast(error.message);await refresh();
+    } finally {button.disabled=false;}
   });
   $("agent-search").addEventListener("input",e=>{const q=e.target.value.toLowerCase();document.querySelectorAll("#agent-grid article").forEach(card=>card.hidden=!card.textContent.toLowerCase().includes(q));});
   $("task-provider").addEventListener("change",syncLifecycleMode);
