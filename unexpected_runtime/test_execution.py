@@ -39,7 +39,7 @@ TEST_PROFILES: dict[str, dict[str, Any]] = {
             "-v",
         ),
         "guest_timeout_seconds": 120,
-        "trusted_files": {"tests/test_evidence_engine.py": "82ad386c633e5c8854d5b1f0824dcd09b5cc5a89a0d78e3c10acf668c56c0e13"},
+        "trusted_files": {"tests/test_evidence_engine.py": "895bdd493ba846f2ac0c5bd8a67eeede5ef40b3c1862c17329ed1a87f907956e"},
     }
 }
 
