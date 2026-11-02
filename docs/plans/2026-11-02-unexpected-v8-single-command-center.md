@@ -110,11 +110,12 @@
 
 **Files:**
 - Create: `unexpected_runtime/postgres_storage.py` — PostgreSQL implementation of the StateStore contract.
+- Create: `unexpected_runtime/postgres_idempotency.py` — atomic single-flight claims, replay and result storage.
 - Create: `unexpected_runtime/postgres_approval_ledger.py` — atomic one-use approval ledger.
 - Modify: `unexpected_runtime/storage.py` — explicit storage factory or protocol boundary.
 - Modify: `unexpected_runtime/coordinator.py` — select backend using `UNEXPECTED_STORAGE_BACKEND` and `DATABASE_URL`; fail closed if production config is incomplete.
 - Modify: `unexpected_runtime/approvals.py` — inject a ledger interface rather than hard-coding SQLite for hosted verification.
-- Create: `migrations/002_v8_runtime_constraints.sql` — additive indexes/constraints only after comparing the existing Neon schema.
+- Create: `migrations/002_idempotency_claims.sql` — additive claim table/index only after comparing the existing Neon schema.
 - Create: `requirements.txt` — pin a supported psycopg 3 binary extra only if deployment build requires it.
 - Create: `tests/test_postgres_storage.py`, `tests/test_postgres_approval_ledger.py`, `tests/test_storage_contract.py`.
 
