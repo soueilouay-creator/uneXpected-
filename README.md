@@ -8,7 +8,7 @@ uneXpected v8 is one governed Python application with one desktop web command ce
 
 - One Python HTTP application and one public API boundary.
 - A desktop-first command center for system health, agents, tasks, lifecycle history, providers, capabilities, approvals, audit, and improvement proposals.
-- The canonical 38 specialist roles and existing skill registry.
+- The canonical 38 specialist roles and a hash-pinned Skill bundle registry with backward-compatible v1/v2 manifests.
 - The governed coordinator and seven-stage workflow: Request → Plan → Execute → Verify → Improve → Deliver → Learn.
 - Resource Intelligence: permanent Awesome research index with provenance, independent license/security status and discovery-only adoption states.
 - AI Quality Evaluation: bounded deterministic output checks for instruction following, prompt injection, grounding, safety, structured output and regressions.
@@ -71,6 +71,27 @@ Apply migrations in order from an isolated database branch before configuring th
 For a fresh PostgreSQL database, apply `migrations/001_initial.sql` followed by `migrations/002_idempotency_claims.sql`. For an existing schema-v1 database, first compare it against migration 001, then apply only migration 002. The v8 adapter refuses to start before schema version 2. The included Render Blueprint creates one free web service only; it does not create a database.
 
 The current Neon Free plan has no scheduled backup snapshots. Verify the current limits, backup/export destination, and restore process before relying on it for durable production records.
+
+## Verified Skill bundles
+
+The authenticated command center exposes `GET /v1/skills` for metadata-only Skill discovery. `POST /v1/invoke` accepts an optional `skill_ids` array (up to four unique IDs) for explicit user-invoked Skills. Task records persist the selected IDs, and the idempotency/approval action digests bind the selection.
+
+- Manifest schema v1 remains compatible; schema v2 adds `invocation_mode`, `description`, `allowed_tools`, and hash-pinned `resources`.
+- Invocation modes are `automatic` (trigger-matched), `user_invocable` (explicitly selected), and `always_apply` (attached only to mapped roles).
+- Every Skill and bundled resource is pinned by SHA-256 and checked at load and again before context use. Paths must remain inside the package root.
+- Only the main `SKILL.md` and explicitly typed `reference` files enter model context. `script` and `asset` resources are inert, are never executed, and are not injected.
+- `allowed_tools` is descriptive metadata only. It never installs or authorizes an MCP tool; adapter verification, role permissions and host approvals remain authoritative.
+- Selection limits: 4 requested Skills, 8 applied Skills, 32 resources per Skill, 256 KiB per resource, and 64 KiB of context per Skill.
+
+Example authenticated request:
+
+```json
+{
+  "agent_id": "maintenance-engineer",
+  "objective": "Review the preventive-maintenance checklist",
+  "skill_ids": ["maintenance-checklist"]
+}
+```
 
 ## Security and approval boundary
 
