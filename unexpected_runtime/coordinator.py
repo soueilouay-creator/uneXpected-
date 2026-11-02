@@ -291,18 +291,44 @@ class Coordinator:
         if inputs is not None and not isinstance(inputs, dict):
             raise TypeError("inputs must be a dictionary.")
         request = {"agent_id": agent_id, "objective": objective, "inputs": dict(inputs or {})}
+        workflow_id = str(uuid.uuid4())
+        effective_provider_route = provider_route
+        if hasattr(self.provider, "resolve"):
+            effective_provider_route = provider_route or getattr(self.provider, "default_route", None)
+            selected_provider = self.provider.resolve(effective_provider_route)
+            selected_name = getattr(selected_provider, "name", type(selected_provider).__name__)
+            if (selected_name == "deterministic-mock"
+                    or not bool(getattr(selected_provider, "configured", True))
+                    or not bool(getattr(selected_provider, "verified", False))):
+                raise ValueError(
+                    "A full lifecycle requires a configured, verified live provider route; "
+                    "mock and unverified routes cannot run the reviewer gate."
+                )
         stage_task_ids: list[str] = []
         worker_task_ids: list[str] = []
+        completed_stages: list[str] = []
+        workflow_ref = f"workflow:{workflow_id}"
+
+        def record_stage(stage: str, status: str, task_id: str | None = None,
+                         role_id: str | None = None, **details):
+            payload = {"workflow_id": workflow_id, "stage": stage, "status": status, **details}
+            self.store.log_event("workflow_stage_outcome", task_id, role_id or agent_id, payload)
+            if status in {"accepted", "completed", "passed", "delivered", "recorded"}:
+                if stage not in completed_stages:
+                    completed_stages.append(stage)
 
         def invoke_stage(stage:str, role_id:str, stage_objective:str, payload:dict[str,Any]) -> tuple[str, str]:
             result = self.invoke(role_id, stage_objective, payload,
                                  deadline_seconds=deadline_seconds, max_steps=6,
-                                 source_refs=(f"workflow-stage:{stage}",), provider_route=provider_route)
+                                 source_refs=(workflow_ref, f"workflow-stage:{stage}"),
+                                 provider_route=effective_provider_route)
             stage_task_ids.append(result.task_id)
             self.store.log_event("workflow_stage_result", result.task_id, role_id,
-                                 {"stage": stage, "status": result.status})
+                                 {"workflow_id": workflow_id, "stage": stage, "status": result.status})
             if result.status != "completed":
                 raise RuntimeError(f"{stage} stage did not complete ({result.status}).")
+            if stage != "verify":
+                record_stage(stage, "completed", result.task_id, role_id)
             return result.output, result.task_id
 
         def plan_stage(task_request:dict[str,Any], feedback:str|None):
@@ -349,6 +375,10 @@ class Coordinator:
                 review = ("Reviewer returned no valid verdict line; verification failed closed. "
                           "Raw reviewer response: " + review)
                 passed = False
+            record_stage("verify", "passed" if passed else "rejected", task_id, "code-reviewer",
+                         phase=phase, reviewer_agent="code-reviewer",
+                         candidate_task_id=candidate.get("task_id"),
+                         feedback=review[:1500])
             return {"passed": passed, "feedback": review, "task_id": task_id,
                     "verification_type": "role_based_model_review", "reviewer_agent": "code-reviewer"}
 
@@ -376,11 +406,16 @@ class Coordinator:
             return plan_context
 
         def deliver_stage(improved:dict[str,Any]):
-            return {"status": "delivered", "agent_id": agent_id,
-                    "task_id": improved.get("task_id"), "output": improved.get("text", ""),
-                    "verification": "passed_initial_review_and_final_improved_candidate_review",
-                    "verification_type": "role_based_model_review",
-                    "reviewer_agent": "code-reviewer"}
+            output = str(improved.get("text", ""))
+            delivery = {"status": "delivered", "agent_id": agent_id,
+                        "task_id": improved.get("task_id"), "output": output,
+                        "verification": "passed_initial_review_and_final_improved_candidate_review",
+                        "verification_type": "role_based_model_review",
+                        "reviewer_agent": "code-reviewer"}
+            record_stage("deliver", "delivered", improved.get("task_id"), agent_id,
+                         verified=True, output_sha256=hashlib.sha256(output.encode("utf-8")).hexdigest(),
+                         output_length=len(output), delivery_type="local_result")
+            return delivery
 
         def learn_stage(record:dict[str,Any]):
             feedback = json.dumps({"status": record.get("status"),
@@ -388,25 +423,31 @@ class Coordinator:
                                    "corrections": record.get("corrections", 0),
                                    "improvements": record.get("improvements", 0),
                                    "error": record.get("error")}, ensure_ascii=False)
-            ImprovementGovernor(self).record_outcome(
+            outcome_id = ImprovementGovernor(self).record_outcome(
                 agent_id, worker_task_ids[-1] if worker_task_ids else None,
                 bool(record.get("delivered")), feedback,
-                provenance=[f"task:{task_id}" for task_id in stage_task_ids],
+                provenance=[workflow_ref, *[f"task:{task_id}" for task_id in stage_task_ids]],
             )
+            record_stage("learn", "recorded", worker_task_ids[-1] if worker_task_ids else None,
+                         agent_id, outcome_id=outcome_id)
             self.store.log_event("workflow_cycle_learned",
                                  worker_task_ids[-1] if worker_task_ids else None,
                                  agent_id,
-                                 {"status": record.get("status"),
-                                  "stage_count": len(stage_task_ids),
+                                 {"workflow_id": workflow_id, "status": record.get("status"),
+                                  "stage_count": len(completed_stages),
+                                  "stages_completed": list(completed_stages),
                                   "delivered": bool(record.get("delivered"))})
 
         self.store.log_event("workflow_cycle_started", agent_id=agent_id,
-                             payload={"agent_id": agent_id, "max_corrections": max_corrections,
+                             payload={"workflow_id": workflow_id, "agent_id": agent_id,
+                                      "max_corrections": max_corrections,
                                       "max_improvements": max_improvements})
+        record_stage("request", "accepted", role_id=agent_id,
+                     objective_sha256=hashlib.sha256(objective.encode("utf-8")).hexdigest())
         runner = WorkflowRunner(plan=bound_plan, execute=execute_stage, verify=verify_stage,
                                  improve=improve_stage, deliver=deliver_stage, learn=learn_stage,
                                  max_corrections=max_corrections, max_improvements=max_improvements)
-        return runner.run(request)
+        return runner.run(request, workflow_id=workflow_id)
 
     def add_shared_knowledge(self,source:str,content:str): return self.store.add_knowledge(source,content)
     def approve_shared_knowledge(self,knowledge_id:str,approval:ApprovalContext|None=None):
