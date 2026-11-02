@@ -12,6 +12,22 @@ permissions:
 jobs:
   runtime-tests:
     runs-on: ubuntu-latest
+    env:
+      TEST_POSTGRES_DSN: postgresql://unexpected:test-password@localhost:5432/unexpected_test
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: unexpected
+          POSTGRES_PASSWORD: test-password
+          POSTGRES_DB: unexpected_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U unexpected -d unexpected_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -21,6 +37,18 @@ jobs:
         run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
       - name: Compile runtime
         run: python -m compileall -q unexpected_runtime
+      - name: Apply PostgreSQL migrations to ephemeral CI database
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import psycopg
+          dsn = os.environ["TEST_POSTGRES_DSN"]
+          with psycopg.connect(dsn, autocommit=True) as connection:
+              for migration in sorted(Path("migrations").glob("*.sql")):
+                  connection.execute(migration.read_text(encoding="utf-8"), prepare=False)
+                  print(f"Applied {migration}")
+          PY
       - name: Build v8 source integrity fixture
         run: |
           python - <<'PY'
