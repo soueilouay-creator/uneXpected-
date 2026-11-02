@@ -1,3 +1,5 @@
+> **v8 unified consolidation (in progress):** The approved v8 migration is being developed on `feature/unified-v8-consolidation`. This combines the governed Python runtime, Node provider gateway, web interface and phone workspace in one application. The branch has passing Python regression, Node contract, and phone/gateway/Docker CI checks; the live Render test deployment and data migration are still being verified. Existing services remain online as rollback sources. See [v8 design](docs/specs/2026-11-02-unified-v8-design.md), [implementation plan](docs/plans/2026-11-02-unified-v8-consolidation.md), [cutover checklist](docs/UNIFIED_V8_CUTOVER.md) and [rollback procedure](docs/ROLLBACK_V8.md).
+
 # uneXpected v7.3.1 — Unified Self-Developing Agent Ecosystem
 
 A local, executable, quality-gated runtime scaffold for 38 canonical agent roles. It preserves 37 legacy specialist profiles and adds one self-improvement governor. The 120 upstream README-linked templates are mapped as workflow capabilities, not separate agents.
