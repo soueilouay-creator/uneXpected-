@@ -2,7 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from typing import Any
-import json, os, time, uuid, hashlib, math
+import json, os, time, uuid, hashlib, math, logging
 from .models import TaskRequest, AgentMessage, TaskResult, CancellationToken, ApprovalContext, PermissionDenied, CycleLimitError, BudgetExceeded, UnknownAgent
 from .registry import AgentRegistry
 from .providers import provider_from_env
@@ -129,10 +129,37 @@ class Coordinator:
                 else: status='completed'
                 break
             except FutureTimeout:
-                token.cancel(); status='timeout'; error='Provider deadline exceeded; cancellation is cooperative.'; self.store.log_event('provider_timeout',req.task_id,spec.id,{'attempt':attempts}); break
+                token.cancel(); status='timeout'; error='Provider deadline exceeded; cancellation is cooperative.'
+                self.store.log_event('provider_timeout',req.task_id,spec.id,{'attempt':attempts})
+                logging.getLogger(__name__).warning(json.dumps({
+                    'event':'provider_timeout',
+                    'task_id':req.task_id,
+                    'agent_id':spec.id,
+                    'provider':str(getattr(self.provider,'name','unknown'))[:80],
+                    'attempt':attempts,
+                    'error_code':'provider_timeout'
+                },sort_keys=True))
+                break
             except Exception as e:
-                error=f'{type(e).__name__}: provider invocation failed'
-                self.store.log_event('provider_error',req.task_id,spec.id,{'attempt':attempts,'error_type':type(e).__name__})
+                error_code=getattr(e,'code','provider_error')
+                if (not isinstance(error_code,str) or not 1 <= len(error_code) <= 64
+                        or not error_code.isascii()
+                        or any(not (char.islower() or char.isdigit() or char=='_') for char in error_code)):
+                    error_code='provider_error'
+                error=f'{type(e).__name__}: provider invocation failed [{error_code}]'
+                provider_name=getattr(self.provider,'name','unknown')
+                if not isinstance(provider_name,str) or not provider_name.isascii():
+                    provider_name=type(self.provider).__name__
+                self.store.log_event('provider_error',req.task_id,spec.id,{'attempt':attempts,'error_type':type(e).__name__,'error_code':error_code})
+                logging.getLogger(__name__).error(json.dumps({
+                    'event':'provider_error',
+                    'task_id':req.task_id,
+                    'agent_id':spec.id,
+                    'provider':provider_name[:80],
+                    'attempt':attempts,
+                    'error_type':type(e).__name__,
+                    'error_code':error_code
+                },sort_keys=True))
                 if attempt<self.max_retries and bool(getattr(self.provider, 'retry_safe', False)) and not token.cancelled:
                     self.store.log_event('provider_retry',req.task_id,spec.id,{'attempt':attempts}); continue
                 break
