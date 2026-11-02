@@ -78,6 +78,18 @@ class WorkspaceAPITests(unittest.TestCase):
             self.call("GET", "/v1/workspace/export", token="wrong-token")
         self.assertEqual(error.exception.code, 401)
 
+    def test_runtime_status_and_agent_registry_are_authenticated(self):
+        with self.assertRaises(urllib.error.HTTPError) as status_error:
+            self.call("GET", "/v1/status", token="wrong-token")
+        self.assertEqual(status_error.exception.code, 401)
+        status, payload = self.call("GET", "/v1/status")
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["registered_agents"], 38)
+        status, agents = self.call("GET", "/v1/agents")
+        self.assertEqual(status, 200)
+        self.assertEqual(len(agents["agents"]), 38)
+        self.assertTrue(any(agent["id"] == "orchestrator" for agent in agents["agents"]))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
