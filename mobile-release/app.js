@@ -49,6 +49,13 @@ function formatDate(value, options = { month: 'short', day: 'numeric' }) {
 
 function gatewayBase() {
   const raw = $('#gatewayUrl')?.value.trim() || appSettings.gatewayUrl || '';
+  if (raw) {
+    try {
+      // Existing phone installs may still remember the old standalone Studio host.
+      // Route that known legacy address to the current unified application origin.
+      if (new URL(raw, location.origin).hostname === 'unexpected-ai-studio.onrender.com') return location.origin;
+    } catch {}
+  }
   return raw ? raw.replace(/\/$/, '') : location.origin;
 }
 
@@ -980,7 +987,7 @@ async function syncWorkspace() {
     if (new Blob([importBody]).size > 2_400_000) {
       throw new Error('Workspace exceeds the safe sync size. Export a local backup and sync smaller batches.');
     }
-    const uploaded = await fetch(`${gatewayBase()}/v1/workspace/import`, {
+    const uploaded = await fetch(`${location.origin}/v1/workspace/import`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
       body: importBody,
@@ -994,7 +1001,7 @@ async function syncWorkspace() {
     let downloaded = 0;
     let conflicts = Number(importResult.counts?.conflicts || 0);
     try {
-      const response = await fetch(`${gatewayBase()}/v1/workspace/export`, {
+      const response = await fetch(`${location.origin}/v1/workspace/export`, {
         headers: { authorization: `Bearer ${token}` },
         redirect: 'error'
       });
