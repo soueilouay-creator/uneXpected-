@@ -146,14 +146,39 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                 items=active.store.list_tasks(limit)
                 return self.send_json(200,{"count":len(items),"items":items})
             if path=="/v1/events":
-                items=self.event_items(active.store.events(limit))
+                task_filter=(query.get("task_id") or [None])[0]
+                rows=active.store.events(200 if task_filter else limit)
+                items=self.event_items(rows)
+                if task_filter: items=[item for item in items if item.get("task_id")==task_filter]
                 return self.send_json(200,{"count":len(items),"items":items})
+            if path.startswith("/v1/tasks/"):
+                task_id=path[len("/v1/tasks/"):]
+                if not task_id or "/" in task_id: return self.send_json(404,{"error":"Not found."})
+                row=active.store.get_task(task_id)
+                if not row: return self.send_json(404,{"error":"Unknown task."})
+                item=dict(row)
+                try: payload=json.loads(item.pop("payload_json") or "{}")
+                except (TypeError,ValueError): payload={}
+                raw_result=item.pop("result_json",None)
+                try: result=json.loads(raw_result) if raw_result else None
+                except (TypeError,ValueError): result=None
+                item.update({"objective":payload.get("objective",""),"inputs":payload.get("inputs",{}),
+                             "source_refs":payload.get("source_refs",[]),"provider_route":payload.get("provider_route"),
+                             "result":result})
+                return self.send_json(200,{"task":item})
             if path=="/v1/capabilities":
                 items=active.store.list_capabilities()
                 return self.send_json(200,{"count":len(items),"items":items})
             if path=="/v1/improvements":
                 items=active.store.list_proposals(limit)
                 return self.send_json(200,{"count":len(items),"items":items})
+            if path.startswith("/v1/improvements/"):
+                proposal_id=path[len("/v1/improvements/"):]
+                if not proposal_id or "/" in proposal_id: return self.send_json(404,{"error":"Not found."})
+                proposal=active.store.get_proposal(proposal_id)
+                if not proposal: return self.send_json(404,{"error":"Unknown improvement proposal."})
+                proposal.pop("candidate_instruction",None)
+                return self.send_json(200,{"proposal":proposal})
             if path=="/v1/providers":
                 provider=getattr(active,"provider",None)
                 if hasattr(provider,"status"):
@@ -171,15 +196,40 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             return self.send_json(404,{"error":"Not found."})
         def do_POST(self):
             route=urlsplit(self.path).path
-            if route not in {"/v1/invoke", "/v1/lifecycle", "/v1/providers/test"}: return self.send_json(404,{"error":"Not found."})
+            if route not in {"/v1/invoke", "/v1/lifecycle", "/v1/providers/test", "/v1/improvements/propose"}: return self.send_json(404,{"error":"Not found."})
             is_lifecycle=route=="/v1/lifecycle"
             is_provider_test=route=="/v1/providers/test"
+            is_improvement_propose=route=="/v1/improvements/propose"
             if not self.authorize(): return
             identity=self.client_address[0] if self.client_address else "unknown"
             active_limiter=lifecycle_limiter if is_lifecycle else limiter
             if not active_limiter.allow(identity): return self.send_json(429,{"error":"Request rate limit exceeded."})
             body=self.read_body()
             if body is None: return
+            if is_improvement_propose:
+                allowed_proposal={"agent_id","candidate_instruction","changes","benchmark_id","protected_fields"}
+                if set(body)-allowed_proposal: return self.send_json(400,{"error":"Unsupported proposal fields."})
+                agent=body.get("agent_id")
+                candidate=body.get("candidate_instruction")
+                changes=body.get("changes")
+                benchmark=body.get("benchmark_id")
+                protected_fields=body.get("protected_fields",[])
+                if (not isinstance(agent,str) or not agent.strip() or not isinstance(candidate,str)
+                        or not candidate.strip() or len(candidate)>20000
+                        or not isinstance(changes,str) or not changes.strip() or len(changes)>5000
+                        or not isinstance(benchmark,str) or not benchmark.strip()
+                        or not isinstance(protected_fields,list) or len(protected_fields)>16
+                        or any(not isinstance(item,str) for item in protected_fields)):
+                    return self.send_json(400,{"error":"Invalid improvement proposal fields."})
+                try:
+                    from .improvement import ImprovementGovernor
+                    governor=ImprovementGovernor(active)
+                    proposal_id=governor.propose(agent.strip(),candidate,changes,benchmark.strip(),protected_fields)
+                    proposal=active.store.get_proposal(proposal_id)
+                    if proposal: proposal.pop("candidate_instruction",None)
+                    return self.send_json(201,{"proposal":proposal})
+                except Exception as exc:
+                    return self.send_json(400,{"error":f"Proposal rejected ({type(exc).__name__})."})
             if is_provider_test:
                 if set(body)!={"provider_route"} or not isinstance(body.get("provider_route"),str):
                     return self.send_json(400,{"error":"provider_route is required."})
