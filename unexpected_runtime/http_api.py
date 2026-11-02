@@ -84,6 +84,9 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                 if not self.authorize(): return
                 status=active.status()
                 return self.send_json(200,{k:status.get(k) for k in ("ecosystem_version","registered_agents","provider","mode","max_workers","max_retries","approval_verifier")})
+            if path=="/v1/agents":
+                if not self.authorize(): return
+                return self.send_json(200,{"agents":active.list_agents()})
             if path=="/v1/workspace/export":
                 if not self.authorize(): return
                 records=active.store.export_workspace_records()
