@@ -252,6 +252,39 @@ class TrustedSourceRetrieverTests(unittest.TestCase):
             server_sock.close()
             sender.join(timeout=1)
 
+    def test_slow_response_headers_obey_absolute_deadline(self):
+        import http.client
+        import socket
+        import threading
+        import time
+        from unexpected_runtime import source_retrieval
+
+        client_sock, server_sock = socket.socketpair()
+        deadline = time.monotonic() + 0.28
+        active_socket = source_retrieval._DeadlineSocket(client_sock, deadline)
+
+        def serve():
+            try:
+                for byte in b"HTTP/1.1 200 OK\\r\\nContent-Length: 0\\r\\n\\r\\n":
+                    time.sleep(0.04)
+                    server_sock.sendall(bytes([byte]))
+            except OSError:
+                pass
+
+        sender = threading.Thread(target=serve, daemon=True)
+        sender.start()
+        response = http.client.HTTPResponse(active_socket, method="GET")
+        try:
+            started = time.monotonic()
+            with self.assertRaises(source_retrieval._DeadlineExceeded):
+                response.begin()
+            self.assertLess(time.monotonic() - started, 0.55)
+        finally:
+            response.close()
+            active_socket.close()
+            server_sock.close()
+            sender.join(timeout=1)
+
     def test_environment_factory_is_disabled_without_an_allowlist(self):
         with patch.dict("os.environ", {}, clear=True):
             self.assertIsNone(source_retriever_from_env())
