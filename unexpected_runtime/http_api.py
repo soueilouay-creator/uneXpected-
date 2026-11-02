@@ -13,6 +13,21 @@ RATE_LIMIT_PER_MINUTE=30
 SOCKET_TIMEOUT_SECONDS=10
 MAX_SOURCE_REF_CHARS=2048
 
+
+def _safe_provider_diagnostic(provider, exc):
+    """Return a bounded provider error without exposing host-stored credentials."""
+    from .providers import ProviderError
+
+    if not isinstance(exc, ProviderError):
+        return f"Provider request failed ({type(exc).__name__})."
+    message = " ".join(str(exc).split())
+    for attribute in ("_api_key", "_token"):
+        secret = getattr(provider, attribute, None) if provider is not None else None
+        if isinstance(secret, str) and secret:
+            message = message.replace(secret, "[redacted]")
+    return (message or "Provider rejected the connection test.")[:400]
+
+
 class _RateLimiter:
     def __init__(self, limit=None): self.lock=threading.Lock(); self.entries={}; self.limit=limit
     def allow(self, identity):
@@ -251,9 +266,10 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                         "provider":getattr(provider,"name",type(provider).__name__),
                         "model":getattr(provider,"model",None),"latency_ms":elapsed_ms,"verified":True})
                 except Exception as exc:
+                    diagnostic = _safe_provider_diagnostic(locals().get("provider"), exc)
                     active.store.log_event("provider_test_failed",payload={"route":body.get("provider_route"),
-                        "error_type":type(exc).__name__})
-                    return self.send_json(502,{"ok":False,"error":f"Provider test failed ({type(exc).__name__})."})
+                        "error_type":type(exc).__name__,"diagnostic":diagnostic})
+                    return self.send_json(502,{"ok":False,"error":diagnostic})
             allowed=({"agent_id","objective","inputs","deadline_seconds","max_corrections","max_improvements","provider_route"}
                      if is_lifecycle else
                      {"agent_id","objective","inputs","deadline_seconds","max_steps","idempotency_key","source_refs","provider_route"})

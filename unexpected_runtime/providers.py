@@ -182,7 +182,27 @@ class OpenOxResponsesProvider:
                 raise ProviderError("OpenOx response exceeded 1 MB.")
             data = json.loads(raw.decode("utf-8"))
         except urllib.error.HTTPError as exc:
-            raise ProviderError(f"OpenOx rejected the request (HTTP {exc.code}).") from None
+            error_code = None
+            error_message = None
+            try:
+                upstream = json.loads(exc.read(8192).decode("utf-8"))
+                if isinstance(upstream, dict):
+                    detail = upstream.get("error", upstream)
+                    if isinstance(detail, dict):
+                        error_code = detail.get("code") or detail.get("type")
+                        error_message = detail.get("message") or detail.get("detail")
+                    elif isinstance(detail, str):
+                        error_message = detail
+            except Exception:
+                pass
+            diagnostic = f"OpenOx rejected the request (HTTP {exc.code}"
+            if isinstance(error_code, (str, int)) and str(error_code).strip():
+                diagnostic += f"; {str(error_code).strip()[:80]}"
+            diagnostic += ")"
+            if isinstance(error_message, str) and error_message.strip():
+                safe_message = " ".join(error_message.split()).replace(self._api_key, "[redacted]")
+                diagnostic += ": " + safe_message[:240]
+            raise ProviderError(diagnostic) from None
         except ProviderError:
             raise
         except Exception as exc:
