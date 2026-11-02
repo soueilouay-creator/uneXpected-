@@ -107,30 +107,46 @@ class SkillRegistry:
             try:
                 if not isinstance(raw, dict):
                     raise TypeError("skill record must be an object")
+                agent_ids_raw = raw["agent_ids"]
+                trigger_terms_raw = raw.get("trigger_terms", [])
+                allowed_tools_raw = raw.get("allowed_tools", [])
                 resources_raw = raw.get("resources", []) if schema_version == 2 else []
+                if (not isinstance(agent_ids_raw, list) or not isinstance(trigger_terms_raw, list)
+                        or not isinstance(allowed_tools_raw, list)
+                        or any(not isinstance(item, str) for item in agent_ids_raw + trigger_terms_raw + allowed_tools_raw)):
+                    raise TypeError("agent_ids, trigger_terms and allowed_tools must be string lists")
                 if not isinstance(resources_raw, list) or len(resources_raw) > cls.MAX_RESOURCES_PER_SKILL:
                     raise ValueError("invalid resource list")
                 resources = []
                 for resource in resources_raw:
                     if not isinstance(resource, dict):
                         raise TypeError("resource record must be an object")
+                    if any(not isinstance(resource.get(key), str) for key in ("path", "sha256", "kind")):
+                        raise TypeError("resource path, sha256 and kind must be strings")
                     resources.append(SkillResource(
-                        path=str(resource["path"]),
-                        sha256=str(resource["sha256"]).lower(),
-                        kind=str(resource["kind"]),
+                        path=resource["path"],
+                        sha256=resource["sha256"].lower(),
+                        kind=resource["kind"],
                     ))
+                string_fields = ("id", "version", "path", "sha256", "source_ref", "status")
+                if any(not isinstance(raw.get(key), str) for key in string_fields):
+                    raise TypeError("skill identity, path, hash and source fields must be strings")
+                invocation_mode = raw.get("invocation_mode", "automatic")
+                description = raw.get("description", "")
+                if not isinstance(invocation_mode, str) or not isinstance(description, str):
+                    raise TypeError("invocation_mode and description must be strings")
                 skill = SkillSpec(
-                    id=str(raw["id"]),
-                    version=str(raw["version"]),
-                    path=str(raw["path"]),
-                    sha256=str(raw["sha256"]).lower(),
-                    agent_ids=tuple(str(x) for x in raw["agent_ids"]),
-                    trigger_terms=tuple(str(x).lower() for x in raw.get("trigger_terms", [])),
-                    source_ref=str(raw["source_ref"]),
-                    status=str(raw["status"]),
-                    invocation_mode=str(raw.get("invocation_mode", "automatic")),
-                    description=str(raw.get("description", "")),
-                    allowed_tools=tuple(str(x) for x in raw.get("allowed_tools", [])),
+                    id=raw["id"],
+                    version=raw["version"],
+                    path=raw["path"],
+                    sha256=raw["sha256"].lower(),
+                    agent_ids=tuple(agent_ids_raw),
+                    trigger_terms=tuple(term.lower() for term in trigger_terms_raw),
+                    source_ref=raw["source_ref"],
+                    status=raw["status"],
+                    invocation_mode=invocation_mode,
+                    description=description,
+                    allowed_tools=tuple(allowed_tools_raw),
                     resources=tuple(resources),
                 )
             except (KeyError, TypeError, ValueError) as exc:
@@ -182,9 +198,10 @@ class SkillRegistry:
         if not path.is_file():
             raise SkillRegistryError(f"Skill bundle file is missing: {relative!r}.")
         try:
-            if path.stat().st_size > cls.MAX_RESOURCE_BYTES:
+            with path.open("rb") as source:
+                data = source.read(cls.MAX_RESOURCE_BYTES + 1)
+            if len(data) > cls.MAX_RESOURCE_BYTES:
                 raise SkillRegistryError(f"Skill bundle file exceeds the size limit: {relative!r}.")
-            data = path.read_bytes()
         except OSError as exc:
             raise SkillRegistryError(f"Cannot read skill bundle file: {type(exc).__name__}.") from None
         if hashlib.sha256(data).hexdigest() != expected_sha256:
