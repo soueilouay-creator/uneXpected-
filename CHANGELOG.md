@@ -1,5 +1,14 @@
 # Changelog
 
+## v8.1.0-preview — Verified Skill bundles (2026-11-02)
+
+- Extends the existing local SHA-256-pinned Skill registry with backward-compatible manifest v2 bundle metadata.
+- Adds mapped-role `automatic`, `user_invocable`, and `always_apply` selection with bounded context/resource limits.
+- Verifies main Skill and bundled resources; only main Skill and reference text are injected, while scripts/assets remain inert.
+- Adds authenticated `/v1/skills` discovery and optional `skill_ids` on `/v1/invoke`; requested Skill IDs are persisted and bound into idempotency and approval action digests.
+- Declared tool IDs remain metadata only; no MCP server, external tool, or new capability is installed or authorized by this change.
+- Draft feature branch only; no merge, deployment, privileged execution or production activation is included.
+
 ## v8.0.0-preview — Single Command Center (2026-11-02)
 
 - Consolidates the governed Python runtime and desktop command center into one Python application and one public API.
