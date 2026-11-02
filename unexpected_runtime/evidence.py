@@ -55,7 +55,11 @@ class EvidenceEngine:
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     @staticmethod
-    def validate_criteria(criteria: Any) -> list[dict[str, Any]]:
+    def validate_criteria(
+        criteria: Any, *, require_test_profile: bool = False
+    ) -> list[dict[str, Any]]:
+        if type(require_test_profile) is not bool:
+            raise EvidenceContractError("require_test_profile must be a boolean.")
         if not isinstance(criteria, list) or not criteria:
             raise EvidenceContractError("At least one acceptance criterion is required.")
         if len(criteria) > 50:
@@ -95,6 +99,11 @@ class EvidenceEngine:
                 "required": required,
             }
             profile = item.get("profile")
+            if kind == "test" and require_test_profile and profile != "evidence-engine":
+                raise EvidenceContractError(
+                    f"Criterion {criterion_id} requires profile 'evidence-engine' "
+                    "when the Docker or Render test backend is enabled."
+                )
             if profile is not None:
                 if kind != "test" or not isinstance(profile, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,31}", profile):
                     raise EvidenceContractError(f"Criterion {criterion_id} has an invalid test profile.")
