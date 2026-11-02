@@ -70,6 +70,7 @@ class ProviderTests(unittest.TestCase):
         self.assertIn("verified fallback answer",output)
         self.assertIn("OpenRouter fallback",output)
         self.assertIn("nvidia/nemotron-3.5-lightning:free",output)
+        self.assertIn("\nverified fallback answer",output)
 
     def test_openrouter_fallback_requires_explicit_success_metadata(self):
         p=AIStudioGatewayProvider("https://gateway.example/orchestrate","g"*48,mode="openai")
