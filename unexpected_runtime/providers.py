@@ -144,7 +144,7 @@ class AIStudioGatewayProvider:
         if fallback_is_verified:
             return (
                 f"[Live AI result: {fallback_item.get('label') or 'OpenRouter fallback'}; "
-                f"model={fallback_model}]\\n{fallback_text.strip()}"
+                f"model={fallback_model}]\n{fallback_text.strip()}"
             )
 
         raise ProviderError(
