@@ -50,7 +50,8 @@ Provider credentials must be stored in the host's secret manager, never in Git o
 - `OPENAI_API_KEY` and optional `OPENAI_MODEL`
 - `ANTHROPIC_API_KEY` and optional `ANTHROPIC_MODEL`
 - `OPENROUTER_API_KEY` and optional `OPENROUTER_MODEL`
-- `UNEXPECTED_DEFAULT_PROVIDER=mock|openai|anthropic|openrouter`
+- `OPENOX_API_KEY`, optional `OPENOX_BASE_URL` (default `https://api.openoxai.com/v1`) and `OPENOX_MODEL` (default `gpt-6-astra`); OpenOx uses the native `/responses` endpoint, not `/chat/completions`.
+- `UNEXPECTED_DEFAULT_PROVIDER=mock|openai|anthropic|openrouter|openox`
 
 A configured key is not a verified provider. Use the bounded **Test connection** action to verify a live route. Mock mode is never presented as a live provider.
 

@@ -5,11 +5,11 @@ Task 1: completed
 - Authenticated reads, static-asset traversal protection, and explicit /mobile/ 404 verified.
 
 Task 2: complete_for_mock_route; live_model_credentials_pending
-- Native Anthropic adapter and OpenAI/OpenRouter routes implemented.
+- Native Anthropic, OpenAI/OpenRouter Chat Completions, and OpenOx Responses API adapters implemented. OpenOx route is registered only when OPENOX_API_KEY is present; it defaults to gpt-6-astra and remains unverified until the bounded provider test succeeds.
 - Per-task route selection remains immutable across concurrent requests and full lifecycle stages.
 - Bounded live provider-test endpoint and provider provenance audit events implemented.
 - Provider route, concurrent routing, coordinator, lifecycle and HTTP tests pass.
-- Production service currently uses deterministic mock. Real model credentials are not configured or live-tested.
+- Production service still uses deterministic mock. OpenOx connection requires the owner to add OPENOX_API_KEY privately in Render; no key is present or live-tested.
 
 Task 3: adapter_and_manual_branch_recovery_verified; scheduled_backup_pending
 - PostgreSQL StateStore adapter, PostgreSQL idempotency mixin, and PostgreSQL one-use approval ledger implemented.

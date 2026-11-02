@@ -13,6 +13,7 @@ from unexpected_runtime.providers import (
     AnthropicProvider,
     DeterministicMockProvider,
     OpenAICompatibleProvider,
+    OpenOxResponsesProvider,
     ProviderError,
     ProviderRouter,
     provider_router_from_env,
@@ -75,6 +76,52 @@ class AnthropicProviderTests(unittest.TestCase):
         provider = AnthropicProvider("anthropic-test-key", "claude-test-model")
         opener = FakeOpener({"content": [{"type": "text", "text": "x" * 2000000}]})
         with patch("unexpected_runtime.providers.urllib.request.build_opener", return_value=opener):
+            with self.assertRaises(ProviderError):
+                provider.generate(system_prompt="S", user_prompt="U", agent_id="a", task_id="t", timeout=5)
+
+
+class OpenOxResponsesProviderTests(unittest.TestCase):
+    def test_openox_uses_responses_endpoint_auth_and_response_output_blocks(self):
+        opener = FakeOpener({"id": "resp-test", "model": "gpt-6-astra", "output": [{
+            "type": "message", "role": "assistant",
+            "content": [{"type": "output_text", "text": "OpenOx answer"}],
+        }]})
+        provider = OpenOxResponsesProvider("https://api.openoxai.com/v1", "gpt-6-astra", "openox-test-key")
+        with patch("unexpected_runtime.providers.urllib.request.build_opener", return_value=opener):
+            result = provider.generate(system_prompt="Follow the system instructions.",
+                user_prompt="Answer a test question.", agent_id="research-scout",
+                task_id="task-openox-1", timeout=12)
+        self.assertEqual(result, "OpenOx answer")
+        self.assertEqual(opener.request.full_url, "https://api.openoxai.com/v1/responses")
+        self.assertEqual(opener.request.get_header("Authorization"), "Bearer openox-test-key")
+        body = json.loads(opener.request.data)
+        self.assertEqual(body["model"], "gpt-6-astra")
+        self.assertEqual(body["instructions"], "Follow the system instructions.")
+        self.assertEqual(body["input"], "Answer a test question.")
+        self.assertEqual(body["metadata"]["agent_id"], "research-scout")
+        self.assertEqual(opener.timeout, 12)
+
+    def test_openox_accepts_top_level_output_text(self):
+        opener = FakeOpener({"output_text": "  Direct response  "})
+        provider = OpenOxResponsesProvider("https://api.openoxai.com/v1", "gpt-6-astra", "openox-test-key")
+        with patch("unexpected_runtime.providers.urllib.request.build_opener", return_value=opener):
+            result = provider.generate(system_prompt="S", user_prompt="U", agent_id="a", task_id="t", timeout=5)
+        self.assertEqual(result, "Direct response")
+
+    def test_openox_rejects_missing_credentials_unsafe_urls_bad_output_and_large_responses(self):
+        with self.assertRaises(ProviderError):
+            OpenOxResponsesProvider("https://api.openoxai.com/v1", "gpt-6-astra", "")
+        with self.assertRaises(ProviderError):
+            OpenOxResponsesProvider("http://api.openoxai.com/v1", "gpt-6-astra", "key")
+        with self.assertRaises(ProviderError):
+            OpenOxResponsesProvider("https://user:password@api.openoxai.com/v1", "gpt-6-astra", "key")
+        provider = OpenOxResponsesProvider("https://api.openoxai.com/v1", "gpt-6-astra", "openox-test-key")
+        malformed = FakeOpener({"output": [{"type": "reasoning", "summary": []}]})
+        with patch("unexpected_runtime.providers.urllib.request.build_opener", return_value=malformed):
+            with self.assertRaises(ProviderError):
+                provider.generate(system_prompt="S", user_prompt="U", agent_id="a", task_id="t", timeout=5)
+        oversized = FakeOpener({"output_text": "x" * 2_000_000})
+        with patch("unexpected_runtime.providers.urllib.request.build_opener", return_value=oversized):
             with self.assertRaises(ProviderError):
                 provider.generate(system_prompt="S", user_prompt="U", agent_id="a", task_id="t", timeout=5)
 
@@ -157,6 +204,35 @@ class ProviderRouterTests(unittest.TestCase):
         with patch.dict("os.environ", env, clear=True):
             router = provider_router_from_env()
         self.assertNotIn("openox", router.providers)
+
+    def test_openox_is_registered_only_when_configured_and_uses_responses_endpoint(self):
+        env = {
+            "UNEXPECTED_PROVIDER": "mock",
+            "UNEXPECTED_DEFAULT_PROVIDER": "openox",
+            "OPENOX_API_KEY": "x" * 48,
+            "OPENOX_MODEL": "gpt-6-astra",
+            "OPENOX_BASE_URL": "https://api.openoxai.com/v1",
+        }
+        with patch.dict("os.environ", env, clear=True):
+            router = provider_router_from_env()
+        provider = router.resolve("openox")
+        self.assertIsInstance(provider, OpenOxResponsesProvider)
+        self.assertEqual(provider.name, "openox")
+        self.assertEqual(provider.model, "gpt-6-astra")
+        self.assertEqual(provider.base_url, "https://api.openoxai.com/v1/responses")
+        self.assertEqual(router.default_route, "openox")
+
+    def test_openox_is_not_registered_without_a_key_and_default_fails_back_to_mock(self):
+        env = {
+            "UNEXPECTED_PROVIDER": "mock",
+            "UNEXPECTED_DEFAULT_PROVIDER": "openox",
+            "OPENOX_API_KEY": "",
+            "OPENOX_MODEL": "gpt-6-astra",
+        }
+        with patch.dict("os.environ", env, clear=True):
+            router = provider_router_from_env()
+        self.assertNotIn("openox", router.providers)
+        self.assertEqual(router.default_route, "mock")
 
     def test_openrouter_is_registered_only_when_configured_and_uses_openai_compatible_adapter(self):
         env = {

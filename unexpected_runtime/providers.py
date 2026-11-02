@@ -118,6 +118,100 @@ class AnthropicProvider:
             raise ProviderError("Anthropic returned an unexpected response schema.") from None
 
 
+class OpenOxResponsesProvider:
+    """OpenOx native Responses API adapter; credentials remain server-side."""
+
+    name = "openox"
+    MAX_RESPONSE_BYTES = 1_000_000
+
+    def __init__(self, base_url: str, model: str, api_key: str, default_timeout: float = 30.0):
+        if not isinstance(base_url, str) or not base_url.strip():
+            raise ProviderError("OpenOx requires a host-configured HTTPS base URL.")
+        if not isinstance(model, str) or not model.strip():
+            raise ProviderError("OpenOx requires a host-configured model ID.")
+        if not isinstance(api_key, str) or not api_key.strip():
+            raise ProviderError("OpenOx requires a host-configured API key.")
+        if not 0 < float(default_timeout) <= 120:
+            raise ProviderError("OpenOx timeout must be between 0 and 120 seconds.")
+        try:
+            parsed = urlsplit(base_url.strip())
+            if (parsed.scheme.lower() != "https" or not parsed.hostname
+                    or parsed.username is not None or parsed.password is not None
+                    or parsed.query or parsed.fragment):
+                raise ValueError("unsafe provider URL")
+        except ValueError:
+            raise ProviderError("OpenOx base URL must use HTTPS without embedded credentials, query or fragment.") from None
+
+        path = parsed.path.rstrip("/")
+        if not path.endswith("/responses"):
+            path += "/responses"
+        self.base_url = parsed._replace(path=path).geturl()
+        self.model = model.strip()
+        self._api_key = api_key.strip()
+        self.default_timeout = float(default_timeout)
+        self.configured = True
+        self.verified = False
+        self.retry_safe = False
+
+    def generate(self, *, system_prompt: str, user_prompt: str, agent_id: str,
+                 task_id: str, timeout: float) -> str:
+        if not isinstance(timeout, (int, float)) or timeout <= 0:
+            raise ProviderError("OpenOx request timeout must be positive.")
+        body = {
+            "model": self.model,
+            "instructions": system_prompt,
+            "input": user_prompt,
+            "metadata": {"agent_id": str(agent_id)[:64], "task_id": str(task_id)[:64]},
+        }
+        request = urllib.request.Request(
+            self.base_url,
+            data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Authorization": "Bearer " + self._api_key,
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.build_opener(_NoRedirect()).open(
+                request, timeout=min(float(timeout), self.default_timeout)
+            ) as response:
+                raw = response.read(self.MAX_RESPONSE_BYTES + 1)
+            if len(raw) > self.MAX_RESPONSE_BYTES:
+                raise ProviderError("OpenOx response exceeded 1 MB.")
+            data = json.loads(raw.decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            raise ProviderError(f"OpenOx rejected the request (HTTP {exc.code}).") from None
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise ProviderError(
+                f"OpenOx request failed ({type(exc).__name__}); inspect host diagnostics without secrets."
+            ) from None
+
+        try:
+            direct_text = data.get("output_text")
+            if isinstance(direct_text, str) and direct_text.strip():
+                return direct_text.strip()
+            parts = []
+            for item in data.get("output", []):
+                if not isinstance(item, dict) or item.get("type") != "message":
+                    continue
+                if item.get("role") not in (None, "assistant"):
+                    continue
+                for content in item.get("content", []):
+                    if (isinstance(content, dict) and content.get("type") == "output_text"
+                            and isinstance(content.get("text"), str) and content["text"].strip()):
+                        parts.append(content["text"].strip())
+            result = "\n".join(parts).strip()
+            if not result:
+                raise ValueError("empty output")
+            return result
+        except Exception:
+            raise ProviderError("OpenOx returned an unexpected Responses API response schema.") from None
+
+
 class ProviderRouter:
     """Immutable per-request provider selection over server-configured adapters."""
     def __init__(self, providers: dict[str, Provider], default_route: str = "mock"):
@@ -258,6 +352,15 @@ def provider_router_from_env() -> ProviderRouter:
             openrouter_key,
             os.getenv("OPENROUTER_MODEL", "openrouter/free"),
             float(os.getenv("OPENROUTER_TIMEOUT_SECONDS", "30")),
+        )
+
+    openox_key = (os.getenv("OPENOX_API_KEY") or "").strip()
+    if openox_key:
+        providers["openox"] = OpenOxResponsesProvider(
+            os.getenv("OPENOX_BASE_URL", "https://api.openoxai.com/v1"),
+            os.getenv("OPENOX_MODEL", "gpt-6-astra"),
+            openox_key,
+            float(os.getenv("OPENOX_TIMEOUT_SECONDS", "30")),
         )
 
     requested_default = os.getenv("UNEXPECTED_DEFAULT_PROVIDER", "").strip().lower()
