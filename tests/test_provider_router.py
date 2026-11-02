@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import io
+import urllib.error
 import unittest
 import tempfile
 import http.client
@@ -100,6 +102,42 @@ class OpenOxResponsesProviderTests(unittest.TestCase):
         self.assertEqual(body["input"], "Answer a test question.")
         self.assertEqual(body["metadata"]["agent_id"], "research-scout")
         self.assertEqual(opener.timeout, 12)
+
+    def test_openox_http_error_includes_safe_upstream_diagnostic(self):
+        api_key = "openox-private-test-key"
+        error_body = json.dumps({
+            "error": {
+                "type": "insufficient_balance",
+                "code": "insufficient_balance",
+                "message": "Balance too low for this request. Authorization: Bearer " + api_key,
+            }
+        }).encode("utf-8")
+        upstream_error = urllib.error.HTTPError(
+            "https://api.openoxai.com/v1/responses",
+            402,
+            "Payment Required",
+            {},
+            io.BytesIO(error_body),
+        )
+
+        class ErrorOpener:
+            def open(self, request, timeout):
+                raise upstream_error
+
+        provider = OpenOxResponsesProvider(
+            "https://api.openoxai.com/v1", "gpt-6-astra", api_key
+        )
+        with patch("unexpected_runtime.providers.urllib.request.build_opener", return_value=ErrorOpener()):
+            with self.assertRaises(ProviderError) as caught:
+                provider.generate(
+                    system_prompt="S", user_prompt="U", agent_id="a", task_id="t", timeout=5
+                )
+        message = str(caught.exception)
+        self.assertIn("HTTP 402", message)
+        self.assertIn("insufficient_balance", message)
+        self.assertIn("Balance too low", message)
+        self.assertNotIn(api_key, message)
+        self.assertNotIn("Bearer " + api_key, message)
 
     def test_openox_accepts_top_level_output_text(self):
         opener = FakeOpener({"output_text": "  Direct response  "})
@@ -319,6 +357,47 @@ class CoordinatorProviderRoutingTests(unittest.TestCase):
         with self.assertRaises(ProviderError):
             self.coordinator.invoke("orchestrator", "invalid route", provider_route="not-installed")
         self.assertEqual(self.coordinator.store.list_tasks(10), [])
+
+    def test_provider_test_endpoint_returns_sanitized_diagnostic(self):
+        private_key = "openox-private-test-key"
+
+        class RejectedProvider:
+            name = "openox"
+            model = "gpt-6-astra"
+            configured = True
+            verified = False
+            _api_key = private_key
+            retry_safe = False
+            def generate(self, **kwargs):
+                raise ProviderError(
+                    "OpenOx rejected the request (HTTP 402; insufficient_balance): "
+                    "Balance too low. Bearer " + private_key
+                )
+
+        self.router.providers["openox"] = RejectedProvider()
+        token = "provider-router-diagnostic-token-" + "z" * 32
+        server = create_server(coordinator=self.coordinator, api_token=token, host="127.0.0.1", port=0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=8)
+            body = json.dumps({"provider_route": "openox"})
+            conn.request("POST", "/v1/providers/test", body, {
+                "Authorization": "Bearer " + token,
+                "Content-Type": "application/json",
+            })
+            response = conn.getresponse()
+            payload = json.loads(response.read())
+            self.assertEqual(response.status, 502)
+            self.assertIn("HTTP 402", payload["error"])
+            self.assertIn("insufficient_balance", payload["error"])
+            self.assertNotIn(private_key, json.dumps(payload))
+            self.assertNotIn("Bearer " + private_key, json.dumps(payload))
+            conn.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
 
     def test_authenticated_provider_status_and_live_test_endpoint(self):
         token = "provider-router-test-token-" + "z" * 32
