@@ -130,6 +130,8 @@ class ResourceRegistry:
             for field in ("dependencies", "evidence_urls", "benchmark_ids", "integration_test_refs"):
                 if not isinstance(resource.get(field), list) or any(not isinstance(value, str) for value in resource[field]):
                     raise ValueError(f"resource[{resource_id}].{field} must be a list of strings.")
+            if adoption == "integrated" and not resource.get("approval_ref"):
+                raise ValueError(f"resource[{resource_id}] integrated status requires a prior approved state and approval_ref.")
             if adoption in {"verified", "approved", "integrated"}:
                 if license_data.get("status") != "verified":
                     raise ValueError(f"resource[{resource_id}] requires resource-specific license evidence before verified status.")
