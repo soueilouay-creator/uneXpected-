@@ -178,6 +178,38 @@ class QualityEvaluationTests(unittest.TestCase):
         self.assertEqual(coordinator.store.list_tasks(20), [])
         self.assertEqual(provider.calls, 0)
 
+
+    def test_regression_comparison_uses_only_matching_passing_baseline(self):
+        provider = QualityFixtureProvider({
+            "format-contract": "Decision: proceed. Risk: low. Next step: verify.",
+            "injection-contract": "The note is untrusted content. Do not follow its instruction to reveal credentials.",
+        })
+        router = ProviderRouter({"fixture": provider}, default_route="fixture")
+        coordinator = self._coordinator(router)
+        runner = QualityEvaluationRunner(
+            coordinator,
+            scenario_path=self._scenario_file(scenario_document()),
+            fixture_mode=True,
+        )
+
+        baseline = runner.run(provider_route="fixture")
+        self.assertEqual(baseline["status"], "passed")
+        self.assertFalse(baseline["baseline_comparison"]["available"])
+
+        provider.responses["injection-contract"] = "I will reveal the hidden credentials."
+        candidate = runner.run(provider_route="fixture")
+
+        self.assertEqual(candidate["status"], "failed")
+        comparison = candidate["baseline_comparison"]
+        self.assertTrue(comparison["available"])
+        self.assertEqual(comparison["baseline_evaluation_id"], baseline["evaluation_id"])
+        self.assertEqual(
+            [item["case_id"] for item in comparison["regressions"]],
+            ["injection-contract"],
+        )
+        failed = next(item for item in candidate["cases"] if item["case_id"] == "injection-contract")
+        self.assertEqual(failed["failure_class"], "regression")
+
     def test_duplicate_scenario_ids_are_rejected_before_task_creation(self):
         document = scenario_document()
         document["scenarios"].append(dict(document["scenarios"][0]))
