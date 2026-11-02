@@ -18,7 +18,16 @@ class Coordinator:
         retries=max(0,min(int(max_retries if max_retries is not None else os.getenv('UNEXPECTED_MAX_RETRIES','1')),2))
         root=Path(state_dir or os.getenv('UNEXPECTED_STATE_DIR',Path(__file__).resolve().parent.parent/'state'))
         root.mkdir(parents=True,exist_ok=True)
-        self.store=StateStore(root/'uneXpected.sqlite3')
+        storage_backend=os.getenv('UNEXPECTED_STORAGE_BACKEND','sqlite').strip().lower()
+        if storage_backend=='postgres':
+            database_url=os.getenv('DATABASE_URL','').strip()
+            if not database_url: raise RuntimeError('PostgreSQL storage selected but DATABASE_URL is missing; no SQLite fallback was used.')
+            from .postgres_storage import PostgresStateStore
+            self.store=PostgresStateStore(database_url)
+        elif storage_backend=='sqlite':
+            self.store=StateStore(root/'uneXpected.sqlite3')
+        else:
+            raise RuntimeError('UNEXPECTED_STORAGE_BACKEND must be sqlite or postgres.')
         self.provider=provider or provider_router_from_env()
         self.skills=SkillRegistry.load(skill_manifest_path)
         self.approval_verifier = approval_verifier if approval_verifier is not None else approval_verifier_from_env(state_dir=root)
@@ -29,10 +38,12 @@ class Coordinator:
     def close(self):
         for token in list(self._tokens.values()): token.cancel()
         self.task_pool.shutdown(wait=True,cancel_futures=True); self.provider_pool.shutdown(wait=True,cancel_futures=True)
+        close_store=getattr(self.store,'close',None)
+        if callable(close_store): close_store()
     def status(self):
         return {'ecosystem_version':'7.3.1','registered_agents':len(self.registry),'provider':getattr(self.provider,'name',type(self.provider).__name__),
                 'mode':'local-runtime-scaffold','max_workers':self.max_workers,'max_retries':self.max_retries,
-                'state_db':str(self.store.path),'background_service':'not running unless separately hosted','external_connectors':'not configured',
+                'state_db':str(getattr(self.store,'path','managed-postgres')),'background_service':'not running unless separately hosted','external_connectors':'not configured',
                 'approval_verifier':'github-pr-review' if self.approval_verifier else 'not configured (privileged actions fail closed)'}
     def list_agents(self):
         return [{'id':a.id,'name':a.name,'version':a.version,'capability_label':a.capability_label,'status':a.status} for a in self.registry.list()]
@@ -69,13 +80,31 @@ class Coordinator:
             raise PermissionDenied('A single action may request only one privileged permission scope; split and approve separate actions.')
         for scope in required_permissions: self.permissions.authorize(spec,scope,approval,action_details=action_details)
         request_hash=hashlib.sha256(json.dumps({'agent_id':agent_id,'objective':objective,'inputs':inputs or {},'required_permissions':list(required_permissions),'source_refs':list(source_refs),'provider_route':provider_route},sort_keys=True,ensure_ascii=False).encode()).hexdigest()
-        if idempotency_key:
-            cached=self.store.get_idempotent(idempotency_key,request_hash)
-            if cached:
-                r=TaskResult.from_dict(cached); r.idempotent_replay=True; self.store.log_event('idempotency_replay',r.task_id,agent_id,{'key_hash':hashlib.sha256(idempotency_key.encode()).hexdigest()[:12]}); return r
         req=TaskRequest.create(agent_id,objective,inputs=inputs or {},required_permissions=tuple(required_permissions),deadline_seconds=deadline_seconds,max_steps=max_steps,idempotency_key=idempotency_key,source_refs=tuple(source_refs),provider_route=provider_route)
-        self.store.enqueue(req); result=self._execute_with_deadline(req,token or CancellationToken())
-        if idempotency_key and result.status=='completed': self.store.set_idempotent(idempotency_key,request_hash,result.to_dict())
+        if idempotency_key:
+            claim=self.store.claim_idempotency(idempotency_key,request_hash,req.task_id)
+            if claim['state'] in ('completed','failed') and claim.get('result'):
+                replay=TaskResult.from_dict(claim['result']); replay.idempotent_replay=True
+                self.store.log_event('idempotency_replay',replay.task_id,agent_id,{'key_hash':hashlib.sha256(idempotency_key.encode()).hexdigest()[:12],'state':claim['state']})
+                return replay
+            if claim['state']=='running' and claim.get('task_id')!=req.task_id:
+                return TaskResult(claim['task_id'],agent_id,'in_progress',error='An identical idempotent request is already running.')
+            if claim['state']!='claimed':
+                return TaskResult(claim.get('task_id',req.task_id),agent_id,'in_progress',error='The idempotency claim is not available yet.')
+        try:
+            self.store.enqueue(req)
+        except Exception as exc:
+            if idempotency_key:
+                failed=TaskResult(req.task_id,agent_id,'failed',error='Task enqueue failed before provider dispatch.').to_dict()
+                self.store.fail_idempotency(idempotency_key,req.task_id,failed)
+            raise
+        result=self._execute_with_deadline(req,token or CancellationToken())
+        if idempotency_key:
+            if result.status=='completed':
+                self.store.complete_idempotency(idempotency_key,req.task_id,result.to_dict())
+                self.store.set_idempotent(idempotency_key,request_hash,result.to_dict())
+            else:
+                self.store.fail_idempotency(idempotency_key,req.task_id,result.to_dict())
         return result
     def _execute_with_deadline(self,req:TaskRequest,token:CancellationToken)->TaskResult:
         self._tokens[req.task_id]=token
