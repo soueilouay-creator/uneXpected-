@@ -141,6 +141,7 @@ class ProviderRouterTests(unittest.TestCase):
         }
         with patch.dict("os.environ", env, clear=True):
             router = provider_router_from_env()
+        self.assertIn("openox", router.providers)
         provider = router.resolve("openox")
         self.assertEqual(provider.name, "openox")
         self.assertEqual(provider.model, "gpt-6-astra")
