@@ -13,7 +13,7 @@ const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5-202509
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openrouter/free';
 const OPENROUTER_KEY = String(process.env.OPENROUTER_API_KEY || '').trim();
 const ACCESS_TOKEN = process.env.UNEXPECTED_ACCESS_TOKEN || '';
-const RUNTIME_INTERNAL_URL = String(process.env.UNEXPECTED_RUNTIME_INTERNAL_URL || '').replace(/\\/$/, '');
+const RUNTIME_INTERNAL_URL = String(process.env.UNEXPECTED_RUNTIME_INTERNAL_URL || '').replace(/\\/+$/, '');
 const RUNTIME_INTERNAL_TOKEN = String(process.env.UNEXPECTED_RUNTIME_INTERNAL_TOKEN || '').trim();
 const GATEWAY_INTERNAL_TOKEN = String(process.env.UNEXPECTED_GATEWAY_INTERNAL_TOKEN || '').trim();
 const ANTHROPIC_WORKSPACE_ID = String(process.env.ANTHROPIC_WORKSPACE_ID || '').trim();
@@ -75,7 +75,7 @@ function rateLimited(req) {
 function authorized(req, allowInternal = true) {
   const supplied = req.headers.authorization || '';
   const candidates = [ACCESS_TOKEN, ...(allowInternal ? [GATEWAY_INTERNAL_TOKEN] : [])]
-    .filter(token => typeof token === 'string' && token.length >= 32 && token.isAscii?.() !== false);
+    .filter(token => typeof token === 'string' && token.length >= 32 && !/[^\\x20-\\x7e]/.test(token));
   return candidates.some(token => {
     const expected = 'Bearer ' + token;
     if (supplied.length !== expected.length) return false;
@@ -98,19 +98,19 @@ async function runtimeHealth() {
     return { ok: false, configured: true, error: error?.name === 'TimeoutError' ? 'Runtime health timed out.' : 'Runtime health unavailable.' };
   }
 }
-async function forwardRuntime(req, res, route, body) {
+async function forwardRuntime(req, res, route, body, method = 'POST') {
   if (!RUNTIME_INTERNAL_URL || RUNTIME_INTERNAL_TOKEN.length < 32) {
     return json(res, 503, { error: 'Unified runtime is not configured.' });
   }
-  const timeout = route === '/v1/lifecycle' ? 135_000 : 205_000;
+  const timeout = route === '/v1/lifecycle' ? 135_000 : route.startsWith('/v1/workspace/') ? 30_000 : 205_000;
   try {
     const upstream = await fetch(`${RUNTIME_INTERNAL_URL}${route}`, {
-      method: 'POST',
+      method,
       headers: {
-        'content-type': 'application/json',
+        ...(method === 'POST' ? { 'content-type': 'application/json' } : {}),
         'authorization': 'Bearer ' + RUNTIME_INTERNAL_TOKEN
       },
-      body: JSON.stringify(body),
+      ...(method === 'POST' ? { body: JSON.stringify(body) } : {}),
       signal: AbortSignal.timeout(timeout),
       redirect: 'error'
     });
@@ -120,11 +120,11 @@ async function forwardRuntime(req, res, route, body) {
     return json(res, 502, { error: error?.name === 'TimeoutError' ? 'Unified runtime request timed out.' : 'Unified runtime is unavailable.' });
   }
 }
-async function readBody(req) {
+async function readBody(req, maxBytes = MAX_BODY) {
   let data = '';
   for await (const chunk of req) {
     data += chunk;
-    if (Buffer.byteLength(data) > MAX_BODY) throw Object.assign(new Error('Request body too large (maximum 64 KB).'), { status: 413 });
+    if (Buffer.byteLength(data) > maxBytes) throw Object.assign(new Error('Request body too large.'), { status: 413 });
   }
   try { return JSON.parse(data || '{}'); }
   catch { throw Object.assign(new Error('Request body must be valid JSON.'), { status: 400 }); }
@@ -397,6 +397,29 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/styles.css') {
       res.writeHead(200, { 'content-type': MIME['.css'], 'cache-control': 'no-store' });
       return res.end(await readFile(join(ROOT, 'public', 'styles.css')));
+    }
+    if (req.method === 'GET' && url.pathname === '/v1/workspace/export') {
+      if (rateLimited(req)) return json(res, 429, { error: 'Rate limit exceeded. Wait one minute and try again.' });
+      if (!authorized(req, false)) return json(res, ACCESS_TOKEN.length >= 32 ? 401 : 503, {
+        error: ACCESS_TOKEN.length >= 32 ? 'Unauthorized.' : 'Owner access is not configured with a strong token.'
+      });
+      return forwardRuntime(req, res, '/v1/workspace/export', undefined, 'GET');
+    }
+    if (req.method === 'POST' && url.pathname === '/v1/workspace/import') {
+      if (rateLimited(req)) return json(res, 429, { error: 'Rate limit exceeded. Wait one minute and try again.' });
+      if (!authorized(req, false)) return json(res, ACCESS_TOKEN.length >= 32 ? 401 : 503, {
+        error: ACCESS_TOKEN.length >= 32 ? 'Unauthorized.' : 'Owner access is not configured with a strong token.'
+      });
+      const body = await readBody(req, 2.5 * 1024 * 1024);
+      if (!body || typeof body !== 'object' || Array.isArray(body)) return json(res, 400, { error: 'Body must be a JSON object.' });
+      if (Object.keys(body).some(key => !['schema_version', 'device_id', 'records'].includes(key))) {
+        return json(res, 400, { error: 'Unknown workspace import fields are not accepted.' });
+      }
+      if (body.schema_version !== 1 || typeof body.device_id !== 'string' || !body.device_id.trim()
+          || body.device_id.length > 128 || !Array.isArray(body.records) || body.records.length > 1000) {
+        return json(res, 400, { error: 'Invalid workspace import schema, device id or record count.' });
+      }
+      return forwardRuntime(req, res, '/v1/workspace/import', body, 'POST');
     }
     if (req.method === 'POST' && ['/v1/lifecycle', '/v1/invoke'].includes(url.pathname)) {
       if (rateLimited(req)) return json(res, 429, { error: 'Rate limit exceeded. Wait one minute and try again.' });
