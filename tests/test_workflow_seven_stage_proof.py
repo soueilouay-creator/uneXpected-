@@ -97,15 +97,6 @@ class SevenStageWorkflowProofTests(unittest.TestCase):
         )
         self.assertTrue(all(item["workflow_id"] == workflow_id for item in stage_results))
 
-        provider_events = [
-            json.loads(event["payload_json"])
-            for event in events
-            if event["event_type"] == "provider_used" and event.get("task_id") in workflow_task_ids
-        ]
-        self.assertEqual(len(provider_events), 5)
-        self.assertEqual({item["route"] for item in provider_events}, {"openrouter"})
-        self.assertTrue(all(item["mock"] is False for item in provider_events))
-
         task_rows = self.coordinator.store.list_tasks(100)
         workflow_tasks = [
             row for row in task_rows
@@ -114,6 +105,15 @@ class SevenStageWorkflowProofTests(unittest.TestCase):
         self.assertEqual(len(workflow_tasks), 5)
         self.assertEqual({item.get("provider_route") for item in workflow_tasks}, {"openrouter"})
         workflow_task_ids = {item["task_id"] for item in workflow_tasks}
+
+        provider_events = [
+            json.loads(event["payload_json"])
+            for event in events
+            if event["event_type"] == "provider_used" and event.get("task_id") in workflow_task_ids
+        ]
+        self.assertEqual(len(provider_events), 5)
+        self.assertEqual({item["route"] for item in provider_events}, {"openrouter"})
+        self.assertTrue(all(item["mock"] is False for item in provider_events))
 
         learned = [
             payload for event_type, payload in decoded
