@@ -120,6 +120,11 @@ class EvidenceLifecycleTaskProvider:
                     "Required evidence is missing, unverified, or not relevant to the task. "
                     "Check ARTIFACT-01, TEST-01 and SOURCE-01 before delivery."
                 )
+            citations = " ".join(
+                f'{item.get("criterion_id", "")} {item.get("evidence_ref", "")}'
+                for item in report_items
+                if item.get("required") is True
+            )
             return (
                 "VERDICT: PASS\n"
                 "ARTIFACT-01: candidate is present. "
@@ -127,7 +132,8 @@ class EvidenceLifecycleTaskProvider:
                 "and confirmed cleanup. "
                 "SOURCE-01: the official docs.python.org unittest page was retrieved and its "
                 "title/excerpt contains test-discovery material. "
-                "The retrieved source and test report are bound to this candidate's evidence record."
+                "The retrieved source and test report are bound to this candidate's evidence record. "
+                + citations
             )
 
         return "Unrecognized stage role; no task result was produced."
