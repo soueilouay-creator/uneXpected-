@@ -2,7 +2,8 @@ from __future__ import annotations
 import hmac, json, os, threading, time, math
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs
+from .web_ui import read_index, read_asset
 from . import __version__
 from .coordinator import Coordinator
 
@@ -34,7 +35,7 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
         def setup(self):
             self.request.settimeout(SOCKET_TIMEOUT_SECONDS)
             super().setup()
-        server_version="uneXpectedRuntime/7"; sys_version=""
+        server_version="uneXpectedRuntime/8"; sys_version=""
         def log_message(self, fmt, *args): return
         def send_json(self, code, obj):
             data=json.dumps(obj,ensure_ascii=False).encode()
@@ -42,6 +43,31 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             self.send_header("Content-Length",str(len(data))); self.send_header("Cache-Control","no-store")
             self.send_header("X-Content-Type-Options","nosniff"); self.send_header("Referrer-Policy","no-referrer")
             self.end_headers(); self.wfile.write(data)
+        def send_bytes(self, code, data, content_type):
+            self.send_response(code)
+            self.send_header("Content-Type",content_type)
+            self.send_header("Content-Length",str(len(data)))
+            self.send_header("Cache-Control","no-store")
+            self.send_header("X-Content-Type-Options","nosniff")
+            self.send_header("Referrer-Policy","no-referrer")
+            self.send_header("Content-Security-Policy","default-src 'self'; connect-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; object-src 'none'")
+            self.end_headers()
+            self.wfile.write(data)
+        @staticmethod
+        def bounded_limit(query, default=50):
+            try: value=int((query.get("limit") or [str(default)])[0])
+            except (TypeError,ValueError): value=default
+            return max(1,min(value,200))
+        @staticmethod
+        def event_items(rows):
+            items=[]
+            for row in rows:
+                item=dict(row)
+                raw=item.pop("payload_json",None)
+                try: item["payload"]=json.loads(raw) if raw else {}
+                except (TypeError,ValueError): item["payload"]={}
+                items.append(item)
+            return items
         def authorize(self):
             if len(token)<32 or not token.isascii():
                 self.send_json(503,{"error":"Runtime API is locked."}); return False
@@ -67,17 +93,72 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             if not isinstance(obj,dict): self.send_json(400,{"error":"Body must be a JSON object."}); return None
             return obj
         def do_GET(self):
-            path=urlsplit(self.path).path
+            parsed=urlsplit(self.path)
+            path=parsed.path
+            if path=="/":
+                try: return self.send_bytes(200,read_index(),"text/html; charset=utf-8")
+                except OSError: return self.send_json(503,{"error":"Command center assets are unavailable."})
+            if path.startswith("/assets/"):
+                asset=read_asset(path[len("/assets/"):])
+                if asset is None: return self.send_json(404,{"error":"Not found."})
+                data,mime=asset
+                return self.send_bytes(200,data,mime+("; charset=utf-8" if mime.startswith(("text/","application/javascript")) else ""))
             if path=="/health":
                 provider=getattr(active,"provider",None)
-                return self.send_json(200,{"ok":True,"service":"uneXpected governed runtime","version":__version__,
+                return self.send_json(200,{"ok":True,"service":"uneXpected command center","version":__version__,
                     "provider":getattr(provider,"name",type(provider).__name__ if provider else "unavailable"),
                     "provider_configured":bool(getattr(provider,"configured",True)),
                     "authentication_configured":len(token)>=32,"privileged_actions":"fail-closed"})
+            if path=="/mobile" or path.startswith("/mobile/"):
+                return self.send_json(404,{"error":"Not found."})
+            if not path.startswith("/v1/"): return self.send_json(404,{"error":"Not found."})
+            if not self.authorize(): return
+            query=parse_qs(parsed.query)
+            limit=self.bounded_limit(query)
             if path=="/v1/status":
-                if not self.authorize(): return
-                status=active.status()
-                return self.send_json(200,{k:status.get(k) for k in ("ecosystem_version","registered_agents","provider","mode","max_workers","max_retries","approval_verifier")})
+                raw=active.status()
+                provider=getattr(active,"provider",None)
+                store=getattr(active,"store",None)
+                backend="postgres" if type(store).__name__.lower().startswith("postgres") else "sqlite-local"
+                return self.send_json(200,{
+                    "version":__version__,
+                    "health":{"ok":True,"status":"ready","detail":"HTTP application and coordinator are responding."},
+                    "ecosystem_version":raw.get("ecosystem_version"),
+                    "registered_agents":len(active.registry),
+                    "provider":getattr(provider,"name",type(provider).__name__ if provider else "unavailable"),
+                    "mode":raw.get("mode"),
+                    "max_workers":raw.get("max_workers"),
+                    "max_retries":raw.get("max_retries"),
+                    "storage":{"backend":backend,"status":backend,"healthy":True,"recovery":"not verified"},
+                    "governance":{"privileged_actions":"disabled","approval_authority":"not verified","replay_protection":"not verified"},
+                    "approval_verifier_configured":bool(getattr(active,"approval_verifier",None))
+                })
+            if path=="/v1/agents":
+                items=active.list_agents()
+                return self.send_json(200,{"count":len(items),"items":items})
+            if path=="/v1/tasks":
+                items=active.store.list_tasks(limit)
+                return self.send_json(200,{"count":len(items),"items":items})
+            if path=="/v1/events":
+                items=self.event_items(active.store.events(limit))
+                return self.send_json(200,{"count":len(items),"items":items})
+            if path=="/v1/capabilities":
+                items=active.store.list_capabilities()
+                return self.send_json(200,{"count":len(items),"items":items})
+            if path=="/v1/improvements":
+                items=active.store.list_proposals(limit)
+                return self.send_json(200,{"count":len(items),"items":items})
+            if path=="/v1/providers":
+                provider=getattr(active,"provider",None)
+                items=[]
+                if provider is not None:
+                    items=[{"name":getattr(provider,"name",type(provider).__name__),
+                            "configured":bool(getattr(provider,"configured",True)),
+                            "verified":bool(getattr(provider,"verified",False)),
+                            "model":getattr(provider,"model",None)}]
+                return self.send_json(200,{"providers":items})
+            if path=="/v1/approvals":
+                return self.send_json(200,{"count":0,"items":[],"message":"No pending approval records are exposed. Privileged execution remains disabled."})
             return self.send_json(404,{"error":"Not found."})
         def do_POST(self):
             route=urlsplit(self.path).path
