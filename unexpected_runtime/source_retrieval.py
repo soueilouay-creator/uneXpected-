@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import hashlib
 import html.parser
 import io
@@ -295,6 +296,8 @@ def _fetch_pinned_https(
     except (OSError, http.client.HTTPException, ssl.SSLError, TimeoutError) as exc:
         # Expose only the exception class, never its message, address, or TLS details.
         error_category = type(exc).__name__
+        if isinstance(exc, OSError) and exc.errno is not None:
+            error_category = errno.errorcode.get(exc.errno, error_category)
         raise SourceRetrievalError(
             f"Source HTTPS request failed ({error_category})."
         ) from None
