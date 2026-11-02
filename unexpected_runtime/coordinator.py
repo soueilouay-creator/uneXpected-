@@ -17,9 +17,15 @@ class Coordinator:
         workers=max(1,min(int(max_workers or os.getenv('UNEXPECTED_MAX_WORKERS','4')),8))
         retries=max(0,min(int(max_retries if max_retries is not None else os.getenv('UNEXPECTED_MAX_RETRIES','1')),2))
         root=Path(state_dir or os.getenv('UNEXPECTED_STATE_DIR',Path(__file__).resolve().parent.parent/'state'))
-        root.mkdir(parents=True,exist_ok=True)
         database_url=os.getenv('UNEXPECTED_DATABASE_URL','').strip()
-        self.store=PostgresStateStore(database_url) if database_url else StateStore(root/'uneXpected.sqlite3')
+        if database_url:
+            # Hosted mode must use durable shared storage and must not need a
+            # writable application directory or silently fall back to SQLite.
+            self.store=PostgresStateStore(database_url)
+        else:
+            # Local/test mode keeps the historical SQLite behavior.
+            root.mkdir(parents=True,exist_ok=True)
+            self.store=StateStore(root/'uneXpected.sqlite3')
         self.provider=provider or provider_from_env()
         self.skills=SkillRegistry.load(skill_manifest_path)
         self.approval_verifier = approval_verifier if approval_verifier is not None else approval_verifier_from_env(state_dir=root)
