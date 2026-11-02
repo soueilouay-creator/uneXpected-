@@ -11,6 +11,9 @@ MAX_OBJECTIVE_CHARS=16000
 RATE_LIMIT_PER_MINUTE=30
 SOCKET_TIMEOUT_SECONDS=10
 MAX_SOURCE_REF_CHARS=2048
+MAX_WORKSPACE_RECORDS=1000
+MAX_WORKSPACE_RECORD_BYTES=256*1024
+MAX_WORKSPACE_TOTAL_BYTES=2*1024*1024
 
 class _RateLimiter:
     def __init__(self, limit=None): self.lock=threading.Lock(); self.entries={}; self.limit=limit
@@ -80,9 +83,49 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                 if not self.authorize(): return
                 status=active.status()
                 return self.send_json(200,{k:status.get(k) for k in ("ecosystem_version","registered_agents","provider","mode","max_workers","max_retries","approval_verifier")})
+            if path=="/v1/workspace/export":
+                if not self.authorize(): return
+                records=active.store.export_workspace_records()
+                return self.send_json(200,{"schema_version":1,"records":records})
             return self.send_json(404,{"error":"Not found."})
         def do_POST(self):
             route=urlsplit(self.path).path
+            if route == "/v1/workspace/import":
+                if not self.authorize(): return
+                if not limiter.allow(self.client_address[0] if self.client_address else "unknown"):
+                    return self.send_json(429,{"error":"Request rate limit exceeded."})
+                body=self.read_body()
+                if body is None: return
+                if set(body)!={"schema_version","device_id","records"} or body.get("schema_version")!=1:
+                    return self.send_json(400,{"error":"Workspace import requires schema_version=1, device_id and records only."})
+                device_id=body.get("device_id"); records=body.get("records")
+                if not isinstance(device_id,str) or not device_id.strip() or len(device_id)>128:
+                    return self.send_json(400,{"error":"Invalid workspace device_id."})
+                if not isinstance(records,list) or len(records)>MAX_WORKSPACE_RECORDS:
+                    return self.send_json(413,{"error":"Workspace record count exceeds the configured limit."})
+                total=0
+                for item in records:
+                    if not isinstance(item,dict) or not {"id","type","payload"}.issubset(item) or set(item)-{"id","type","payload","updated_at"}:
+                        return self.send_json(400,{"error":"Each workspace record requires id, type and payload; unknown fields are rejected."})
+                    if not isinstance(item["id"],str) or not item["id"].strip() or len(item["id"])>256:
+                        return self.send_json(400,{"error":"Invalid workspace record id."})
+                    if not isinstance(item["type"],str) or not item["type"].strip() or len(item["type"])>64:
+                        return self.send_json(400,{"error":"Invalid workspace record type."})
+                    if not isinstance(item["payload"],(dict,list)):
+                        return self.send_json(400,{"error":"Workspace record payload must be an object or array."})
+                    if "updated_at" in item and (not isinstance(item["updated_at"],str) or len(item["updated_at"])>64):
+                        return self.send_json(400,{"error":"Invalid workspace updated_at timestamp."})
+                    size=len(json.dumps(item,ensure_ascii=False,separators=(",",":")).encode("utf-8"))
+                    if size>MAX_WORKSPACE_RECORD_BYTES:
+                        return self.send_json(413,{"error":"A workspace record exceeds the configured size limit."})
+                    total+=size
+                    if total>MAX_WORKSPACE_TOTAL_BYTES:
+                        return self.send_json(413,{"error":"Workspace import exceeds the configured total size limit."})
+                try:
+                    counts=active.store.import_workspace_records(device_id,records)
+                    return self.send_json(200,{"ok":True,"counts":counts})
+                except Exception as exc:
+                    return self.send_json(503,{"error":f"Workspace import failed ({type(exc).__name__})."})
             if route not in {"/v1/invoke", "/v1/lifecycle"}: return self.send_json(404,{"error":"Not found."})
             is_lifecycle=route=="/v1/lifecycle"
             if not self.authorize(): return
