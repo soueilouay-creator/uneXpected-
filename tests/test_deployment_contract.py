@@ -18,6 +18,7 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn("copy agent_manifest.json", dockerfile)
         self.assertIn("copy agent_manifest.json skill_manifest.json ./", dockerfile)
         self.assertIn("copy skills", dockerfile)
+        self.assertIn("copy self_improvement", dockerfile)
         self.assertIn("copy workflow_profiles", dockerfile)
         self.assertIn("copy migrations", dockerfile)
         self.assertNotIn("node server.js", dockerfile)
@@ -48,6 +49,16 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn("values (2, '002_idempotency_claims.sql'", upgrade)
         self.assertNotIn("drop table", baseline + upgrade)
         self.assertNotIn("truncate", baseline + upgrade)
+
+    def test_all_pinned_runtime_skills_are_copied_into_image(self):
+        import json
+        manifest = json.loads((ROOT / "skill_manifest.json").read_text(encoding="utf-8"))
+        dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8").lower()
+        for skill in manifest["skills"]:
+            top_level = skill["path"].split("/", 1)[0]
+            with self.subTest(skill=skill["id"], path=skill["path"]):
+                self.assertIn("copy " + top_level.lower(), dockerfile)
+                self.assertTrue((ROOT / skill["path"]).is_file())
 
     def test_v8_web_tree_has_no_phone_or_pwa_artifacts(self):
         forbidden = ("service-worker", "manifest.webmanifest", "/mobile/", "mobile-assets", "mobile-release")
