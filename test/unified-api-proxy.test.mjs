@@ -28,9 +28,15 @@ test('owner-authenticated workspace requests are proxied only through the privat
     if(req.url!=='/health') received.push({method:req.method,path:req.url,authorization:req.headers.authorization});
     res.writeHead(200,{'content-type':'application/json'});
     if(req.method==='GET' && req.url==='/health') {
-      return res.end(JSON.stringify({ok:true,version:'7.3.1',storage_durable:true,storage_backend:'postgresql'}));
+      return res.end(JSON.stringify({ok:true,version:'7.3.1',storage_durable:true,storage_backend:'postgresql',registered_agents:38}));
     }
-    if(req.method==='GET') return res.end(JSON.stringify({schema_version:1,records:[]}));
+    if(req.method==='GET' && req.url==='/v1/status') {
+      return res.end(JSON.stringify({ecosystem_version:'7.3.1',registered_agents:38,provider:'deterministic-mock'}));
+    }
+    if(req.method==='GET' && req.url==='/v1/agents') {
+      return res.end(JSON.stringify({agents:[{id:'orchestrator'},{id:'project-manager'}]}));
+    }
+    if(req.method==='GET' && req.url==='/v1/workspace/export') return res.end(JSON.stringify({schema_version:1,records:[]}));
     let body='';
     for await(const chunk of req) body+=chunk;
     res.end(JSON.stringify({ok:true,body:JSON.parse(body)}));
@@ -62,6 +68,16 @@ test('owner-authenticated workspace requests are proxied only through the privat
   const denied=await fetch(base+'/v1/workspace/export');
   assert.equal(denied.status,401);
 
+  const statusDenied=await fetch(base+'/v1/status');
+  assert.equal(statusDenied.status,401);
+  const statusResponse=await fetch(base+'/v1/status',{headers:{authorization:'Bearer '+ownerToken}});
+  assert.equal(statusResponse.status,200);
+  assert.equal((await statusResponse.json()).registered_agents,38);
+
+  const agentsResponse=await fetch(base+'/v1/agents',{headers:{authorization:'Bearer '+ownerToken}});
+  assert.equal(agentsResponse.status,200);
+  assert.equal((await agentsResponse.json()).agents.length,2);
+
   const exported=await fetch(base+'/v1/workspace/export',{headers:{authorization:'Bearer '+ownerToken}});
   assert.equal(exported.status,200);
   assert.deepEqual(await exported.json(),{schema_version:1,records:[]});
@@ -80,6 +96,8 @@ test('owner-authenticated workspace requests are proxied only through the privat
 
   assert.ok(received.length>=2);
   assert.ok(received.every(item=>item.authorization==='Bearer '+internalToken));
+  assert.ok(received.some(item=>item.method==='GET'&&item.path==='/v1/status'));
+  assert.ok(received.some(item=>item.method==='GET'&&item.path==='/v1/agents'));
   assert.ok(received.some(item=>item.method==='GET'&&item.path==='/v1/workspace/export'));
   assert.ok(received.some(item=>item.method==='POST'&&item.path==='/v1/workspace/import'));
 });
