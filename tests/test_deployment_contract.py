@@ -39,6 +39,16 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertNotRegex(render, r"(?m)^\s*plan:\s*(starter|standard|pro|plus)")
         self.assertIn("autoDeploy: false".lower(), render)
 
+    def test_postgres_migrations_are_additive_and_versioned(self):
+        baseline = (ROOT / "migrations" / "001_initial.sql").read_text(encoding="utf-8").lower()
+        upgrade = (ROOT / "migrations" / "002_idempotency_claims.sql").read_text(encoding="utf-8").lower()
+        self.assertIn("create table if not exists schema_migrations", baseline)
+        self.assertIn("values (1, '001_initial.sql'", baseline)
+        self.assertIn("create table if not exists idempotency_claims", upgrade)
+        self.assertIn("values (2, '002_idempotency_claims.sql'", upgrade)
+        self.assertNotIn("drop table", baseline + upgrade)
+        self.assertNotIn("truncate", baseline + upgrade)
+
     def test_v8_web_tree_has_no_phone_or_pwa_artifacts(self):
         forbidden = ("service-worker", "manifest.webmanifest", "/mobile/", "mobile-assets", "mobile-release")
         web_root = ROOT / "web"
