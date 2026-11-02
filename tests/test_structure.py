@@ -8,8 +8,8 @@ class StructureTests(unittest.TestCase):
    p=ROOT/rel; self.assertTrue(p.is_file(),rel); self.assertGreater(p.stat().st_size,0,rel)
  def test_release_version_is_consistent(self):
   d=json.loads((ROOT/'agent_manifest.json').read_text())
-  self.assertEqual(d['ecosystem_version'],'7.3.1')
-  self.assertIn("__version__ = '7.3.1'",(ROOT/'unexpected_runtime/__init__.py').read_text())
+  self.assertEqual(d['ecosystem_version'],'8.0.0-preview')
+  self.assertIn("__version__ = '8.0.0-preview'",(ROOT/'unexpected_runtime/__init__.py').read_text())
  def test_manifest_ids_and_specs_unique(self):
   d=json.loads((ROOT/'agent_manifest.json').read_text()); agents=d['agents']; ids=[a['id'] for a in agents]
   self.assertEqual(len(agents),38); self.assertEqual(len(ids),len(set(ids)))
