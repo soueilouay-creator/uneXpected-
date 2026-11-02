@@ -286,6 +286,7 @@ class DockerTestExecutor:
             )
             actual = {
                 "profile": profile_id,
+                "scope": "repository_profile",
                 "executor": "docker",
                 "test_profile_manifest": manifest,
                 "test_profile_manifest_sha256": manifest_sha256,
@@ -313,9 +314,9 @@ class DockerTestExecutor:
                 "expected": criterion.get("target", "all tests in the fixed profile pass"),
                 "evidence_ref": _evidence_reference("docker-test", actual),
                 "details": (
-                    "Isolated Docker test profile executed with network disabled and bounded host-side output."
+                    "Fixed repository test profile passed with network disabled; the candidate deliverable was not executed."
                     if passed else
-                    "Docker test profile failed, timed out, returned no parsed unittest results, or cleanup was unconfirmed."
+                    "Fixed repository test profile failed, timed out, returned no parsed unittest results, or cleanup was unconfirmed; the candidate deliverable was not executed."
                 ),
             }
         finally:
@@ -451,6 +452,7 @@ class RenderSandboxTestExecutor:
         )
         actual = {
             "profile": profile_id,
+            "scope": "repository_profile",
             "executor": "render-sandbox",
             "test_profile_manifest": manifest,
             "test_profile_manifest_sha256": manifest_sha256,
@@ -469,9 +471,9 @@ class RenderSandboxTestExecutor:
             "expected": criterion.get("target", "all tests in the fixed profile pass"),
             "evidence_ref": _evidence_reference("render-sandbox", actual),
             "details": failure or (
-                "Isolated Render Sandbox test profile completed with network egress denied."
+                "Fixed repository test profile passed with network egress denied; the candidate deliverable was not executed."
                 if passed else
-                "Render Sandbox test profile failed, timed out, returned no parsed unittest results, or cleanup was unconfirmed."
+                "Fixed repository test profile failed, timed out, returned no parsed unittest results, or cleanup was unconfirmed; the candidate deliverable was not executed."
             ),
         }
 
@@ -511,6 +513,7 @@ class TestEvidenceChecker:
         )
         passed = (
             result.get("passed") is True and isinstance(actual, dict)
+            and actual.get("scope") == "repository_profile"
             and manifest_verified and reference_verified
             and type(actual.get("exit_code")) is int and actual.get("exit_code") == 0
             and isinstance(actual.get("tests_run"), int) and not isinstance(actual.get("tests_run"), bool)
@@ -524,7 +527,10 @@ class TestEvidenceChecker:
             "actual": actual,
             "expected": criterion["target"],
             "evidence_ref": evidence_ref,
-            "details": str(result.get("details") or ""),
+            "details": (
+                str(result.get("details") or "").strip()
+                + " This evidence covers the pinned repository test profile only; it does not represent execution of the candidate deliverable."
+            ).strip(),
         }
 
 

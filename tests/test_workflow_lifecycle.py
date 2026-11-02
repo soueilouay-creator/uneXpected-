@@ -218,7 +218,17 @@ class CoordinatorLifecycleTests(unittest.TestCase):
                 if agent == "code-reviewer":
                     verdict = reviewer_verdicts[self.review_calls]
                     self.review_calls += 1
-                    return f"VERDICT: {verdict}" + chr(10) + f"Review evidence for {verdict.lower()}."
+                    payload = json.loads(kwargs["user_prompt"])
+                    evidence = payload.get("inputs", {}).get("evidence_report", {})
+                    citations = " ".join(
+                        f'{item.get("criterion_id", "")} {item.get("evidence_ref", "")}'
+                        for item in evidence.get("evidence", [])
+                        if item.get("required") is True
+                    )
+                    return (
+                        f"VERDICT: {verdict}" + chr(10)
+                        + f"Review evidence for {verdict.lower()}. {citations}"
+                    )
                 if agent == "research-scout":
                     self.worker_calls += 1
                     return "Research deliverable, version " + str(self.worker_calls)
@@ -272,36 +282,39 @@ class CoordinatorLifecycleTests(unittest.TestCase):
         from unexpected_runtime.coordinator import Coordinator
 
         payload = {
-            "request": {
-                "agent_id": "research-scout",
-                "objective": "o" * 2400,
-                "inputs": {"notes": "n" * 3000, "source_refs": ["https://docs.python.org/3/"] * 3},
-            },
-            "plan": "p" * 5000,
-            "acceptance_criteria": [
-                {"id": "SOURCE-01", "description": "Verify sources", "kind": "source",
-                 "target": "Relevant evidence", "required": True},
-                {"id": "TEST-01", "description": "Run tests", "kind": "test",
-                 "target": "0 failures", "required": True},
-            ],
-            "evidence_report": {
-                "summary": "2 of 2 required evidence checks passed.",
-                "candidate_sha256": hashlib.sha256(b"candidate").hexdigest(),
-                "evidence": [
-                    {"criterion_id": "SOURCE-01", "kind": "source", "required": True,
-                     "status": "passed", "evidence_ref": "source-bundle://sha256/" + "a" * 64,
-                     "actual": {"source_count": 3, "sources": [
-                         {"url": "https://docs.python.org/3/", "domain": "docs.python.org",
-                          "title": "Python docs", "excerpt": "e" * 2400, "sha256": "b" * 64}
-                         for _ in range(3)
-                     ]}},
-                    {"criterion_id": "TEST-01", "kind": "test", "required": True,
-                     "status": "passed", "evidence_ref": "ci://run/123",
-                     "actual": {"exit_code": 0, "tests_run": 12, "output_tail": "t" * 4000}},
+            "objective": "Independent review instructions " + ("r" * 1400),
+            "inputs": {
+                "request": {
+                    "agent_id": "research-scout",
+                    "objective": "o" * 2400,
+                    "inputs": {"notes": "n" * 3000, "source_refs": ["https://docs.python.org/3/"] * 3},
+                },
+                "plan": "p" * 5000,
+                "acceptance_criteria": [
+                    {"id": "SOURCE-01", "description": "Verify sources", "kind": "source",
+                     "target": "Relevant evidence", "required": True},
+                    {"id": "TEST-01", "description": "Run tests", "kind": "test",
+                     "target": "0 failures", "required": True},
                 ],
+                "evidence_report": {
+                    "summary": "2 of 2 required evidence checks passed.",
+                    "candidate_sha256": hashlib.sha256(b"candidate").hexdigest(),
+                    "evidence": [
+                        {"criterion_id": "SOURCE-01", "kind": "source", "required": True,
+                         "status": "passed", "evidence_ref": "source-bundle://sha256/" + "a" * 64,
+                         "actual": {"source_count": 3, "sources": [
+                             {"url": "https://docs.python.org/3/", "domain": "docs.python.org",
+                              "title": "Python docs", "excerpt": "e" * 2400, "sha256": "b" * 64}
+                             for _ in range(3)
+                         ]}},
+                        {"criterion_id": "TEST-01", "kind": "test", "required": True,
+                         "status": "passed", "evidence_ref": "ci://run/123",
+                         "actual": {"exit_code": 0, "tests_run": 12, "output_tail": "t" * 4000}},
+                    ],
+                },
+                "candidate": "c" * 16000,
+                "review_phase": "before_improvement",
             },
-            "candidate": "c" * 16000,
-            "review_phase": "before_improvement",
         }
 
         from unexpected_runtime.providers import AIStudioGatewayProvider
@@ -314,18 +327,32 @@ class CoordinatorLifecycleTests(unittest.TestCase):
         budget = gateway.user_prompt_budget(
             system_prompt=system_prompt, agent_id=agent_id, task_id=task_id
         )
-        bounded = Coordinator._compact_reviewer_payload(payload, max_code_units=budget)
+        bounded = Coordinator._compact_reviewer_payload(
+            payload, max_code_units=budget, keep_objective=True
+        )
         encoded = json.dumps(bounded, ensure_ascii=False, separators=(",", ":"))
         self.assertLessEqual(len(encoded.encode("utf-16-le")) // 2, budget)
         task = gateway._task_prefix(system_prompt, agent_id, task_id) + encoded
         self.assertLessEqual(len(task.encode("utf-16-le")) // 2, gateway.MAX_TASK_CODE_UNITS)
-        self.assertEqual(bounded["evidence_report"]["summary"], "2 of 2 required evidence checks passed.")
-        by_id = {item["criterion_id"]: item for item in bounded["evidence_report"]["evidence"]}
+        self.assertEqual(bounded["objective"], payload["objective"])
+        self.assertNotEqual(bounded["inputs"]["request"]["objective"], payload["inputs"]["request"]["objective"])
+        self.assertEqual(bounded["inputs"]["evidence_report"]["summary"], "2 of 2 required evidence checks passed.")
+        by_id = {item["criterion_id"]: item for item in bounded["inputs"]["evidence_report"]["evidence"]}
         self.assertEqual(by_id["SOURCE-01"]["status"], "passed")
         self.assertEqual(by_id["TEST-01"]["status"], "passed")
         self.assertTrue(by_id["SOURCE-01"]["evidence_ref"].startswith("source-bundle://"))
-        self.assertTrue(bounded["candidate_truncated"])
-        self.assertEqual(bounded["candidate_sha256"], hashlib.sha256(b"c" * 16000).hexdigest())
+        self.assertTrue(bounded["inputs"]["candidate_truncated"])
+        self.assertEqual(
+            bounded["inputs"]["candidate_sha256"],
+            hashlib.sha256(b"c" * 16000).hexdigest(),
+        )
+
+        # Direct, flat reviewer payloads remain supported for backward compatibility.
+        flat = Coordinator._compact_reviewer_payload(
+            {"candidate": "z" * 5000}, max_code_units=900
+        )
+        self.assertTrue(flat["candidate_truncated"])
+        self.assertEqual(flat["candidate_length_utf16"], 5000)
 
     def test_reviewer_prompt_discloses_candidate_truncation_and_untrusted_evidence(self):
         coordinator, provider = self._coordinator(["PASS", "PASS"])
@@ -352,6 +379,18 @@ class CoordinatorLifecycleTests(unittest.TestCase):
         self.assertEqual(result.status, "blocked_verification")
         self.assertFalse(result.delivered)
         self.assertIsNone(result.delivery)
+
+    def test_reviewer_pass_without_required_ids_and_evidence_refs_blocks_delivery(self):
+        coordinator, provider = self._coordinator(["PASS", "PASS"])
+        coordinator.reviewer_provider.generate = (
+            lambda **kwargs: "VERDICT: PASS\nReview evidence is generally sufficient."
+        )
+        result = coordinator.run_lifecycle(
+            "research-scout", "Research a sample topic", {"scope": "public sources"},
+            max_corrections=0,
+        )
+        self.assertEqual(result.status, "blocked_verification")
+        self.assertFalse(result.delivered)
 
     def test_native_lifecycle_routes_through_plan_execute_review_improve_and_learning(self):
         coordinator, provider = self._coordinator(["PASS", "PASS"])
