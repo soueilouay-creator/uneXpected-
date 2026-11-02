@@ -942,6 +942,99 @@ async function refreshSettings() {
   await refreshImprovements();
 }
 
+async function syncWorkspace() {
+  const button = $('#syncBtn');
+  const status = $('#syncState');
+  const token = String(sessionToken || $('#accessToken')?.value || '').trim();
+  if (token.length < 32) {
+    toast('Enter the owner access token in Control center before syncing.');
+    return;
+  }
+  if (button) button.disabled = true;
+  if (status) status.textContent = 'Syncing…';
+  try {
+    const settings = await store.get('settings', 'main') || { id: 'main' };
+    const deviceId = settings.deviceId || id();
+    if (!settings.deviceId) {
+      const updatedSettings = { ...settings, ...appSettings, id: 'main', deviceId, updatedAt: now() };
+      await store.put('settings', updatedSettings);
+      appSettings = updatedSettings;
+    }
+
+    const recordTypes = ['projects', 'conversations', 'memories', 'improvements'];
+    const records = [];
+    for (const type of recordTypes) {
+      const values = await store.list(type);
+      for (const value of values) {
+        if (!value || value.id == null) continue;
+        records.push({
+          id: `${type}:${String(value.id)}`,
+          type,
+          payload: value,
+          updated_at: String(value.updatedAt || value.createdAt || now())
+        });
+      }
+    }
+
+    const importBody = JSON.stringify({ schema_version: 1, device_id: deviceId, records });
+    if (new Blob([importBody]).size > 2_400_000) {
+      throw new Error('Workspace exceeds the safe sync size. Export a local backup and sync smaller batches.');
+    }
+    const uploaded = await fetch(`${gatewayBase()}/v1/workspace/import`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: importBody,
+      redirect: 'error'
+    });
+    const importResult = await uploaded.json().catch(() => ({}));
+    if (!uploaded.ok || importResult.ok !== true) {
+      throw new Error(importResult.error || `Workspace upload failed (HTTP ${uploaded.status}).`);
+    }
+
+    let downloaded = 0;
+    let conflicts = Number(importResult.counts?.conflicts || 0);
+    try {
+      const response = await fetch(`${gatewayBase()}/v1/workspace/export`, {
+        headers: { authorization: `Bearer ${token}` },
+        redirect: 'error'
+      });
+      const snapshot = await response.json().catch(() => ({}));
+      if (!response.ok || snapshot.schema_version !== 1 || !Array.isArray(snapshot.records)) {
+        throw new Error(snapshot.error || `Workspace download failed (HTTP ${response.status}).`);
+      }
+      for (const remote of snapshot.records) {
+        if (String(remote.type || '').startsWith('conflict:') || String(remote.id || '').startsWith('conflict-')) {
+          conflicts += 1;
+          continue;
+        }
+        if (!recordTypes.includes(remote.type) || !remote.payload || remote.payload.id == null) continue;
+        const local = await store.get(remote.type, remote.payload.id);
+        if (!local) {
+          await store.put(remote.type, remote.payload);
+          downloaded += 1;
+        } else if (JSON.stringify(local) !== JSON.stringify(remote.payload)) {
+          // Keep the local copy; server-side conflict history remains available in the shared database.
+          conflicts += 1;
+        }
+      }
+    } catch (error) {
+      if (status) status.textContent = 'Upload saved · download unavailable';
+      toast(`Server copy saved. Download could not complete: ${error.message}`);
+      return;
+    }
+
+    await Promise.all([refreshHome(), refreshChats(), refreshProjects(), refreshMemories(), refreshSettings()]);
+    const counts = importResult.counts || {};
+    if (status) status.textContent = `Uploaded ${counts.inserted || 0} new · ${downloaded} downloaded · ${conflicts} conflicts`;
+    toast(`Sync complete. Local records kept. ${downloaded} new records downloaded; ${conflicts} conflicts preserved.`);
+  } catch (error) {
+    if (status) status.textContent = 'Sync not completed';
+    toast(error.message || 'Workspace sync failed. Your local data was not deleted.');
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 async function exportBackup() {
   const data = await store.exportAll();
   const payload = createBackupPayload(data);
@@ -1059,6 +1152,7 @@ function bindEvents() {
   $('#checkGatewayBtn').addEventListener('click', checkGateway);
   $('#testProviderBtn').addEventListener('click', testProvider);
   $('#exportBtn').addEventListener('click', exportBackup);
+  $('#syncBtn').addEventListener('click', syncWorkspace);
   $('#importBtn').addEventListener('click', () => $('#importFile').click());
   $('#importFile').addEventListener('change', event => importBackup(event.target.files[0]));
   $('#clearDataBtn').addEventListener('click', clearAllData);
