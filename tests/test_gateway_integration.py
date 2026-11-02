@@ -42,7 +42,6 @@ class ProviderTests(unittest.TestCase):
                     p.generate(system_prompt="S",user_prompt="U",agent_id="a",task_id="t",timeout=5)
 
     def test_explicitly_successful_live_openrouter_fallback_is_accepted(self):
-        p=AIStudioGatewayProvider("https://gateway.example/orchestrate","g"*48,mode="openai")
         payload={
             "ok":True,
             "results":{
@@ -64,16 +63,18 @@ class ProviderTests(unittest.TestCase):
                 "model":"nvidia/nemotron-3.5-lightning:free"
             }
         }
-        op=Opener(payload)
-        with patch("unexpected_runtime.providers.urllib.request.build_opener",return_value=op):
-            output=p.generate(system_prompt="S",user_prompt="U",agent_id="a",task_id="t",timeout=5)
-        self.assertIn("verified fallback answer",output)
-        self.assertIn("OpenRouter fallback",output)
-        self.assertIn("nvidia/nemotron-3.5-lightning:free",output)
-        self.assertIn("\nverified fallback answer",output)
+        for mode in ("openai", "claude", "both"):
+            with self.subTest(mode=mode):
+                p=AIStudioGatewayProvider("https://gateway.example/orchestrate","g"*48,mode=mode)
+                op=Opener(payload)
+                with patch("unexpected_runtime.providers.urllib.request.build_opener",return_value=op):
+                    output=p.generate(system_prompt="S",user_prompt="U",agent_id="a",task_id="t",timeout=5)
+                self.assertIn("verified fallback answer",output)
+                self.assertIn("OpenRouter fallback",output)
+                self.assertIn("nvidia/nemotron-3.5-lightning:free",output)
+                self.assertIn("\\nverified fallback answer",output)
 
     def test_openrouter_fallback_requires_explicit_success_metadata(self):
-        p=AIStudioGatewayProvider("https://gateway.example/orchestrate","g"*48,mode="openai")
         item={
             "provider":"openrouter",
             "status":"LIVE · fallback response",
@@ -89,14 +90,16 @@ class ProviderTests(unittest.TestCase):
             {"attempted":True,"provider":"openrouter","status":"failed"},
             {"attempted":True,"provider":"openrouter","status":"succeeded","requestedModel":"openrouter/free","model":"tampered-model"}
         )
-        for attestation in invalid_attestations:
-            payload={"ok":True,"results":{"openrouter":item}}
-            if attestation is not None:
-                payload["fallback"]=attestation
-            op=Opener(payload)
-            with patch("unexpected_runtime.providers.urllib.request.build_opener",return_value=op):
-                with self.subTest(attestation=attestation), self.assertRaises(ProviderError):
-                    p.generate(system_prompt="S",user_prompt="U",agent_id="a",task_id="t",timeout=5)
+        for mode in ("openai", "claude", "both"):
+            p=AIStudioGatewayProvider("https://gateway.example/orchestrate","g"*48,mode=mode)
+            for attestation in invalid_attestations:
+                payload={"ok":True,"results":{"openrouter":item}}
+                if attestation is not None:
+                    payload["fallback"]=attestation
+                op=Opener(payload)
+                with patch("unexpected_runtime.providers.urllib.request.build_opener",return_value=op):
+                    with self.subTest(mode=mode,attestation=attestation), self.assertRaises(ProviderError):
+                        p.generate(system_prompt="S",user_prompt="U",agent_id="a",task_id="t",timeout=5)
 
     def test_rejects_insecure_url_bad_mode_and_large_task(self):
         for url in ("http://gateway.example","https://u:p@gateway.example/x"):
