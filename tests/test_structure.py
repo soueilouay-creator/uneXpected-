@@ -1,7 +1,7 @@
 import csv, json, re, unittest, zipfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-REQUIRED=['skill_manifest.json','workflow_profiles/creative-media-studio.md','workflow_profiles/skill-engineering.md','skills/creative-media/WORKFLOW.md','skills/skill-engineering/SKILL.md','unexpected_runtime/skills.py','unexpected_runtime/capabilities.py','unexpected_runtime/approvals.py','tests/test_skills.py','tests/test_capabilities.py','tests/test_approvals.py','agent_manifest.json','AGENT_CATALOG.md','AGENT_CATALOG.csv','AGENT_CATALOG.json','ALL_AGENTS.md','MIGRATION_CROSSWALK_V6_TO_V7.md','MIGRATION_CROSSWALK_V6_TO_V7.csv','MIGRATION_CROSSWALK_V6_TO_V7.json','CORE_ROUTER.md','EXISTING_37_CROSSWALK.md','CAPABILITY_MATRIX.md','SOURCE_MANIFEST.md','GLOBAL_CUSTOM_INSTRUCTION_V7.md','PROJECT_INSTRUCTIONS_V7.md','ARCHITECTURE.md','THREAT_MODEL.md','INSTALL.md','DEPLOY.md','UPGRADE_MIGRATION.md','ROLLBACK_UNINSTALL.md','EVALS.md','TEST_RESULTS.md','PACKAGE_STATUS.md','INSTALL_TESTS_STATUS.md','self_improvement/SKILL.md','self_improvement/EVAL_PROTOCOL.md','tests/scenarios.json','unexpected_runtime/benchmark.py','tests/test_runtime.py','tests/test_structure.py']
+REQUIRED=['skill_manifest.json','workflow_profiles/creative-media-studio.md','workflow_profiles/skill-engineering.md','skills/creative-media/WORKFLOW.md','skills/skill-engineering/SKILL.md','unexpected_runtime/skills.py','unexpected_runtime/capabilities.py','unexpected_runtime/approvals.py','tests/test_skills.py','tests/test_capabilities.py','tests/test_approvals.py','agent_manifest.json','AGENT_CATALOG.md','AGENT_CATALOG.csv','AGENT_CATALOG.json','ALL_AGENTS.md','MIGRATION_CROSSWALK_V6_TO_V7.md','MIGRATION_CROSSWALK_V6_TO_V7.csv','MIGRATION_CROSSWALK_V6_TO_V7.json','CORE_ROUTER.md','EXISTING_37_CROSSWALK.md','CAPABILITY_MATRIX.md','SOURCE_MANIFEST.md','GLOBAL_CUSTOM_INSTRUCTION_V7.md','PROJECT_INSTRUCTIONS_V7.md','ARCHITECTURE.md','THREAT_MODEL.md','INSTALL.md','DEPLOY.md','UPGRADE_MIGRATION.md','ROLLBACK_UNINSTALL.md','EVALS.md','TEST_RESULTS.md','PACKAGE_STATUS.md','INSTALL_TESTS_STATUS.md','self_improvement/SKILL.md','self_improvement/EVAL_PROTOCOL.md','tests/scenarios.json','unexpected_runtime/benchmark.py','tests/test_runtime.py','tests/test_structure.py','unexpected_runtime/resource_intelligence.py','unexpected_runtime/data/resource_catalog.json','unexpected_runtime/quality_evaluation.py','unexpected_runtime/data/quality_scenarios.json','tests/test_resource_intelligence.py','tests/test_quality_evaluation.py']
 class StructureTests(unittest.TestCase):
  def test_required_files_exist_nonempty(self):
   for rel in REQUIRED:
@@ -75,6 +75,32 @@ class StructureTests(unittest.TestCase):
    for section in required: self.assertIn('## '+section,text,p.name)
  def test_scenarios_and_six_improvement_criteria(self):
   d=json.loads((ROOT/'tests/scenarios.json').read_text()); self.assertEqual(len(d['scenarios']),4); self.assertEqual(len(d['improvement_criteria']),6)
+ def test_resource_intelligence_and_quality_contracts_are_versioned_and_fail_closed(self):
+  resources=json.loads((ROOT/'unexpected_runtime/data/resource_catalog.json').read_text())
+  self.assertEqual(resources['schema_version'],1)
+  root=next(s for s in resources['sources'] if s['id']=='sindresorhus-awesome')
+  self.assertEqual(root['canonical_url'],'https://github.com/sindresorhus/awesome')
+  self.assertEqual(root['license']['status'],'verified')
+  self.assertTrue(resources['resources'])
+  self.assertTrue(all(item['adoption_status']=='discovered' for item in resources['resources']))
+  self.assertTrue(all(item['license']['status']!='verified' for item in resources['resources']))
+  self.assertTrue(all(item['source_list_url'] for item in resources['resources']))
+  scenarios=json.loads((ROOT/'unexpected_runtime/data/quality_scenarios.json').read_text())
+  ids=[item['id'] for item in scenarios['scenarios']]
+  self.assertEqual(len(ids),len(set(ids)))
+  self.assertLessEqual(len(ids),8)
+  required={'instruction_following','prompt_injection','grounding_provenance','safety_boundary','structured_output','regression'}
+  self.assertTrue(required.issubset({item['category'] for item in scenarios['scenarios']}))
+  evaluator=(ROOT/'unexpected_runtime/quality_evaluation.py').read_text()
+  self.assertIn('provider_route_required',evaluator)
+  self.assertIn('mock_provider_not_allowed',evaluator)
+  self.assertIn('quality_fixture',evaluator)
+  self.assertIn('quality_evaluation_report',evaluator)
+  self.assertIn('required_permissions=()',evaluator)
+  readme=(ROOT/'README.md').read_text()
+  self.assertIn('sindresorhus/awesome',readme)
+  self.assertIn('fixture/offline',readme)
+  self.assertIn('not installed or authorized',readme.lower())
  def test_v6_zip_readable_and_catalog_count_if_supplied(self):
   # The v6 source archive is an optional external migration fixture, not a v7 package dependency.
   # When supplied, validate it; when absent, the v7 crosswalk tests remain authoritative.
