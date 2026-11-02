@@ -100,7 +100,7 @@ class StructureTests(unittest.TestCase):
   readme=(ROOT/'README.md').read_text()
   self.assertIn('sindresorhus/awesome',readme)
   self.assertIn('fixture/offline',readme)
-  self.assertIn('not installed or authorized',readme.lower())
+  self.assertIn('no catalog read installs or authorizes',readme.lower())
  def test_v6_zip_readable_and_catalog_count_if_supplied(self):
   # The v6 source archive is an optional external migration fixture, not a v7 package dependency.
   # When supplied, validate it; when absent, the v7 crosswalk tests remain authoritative.
