@@ -58,11 +58,12 @@ class Coordinator:
         self.store.enqueue(request); return request.task_id
     @staticmethod
     def invoke_action_details(agent_id:str, objective:str, inputs:dict[str,Any]|None=None, *, required_permissions=(),
-                              deadline_seconds:float=30.0, max_steps:int=6, source_refs=()):
+                              deadline_seconds:float=30.0, max_steps:int=6, source_refs=(), requested_skill_ids=()):
         encode=lambda value: hashlib.sha256(json.dumps(value,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
         return {'action':'agent.invoke','agent_id':agent_id,'objective_sha256':encode(objective),
                 'inputs_sha256':encode(inputs or {}),'source_refs_sha256':encode(list(source_refs)),
                 'required_permissions':sorted(set(required_permissions)),
+                'requested_skill_ids':list(requested_skill_ids),
                 'deadline_seconds':float(deadline_seconds),'max_steps':int(max_steps)}
     @staticmethod
     def shared_knowledge_action_details(knowledge_id:str):
@@ -77,7 +78,8 @@ class Coordinator:
         if max_steps<1 or max_steps>12: raise BudgetExceeded('max_steps must be between 1 and 12.')
         if not math.isfinite(float(deadline_seconds)) or deadline_seconds<=0 or deadline_seconds>600: raise ValueError('deadline_seconds must be >0 and <=600.')
         action_details=self.invoke_action_details(agent_id,objective,inputs,required_permissions=required_permissions,
-                                                  deadline_seconds=deadline_seconds,max_steps=max_steps,source_refs=source_refs)
+                                                  deadline_seconds=deadline_seconds,max_steps=max_steps,source_refs=source_refs,
+                                                  requested_skill_ids=requested_skill_ids)
         if len(set(required_permissions)) > 1:
             raise PermissionDenied('A single action may request only one privileged permission scope; split and approve separate actions.')
         for scope in required_permissions: self.permissions.authorize(spec,scope,approval,action_details=action_details)
