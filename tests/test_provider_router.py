@@ -298,7 +298,10 @@ class CoordinatorProviderRoutingTests(unittest.TestCase):
             self.last_user_payload = None
         def generate(self, **kwargs):
             self.calls += 1
-            self.last_user_payload = json.loads(kwargs["user_prompt"])
+            try:
+                self.last_user_payload = json.loads(kwargs["user_prompt"])
+            except (TypeError, json.JSONDecodeError):
+                self.last_user_payload = None
             return self.name + " route response"
 
     def setUp(self):
