@@ -48,6 +48,12 @@ class StructureTests(unittest.TestCase):
   s=(ROOT/'SOURCE_MANIFEST.md').read_text()
   for token in ('2026-10-28T16:43:00Z','6c16b23f1bacd0fdf240bb5141ef45e59e82c306','dfa79289f46826b4b63946e3a13540c9a4c3ea12','Apache-2.0','2,541','1,984','557','224','120 linked candidate'):
    self.assertIn(token,s)
+ def test_live_evidence_integration_is_manual_only(self):
+  workflow=(ROOT/'.github/workflows/ci.yml').read_text()
+  self.assertIn('workflow_dispatch:',workflow)
+  self.assertIn('run_live_evidence:',workflow)
+  self.assertIn("github.event_name == 'workflow_dispatch' && inputs.run_live_evidence",workflow)
+  self.assertIn('UNEXPECTED_RUN_LIVE_EVIDENCE_INTEGRATION: "1"',workflow)
  def test_no_false_runtime_activation_claims(self):
   for rel in ('README.md','PACKAGE_STATUS.md','CAPABILITY_MATRIX.md','PROJECT_INSTRUCTIONS_V7.md','GLOBAL_CUSTOM_INSTRUCTION_V7.md'):
    s=(ROOT/rel).read_text().lower()
