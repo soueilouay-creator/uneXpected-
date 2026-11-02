@@ -223,7 +223,7 @@ class PostgresRuntimeIntegrationTests(unittest.TestCase):
                 if agent_id == "project-manager":
                     return "Plan: prepare the bounded report, review it, refine it and return it."
                 if agent_id == "code-reviewer":
-                    return "VERDICT: PASS\\nThe candidate meets the stated scope and acceptance criteria."
+                    return "VERDICT: PASS\nThe candidate meets the stated scope and acceptance criteria."
                 if "review_feedback" in payload:
                     return "Improved report: requested scope is covered, assumptions are explicit, and the conclusion is clear."
                 return "Initial report: requested scope and conclusion are addressed."
