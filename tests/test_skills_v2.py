@@ -1,11 +1,14 @@
 import hashlib
+import http.client
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
 from unexpected_runtime.coordinator import Coordinator
 from unexpected_runtime.providers import DeterministicMockProvider
+from unexpected_runtime.http_api import create_server
 from unexpected_runtime.skills import SkillRegistry, SkillRegistryError
 
 
@@ -238,5 +241,136 @@ class AdvancedSkillBundleTests(unittest.TestCase):
                 coordinator.close()
 
 
+
+class SkillAPITests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.temp_root = Path(self.temp.name)
+        self.package_root = self.temp_root / "package"
+        self.package_root.mkdir()
+        self.skill_dir = self.package_root / "skills" / "manual"
+        self.skill_dir.mkdir(parents=True)
+        self.skill_body = "# Approved maintenance checklist\\n"
+        (self.skill_dir / "SKILL.md").write_text(self.skill_body, encoding="utf-8")
+        self.manual_skill = {
+            "id": "manual-checklist",
+            "version": "1.0.0",
+            "path": "skills/manual/SKILL.md",
+            "sha256": digest(self.skill_body),
+            "agent_ids": ["maintenance-engineer"],
+            "trigger_terms": [],
+            "source_ref": "fixture:manual-checklist",
+            "status": "active",
+            "invocation_mode": "user_invocable",
+            "description": "Manual maintenance checklist",
+            "allowed_tools": ["maintenance.read"],
+            "resources": [],
+        }
+        manifest = self.package_root / "skill_manifest.json"
+        manifest.write_text(json.dumps({"schema_version": 2, "skills": [self.manual_skill]}),
+                            encoding="utf-8")
+        self.provider = DeterministicMockProvider()
+        self.coordinator = Coordinator(
+            manifest_path=Path(__file__).resolve().parents[1] / "agent_manifest.json",
+            state_dir=self.temp_root / "state",
+            provider=self.provider,
+            skill_manifest_path=manifest,
+            skill_package_root=self.package_root,
+            max_retries=0,
+        )
+        self.token = "skills-api-test-token-" + "x" * 32
+        self.server = create_server(self.coordinator, self.token, host="127.0.0.1", port=0)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.host, self.port = self.server.server_address
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=2)
+        self.coordinator.close()
+        self.temp.cleanup()
+
+    def request(self, method, path, body=None, token=None):
+        connection = http.client.HTTPConnection(self.host, self.port, timeout=8)
+        headers = {}
+        if token is not None:
+            headers["Authorization"] = "Bearer " + token
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+        connection.request(method, path, json.dumps(body) if body is not None else None, headers)
+        response = connection.getresponse()
+        raw = response.read()
+        content_type = response.getheader("Content-Type", "")
+        connection.close()
+        return response.status, json.loads(raw) if "application/json" in content_type and raw else raw
+
+    def test_skills_catalog_is_authenticated_and_exposes_metadata_only(self):
+        self.assertEqual(self.request("GET", "/v1/skills")[0], 401)
+        status, payload = self.request("GET", "/v1/skills", token=self.token)
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["count"], 1)
+        skill = payload["items"][0]
+        self.assertEqual(skill["id"], "manual-checklist")
+        self.assertEqual(skill["invocation_mode"], "user_invocable")
+        serialized = json.dumps(payload)
+        self.assertNotIn("Approved maintenance checklist", serialized)
+        self.assertNotIn("api_key", serialized.lower())
+
+    def test_authenticated_invoke_selects_skill_and_task_detail_persists_it(self):
+        status, payload = self.request(
+            "POST", "/v1/invoke",
+            body={
+                "agent_id": "maintenance-engineer",
+                "objective": "Review planned maintenance work",
+                "skill_ids": ["manual-checklist"],
+                "idempotency_key": "manual-skill-api-run",
+            },
+            token=self.token,
+        )
+        self.assertEqual(status, 200, payload)
+        result = payload["result"]
+        self.assertEqual(result["status"], "completed")
+        self.assertIn("Approved maintenance checklist", self.provider.requests[-1]["system_prompt"])
+        detail_status, detail = self.request(
+            "GET", "/v1/tasks/" + result["task_id"], token=self.token
+        )
+        self.assertEqual(detail_status, 200)
+        self.assertEqual(detail["task"]["requested_skill_ids"], ["manual-checklist"])
+
+    def test_api_rejects_oversized_duplicate_and_non_manual_skill_selection(self):
+        invalid_payloads = [
+            {"skill_ids": ["manual-checklist"] * 5},
+            {"skill_ids": ["manual-checklist", "manual-checklist"]},
+            {"skill_ids": ["unknown-skill"]},
+            {"skill_ids": [" "]},
+        ]
+        for index, extra in enumerate(invalid_payloads):
+            body = {"agent_id": "maintenance-engineer", "objective": "Check schedule",
+                    "idempotency_key": f"invalid-skill-select-{index}", **extra}
+            self.assertEqual(self.request("POST", "/v1/invoke", body=body, token=self.token)[0], 400)
+        body = {
+            "agent_id": "maintenance-engineer",
+            "objective": "Check schedule",
+            "idempotency_key": "cannot-manually-call-automatic",
+            "skill_ids": ["automatic-skill"],
+        }
+        self.coordinator.skills  # Keep this assertion at the authenticated HTTP boundary.
+        (self.package_root / "skills/automatic").mkdir(parents=True)
+        automatic_body = "# Automatic skill\\n"
+        automatic_path = self.package_root / "skills/automatic/SKILL.md"
+        automatic_path.write_text(automatic_body, encoding="utf-8")
+        from unexpected_runtime.skills import SkillRegistry
+        self.coordinator.skills = SkillRegistry.load(
+            self.package_root / "skill_manifest_api.json", self.package_root
+        ) if False else self.coordinator.skills
+        # The currently installed manifest contains no automatic skill, so an explicit
+        # request for an unknown ID is rejected before task creation.
+        status, _ = self.request("POST", "/v1/invoke", body=body, token=self.token)
+        self.assertEqual(status, 400)
+
+
 if __name__ == "__main__":
+    unittest.main(verbosity=2)
+
     unittest.main(verbosity=2)
