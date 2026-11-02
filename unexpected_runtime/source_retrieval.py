@@ -257,6 +257,7 @@ def _fetch_pinned_https(
     deadline = time.monotonic() + timeout_seconds
     connection = _PinnedHTTPSConnection(host, address, timeout_seconds, deadline=deadline)
     response: http.client.HTTPResponse | None = None
+    phase = "connect or request"
     try:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -279,6 +280,7 @@ def _fetch_pinned_https(
         response_socket = connection.sock
         if response_socket is not None:
             response_socket.settimeout(remaining)
+        phase = "response headers"
         response = connection.getresponse()
         headers = {key.lower(): value for key, value in response.getheaders()}
         declared_length = headers.get("content-length")
@@ -289,6 +291,7 @@ def _fetch_pinned_https(
                 raise SourceRetrievalError("Source response has an invalid content length.") from None
             if declared_size < 0 or declared_size > max_bytes:
                 raise SourceRetrievalError("Source response exceeds the configured byte limit.")
+        phase = "response body"
         body = _read_response_bounded(response_socket, response, deadline=deadline, max_bytes=max_bytes)
         return response.status, headers, body
     except SourceRetrievalError:
@@ -299,7 +302,7 @@ def _fetch_pinned_https(
         if isinstance(exc, OSError) and exc.errno is not None:
             error_category = errno.errorcode.get(exc.errno, error_category)
         raise SourceRetrievalError(
-            f"Source HTTPS request failed ({error_category})."
+            f"Source HTTPS {phase} failed ({error_category})."
         ) from None
     finally:
         if response is not None:
