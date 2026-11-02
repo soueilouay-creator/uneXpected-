@@ -296,8 +296,26 @@ class SkillAPITests(unittest.TestCase):
             "allowed_tools": ["maintenance.read"],
             "resources": [],
         }
+        automatic_dir = self.package_root / "skills" / "automatic"
+        automatic_dir.mkdir(parents=True)
+        automatic_body = "# Automatic maintenance workflow\n"
+        (automatic_dir / "SKILL.md").write_text(automatic_body, encoding="utf-8")
+        automatic_skill = {
+            "id": "automatic-checklist",
+            "version": "1.0.0",
+            "path": "skills/automatic/SKILL.md",
+            "sha256": digest(automatic_body),
+            "agent_ids": ["maintenance-engineer"],
+            "trigger_terms": ["scheduled maintenance"],
+            "source_ref": "fixture:automatic-checklist",
+            "status": "active",
+            "invocation_mode": "automatic",
+            "description": "Trigger-matched maintenance workflow",
+            "allowed_tools": [],
+            "resources": [],
+        }
         manifest = self.package_root / "skill_manifest.json"
-        manifest.write_text(json.dumps({"schema_version": 2, "skills": [self.manual_skill]}),
+        manifest.write_text(json.dumps({"schema_version": 2, "skills": [self.manual_skill, automatic_skill]}),
                             encoding="utf-8")
         self.provider = DeterministicMockProvider()
         self.coordinator = Coordinator(
@@ -339,8 +357,8 @@ class SkillAPITests(unittest.TestCase):
         self.assertEqual(self.request("GET", "/v1/skills")[0], 401)
         status, payload = self.request("GET", "/v1/skills", token=self.token)
         self.assertEqual(status, 200)
-        self.assertEqual(payload["count"], 1)
-        skill = payload["items"][0]
+        self.assertEqual(payload["count"], 2)
+        skill = next(item for item in payload["items"] if item["id"] == "manual-checklist")
         self.assertEqual(skill["id"], "manual-checklist")
         self.assertEqual(skill["invocation_mode"], "user_invocable")
         serialized = json.dumps(payload)
@@ -373,6 +391,7 @@ class SkillAPITests(unittest.TestCase):
             {"skill_ids": ["manual-checklist"] * 5},
             {"skill_ids": ["manual-checklist", "manual-checklist"]},
             {"skill_ids": ["unknown-skill"]},
+            {"skill_ids": ["automatic-checklist"]},
             {"skill_ids": [" "]},
         ]
         for index, extra in enumerate(invalid_payloads):
