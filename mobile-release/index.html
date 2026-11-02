@@ -193,6 +193,9 @@
             <div class="data-status-row"><span>Browser database</span><strong id="storageState">Checking…</strong></div>
             <div class="data-status-row"><span>Persistent storage</span><strong id="persistState">Checking…</strong></div>
             <div class="button-row"><button class="button button-secondary" id="exportBtn" type="button">Export backup</button><button class="button button-secondary" id="importBtn" type="button">Restore backup</button><input type="file" id="importFile" accept="application/json,.json" class="hidden"></div>
+            <div class="data-status-row"><span>Unified server sync</span><strong id="syncState">Local-only until you sync</strong></div>
+            <div class="button-row"><button class="button button-primary" id="syncBtn" type="button">Sync workspace</button></div>
+            <p class="field-note">Sync adds your projects, conversations, memories and improvement ideas to the shared workspace. Existing local records are never replaced; conflicts are retained for review. The access token is never included in backups or sync data.</p>
             <button class="danger-link" id="clearDataBtn" type="button">Delete all local workspace data</button>
           </section>
 
