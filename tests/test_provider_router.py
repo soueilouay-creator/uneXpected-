@@ -132,6 +132,31 @@ class ProviderRouterTests(unittest.TestCase):
         self.assertEqual(set(router.providers), {"mock", "openai", "anthropic"})
         self.assertNotIn("openrouter", router.providers)
 
+    def test_openox_is_registered_only_when_configured_and_uses_responses_endpoint(self):
+        env = {
+            "UNEXPECTED_PROVIDER": "mock",
+            "OPENOX_API_KEY": "x" * 48,
+            "OPENOX_MODEL": "gpt-6-astra",
+            "OPENOX_BASE_URL": "https://api.openoxai.com/v1",
+        }
+        with patch.dict("os.environ", env, clear=True):
+            router = provider_router_from_env()
+        provider = router.resolve("openox")
+        self.assertEqual(provider.name, "openox")
+        self.assertEqual(provider.model, "gpt-6-astra")
+        self.assertEqual(provider.base_url, "https://api.openoxai.com/v1/responses")
+        self.assertEqual(router.default_route, "mock")
+
+    def test_openox_is_not_registered_without_a_key(self):
+        env = {
+            "UNEXPECTED_PROVIDER": "mock",
+            "OPENOX_API_KEY": "",
+            "OPENOX_MODEL": "gpt-6-astra",
+        }
+        with patch.dict("os.environ", env, clear=True):
+            router = provider_router_from_env()
+        self.assertNotIn("openox", router.providers)
+
     def test_openrouter_is_registered_only_when_configured_and_uses_openai_compatible_adapter(self):
         env = {
             "UNEXPECTED_PROVIDER": "mock",
