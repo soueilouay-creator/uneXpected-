@@ -175,10 +175,16 @@ class Coordinator:
                 if attempt<self.max_retries and bool(getattr(provider, 'retry_safe', False)) and not token.cancelled:
                     self.store.log_event('provider_retry',req.task_id,spec.id,{'attempt':attempts}); continue
                 break
-        if status=='completed' and hasattr(self.provider,'mark_success'):
-            self.provider.mark_success(req.provider_route)
-        elif status=='completed' and hasattr(provider,'verified') and getattr(provider,'name','')!='deterministic-mock':
-            provider.verified=True
+        if status=='completed':
+            if hasattr(self.provider,'mark_success'):
+                self.provider.mark_success(req.provider_route)
+            elif hasattr(provider,'verified') and getattr(provider,'name','')!='deterministic-mock':
+                provider.verified=True
+            route=req.provider_route or getattr(self.provider,'default_route',getattr(provider,'name','unknown'))
+            self.store.log_event('provider_used',req.task_id,spec.id,{'route':route,
+                'provider':getattr(provider,'name',type(provider).__name__),
+                'model':getattr(provider,'model',None),
+                'mock':getattr(provider,'name','')=='deterministic-mock'})
         result=TaskResult(req.task_id,spec.id,status,output=output,provenance=tuple(req.source_refs),attempts=attempts,error=error,started_at=start,finished_at=time.time())
         persisted = self.store.mark_task(req.task_id,status,result.to_dict())
         if not persisted:
