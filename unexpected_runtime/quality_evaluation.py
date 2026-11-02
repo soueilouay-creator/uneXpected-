@@ -245,8 +245,7 @@ class QualityEvaluationRunner:
             failure_class="provider_unavailable_or_unverified",
         )
         report["failure_reason"] = reason
-        report["failure_classes"] = sorted(set(failure_classes))
-        self._compare_with_baseline(report)
+        report["failure_classes"] = [report["failure_class"]]
         report["finished_at"] = _utc_now()
         self.coordinator.store.log_event("quality_evaluation_blocked", payload={
             "evaluation_id": report["evaluation_id"],
@@ -419,6 +418,8 @@ class QualityEvaluationRunner:
                 },
             )
 
+        report["failure_classes"] = sorted(set(failure_classes))
+        self._compare_with_baseline(report)
         report["finished_at"] = _utc_now()
         report["scenario_count"] = len(report["cases"])
         report["passed_cases"] = sum(1 for item in report["cases"] if item["status"] == "passed")
