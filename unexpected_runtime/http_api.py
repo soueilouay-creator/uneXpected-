@@ -105,7 +105,11 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                 return self.send_bytes(200,data,mime+("; charset=utf-8" if mime.startswith(("text/","application/javascript")) else ""))
             if path=="/health":
                 provider=getattr(active,"provider",None)
-                return self.send_json(200,{"ok":True,"service":"uneXpected command center","version":__version__,
+                store=getattr(active,"store",None)
+                try: storage_healthy=bool(store.check_health()) if callable(getattr(store,"check_health",None)) else True
+                except Exception: storage_healthy=False
+                return self.send_json(200 if storage_healthy else 503,{"ok":storage_healthy,"service":"uneXpected command center","version":__version__,
+                    "storage":"ready" if storage_healthy else "unavailable",
                     "provider":getattr(provider,"name",type(provider).__name__ if provider else "unavailable"),
                     "provider_configured":bool(getattr(provider,"configured",True)),
                     "authentication_configured":len(token)>=32,"privileged_actions":"fail-closed"})
@@ -120,16 +124,18 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                 provider=getattr(active,"provider",None)
                 store=getattr(active,"store",None)
                 backend="postgres" if type(store).__name__.lower().startswith("postgres") else "sqlite-local"
+                try: storage_healthy=bool(store.check_health()) if callable(getattr(store,"check_health",None)) else True
+                except Exception: storage_healthy=False
                 return self.send_json(200,{
                     "version":__version__,
-                    "health":{"ok":True,"status":"ready","detail":"HTTP application and coordinator are responding."},
+                    "health":{"ok":storage_healthy,"status":"ready" if storage_healthy else "degraded","detail":"HTTP application and coordinator are responding." if storage_healthy else "Shared state store is unavailable."},
                     "ecosystem_version":raw.get("ecosystem_version"),
                     "registered_agents":len(active.registry),
                     "provider":getattr(provider,"name",type(provider).__name__ if provider else "unavailable"),
                     "mode":raw.get("mode"),
                     "max_workers":raw.get("max_workers"),
                     "max_retries":raw.get("max_retries"),
-                    "storage":{"backend":backend,"status":backend,"healthy":True,"recovery":"not verified"},
+                    "storage":{"backend":backend,"status":"ready" if storage_healthy else "unavailable","healthy":storage_healthy,"recovery":"not verified"},
                     "governance":{"privileged_actions":"disabled","approval_authority":"not verified","replay_protection":"not verified"},
                     "approval_verifier_configured":bool(getattr(active,"approval_verifier",None))
                 })
