@@ -174,6 +174,85 @@ class StateStore:
         return cur.rowcount==1
 
 
+    def export_workspace_records(self):
+        with self._session() as connection:
+            rows=connection.execute(
+                'SELECT record_id,record_type,payload_json,payload_sha256,source_device_id,source_updated_at,synced_at '
+                'FROM workspace_records ORDER BY synced_at,record_id'
+            ).fetchall()
+        return [{
+            'id':row['record_id'],'type':row['record_type'],'payload':json.loads(row['payload_json']),
+            'sha256':row['payload_sha256'],'device_id':row['source_device_id'],
+            'updated_at':row['source_updated_at'],'synced_at':row['synced_at']
+        } for row in rows]
+
+    def import_workspace_records(self, device_id:str, records:list[dict[str,Any]]):
+        now=time.time()
+        inserted=duplicates=conflicts=updated=0
+        with self._session() as connection:
+            connection.execute(
+                'INSERT INTO workspace_devices(device_id,created_at,last_seen_at) VALUES(?,?,?) '
+                'ON CONFLICT(device_id) DO UPDATE SET last_seen_at=excluded.last_seen_at',
+                (device_id,now,now)
+            )
+            for item in records:
+                record_id=str(item['id'])
+                record_type=str(item['type'])
+                payload=item['payload']
+                payload_json=json.dumps(payload,sort_keys=True,ensure_ascii=False,separators=(',',':'))
+                digest=hashlib.sha256(payload_json.encode('utf-8')).hexdigest()
+                source_updated_at=str(item.get('updated_at') or '')
+                existing=connection.execute(
+                    'SELECT payload_json,payload_sha256,source_device_id,source_updated_at '
+                    'FROM workspace_records WHERE record_id=?',(record_id,)
+                ).fetchone()
+                if not existing:
+                    connection.execute(
+                        'INSERT INTO workspace_records(record_id,record_type,payload_json,payload_sha256,source_device_id,source_updated_at,synced_at) VALUES(?,?,?,?,?,?,?)',
+                        (record_id,record_type,payload_json,digest,device_id,source_updated_at,now)
+                    )
+                    inserted+=1
+                    continue
+                if existing['payload_sha256']==digest:
+                    duplicates+=1
+                    continue
+                if existing['source_device_id']==device_id and source_updated_at and source_updated_at>str(existing['source_updated_at'] or ''):
+                    history_id='history-'+str(uuid.uuid4())
+                    history_json=json.dumps({
+                        '_uneXpectedHistoryOf':record_id,
+                        '_uneXpectedSourceUpdatedAt':existing['source_updated_at'],
+                        'record':json.loads(existing['payload_json'])
+                    },sort_keys=True,ensure_ascii=False,separators=(',',':'))
+                    history_hash=hashlib.sha256(history_json.encode('utf-8')).hexdigest()
+                    connection.execute(
+                        'INSERT INTO workspace_records(record_id,record_type,payload_json,payload_sha256,source_device_id,source_updated_at,synced_at) VALUES(?,?,?,?,?,?,?)',
+                        (history_id,record_type,history_json,history_hash,existing['source_device_id'],existing['source_updated_at'],now)
+                    )
+                    connection.execute(
+                        'UPDATE workspace_records SET record_type=?,payload_json=?,payload_sha256=?,source_device_id=?,source_updated_at=?,synced_at=? WHERE record_id=?',
+                        (record_type,payload_json,digest,device_id,source_updated_at,now,record_id)
+                    )
+                    updated+=1
+                    continue
+                conflict_id='conflict-'+str(uuid.uuid4())
+                conflict_json=json.dumps({
+                    '_uneXpectedConflictOf':record_id,
+                    '_uneXpectedIncomingDevice':device_id,
+                    'record':payload
+                },sort_keys=True,ensure_ascii=False,separators=(',',':'))
+                conflict_hash=hashlib.sha256(conflict_json.encode('utf-8')).hexdigest()
+                connection.execute(
+                    'INSERT INTO workspace_records(record_id,record_type,payload_json,payload_sha256,source_device_id,source_updated_at,synced_at) VALUES(?,?,?,?,?,?,?)',
+                    (conflict_id,'conflict:'+record_type,conflict_json,conflict_hash,device_id,source_updated_at,now)
+                )
+                conflicts+=1
+        self.log_event('workspace_imported',payload={
+            'device_id':device_id,'inserted':inserted,'updated':updated,
+            'duplicates':duplicates,'conflicts':conflicts
+        })
+        return {'inserted':inserted,'updated':updated,'duplicates':duplicates,'conflicts':conflicts}
+
+
 class _PostgresConnection:
     """Small compatibility layer for StateStore's parameterized execute calls."""
 
