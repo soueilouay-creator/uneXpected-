@@ -292,8 +292,12 @@ def _fetch_pinned_https(
         return response.status, headers, body
     except SourceRetrievalError:
         raise
-    except (OSError, http.client.HTTPException, ssl.SSLError, TimeoutError):
-        raise SourceRetrievalError("Source HTTPS request failed.") from None
+    except (OSError, http.client.HTTPException, ssl.SSLError, TimeoutError) as exc:
+        # Expose only the exception class, never its message, address, or TLS details.
+        error_category = type(exc).__name__
+        raise SourceRetrievalError(
+            f"Source HTTPS request failed ({error_category})."
+        ) from None
     finally:
         if response is not None:
             response.close()
