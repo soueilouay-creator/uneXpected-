@@ -58,6 +58,40 @@ class DockerTestExecutorTests(unittest.TestCase):
         with self.assertRaises(TestExecutionConfigurationError):
             DockerTestExecutor(root, image_digest="python:3.12-slim")
 
+    def test_complete_profile_manifest_pins_and_stages_every_file(self):
+        temp, root = make_workspace()
+        self.addCleanup(temp.cleanup)
+        profile = TEST_PROFILES["evidence-engine"]
+        manifest = _profile_manifest(profile)
+        self.assertEqual(set(manifest), set(FILES))
+        self.assertEqual(len(_profile_manifest_sha256(profile)), 64)
+        staging = _stage_profile(root, profile)
+        self.addCleanup(staging.cleanup)
+        for relative in FILES:
+            self.assertEqual((Path(staging.name) / relative).read_bytes(), (root / relative).read_bytes())
+
+    def test_profile_manifest_rejects_missing_and_extra_digest_entries(self):
+        profile = dict(TEST_PROFILES["evidence-engine"])
+        trusted = dict(profile["trusted_files"])
+        profile["trusted_files"] = {key: value for key, value in trusted.items() if key != FILES[2]}
+        with self.assertRaises(TestExecutionConfigurationError):
+            _profile_manifest(profile)
+        profile["trusted_files"] = {**trusted, "unexpected_runtime/extra.py": "0" * 64}
+        with self.assertRaises(TestExecutionConfigurationError):
+            _profile_manifest(profile)
+
+    def test_modified_runtime_profile_files_are_rejected_before_container_execution(self):
+        for relative in FILES[1:]:
+            with self.subTest(relative=relative):
+                temp, root = make_workspace()
+                self.addCleanup(temp.cleanup)
+                (root / relative).write_text("tampered runtime dependency", encoding="utf-8")
+                executor = DockerTestExecutor(root, image_digest="python:3.12-slim@sha256:" + "d" * 64, docker_binary="/usr/bin/docker")
+                with patch("unexpected_runtime.test_execution._run_bounded_process") as run:
+                    with self.assertRaises(TestExecutionConfigurationError):
+                        executor("candidate", {"profile": "evidence-engine"}, {})
+                run.assert_not_called()
+
     def test_modified_test_profile_is_rejected_before_container_execution(self):
         temp, root = make_workspace()
         self.addCleanup(temp.cleanup)
