@@ -72,7 +72,9 @@ jobs:
           node --check mobile-assets.mjs
           node --check mobile-release/app.js
           node --check mobile-release/providers.js
-          node --check test/mobile-provider-results.test.mjs
+          node --check runtime-supervisor.mjs
+          node --check test/unified-api-proxy.test.mjs
+          node --check test/mobile-provider-results.test.mjs test/unified-runtime-supervisor.test.mjs test/unified-api-proxy.test.mjs
           node --check test/phone-workspace-ui.test.mjs
       - name: Mobile and authenticated gateway HTTP tests
         run: node --test test/mobile-assets.test.mjs test/mobile-pwa.test.mjs test/mobile-route-smoke.test.mjs test/openrouter-ui.test.mjs test/orchestrator.test.mjs test/phone-workspace-ui.test.mjs test/mobile-provider-results.test.mjs
