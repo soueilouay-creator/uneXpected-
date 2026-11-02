@@ -10,6 +10,8 @@ uneXpected v8 is one governed Python application with one desktop web command ce
 - A desktop-first command center for system health, agents, tasks, lifecycle history, providers, capabilities, approvals, audit, and improvement proposals.
 - The canonical 38 specialist roles and existing skill registry.
 - The governed coordinator and seven-stage workflow: Request → Plan → Execute → Verify → Improve → Deliver → Learn.
+- Resource Intelligence: permanent Awesome research index with provenance, independent license/security status and discovery-only adoption states.
+- AI Quality Evaluation: bounded deterministic output checks for instruction following, prompt injection, grounding, safety, structured output and regressions.
 - Native server-side provider adapters for OpenAI, Anthropic, and OpenRouter, plus explicit deterministic mock mode.
 - SQLite for local development and PostgreSQL for hosted shared state.
 - Single-flight idempotency claims, replay detection, and a PostgreSQL one-use approval ledger.
@@ -42,6 +44,8 @@ python -m unexpected_runtime.http_api
 ```
 
 Open `http://127.0.0.1:10000`. The command center asks for the API token; the browser keeps it in tab memory only. SQLite state is local development state, not durable hosted state.
+
+Inspect the curated research catalog with `python -m unexpected_runtime.cli resources --validate`. A live quality evaluation is an explicit operator action and requires a configured, already verified non-mock route, for example `python -m unexpected_runtime.cli quality-eval --provider-route openrouter`. A mock or unverified route is rejected before evaluation tasks are created. The deterministic CI fixture suite tests evaluator contracts only; it is not live semantic model evidence.
 
 ## Provider configuration
 
@@ -92,3 +96,9 @@ The deployment contract tests assert one Python process, one Render web service,
 ## Migration and rollback
 
 The original AI Studio repository and both old Render services remain untouched during migration. The v8 service must pass preview, provider, database, lifecycle, backup/restore and rollback checks before cutover. Retiring either old service is a separate operation requiring explicit final confirmation.
+
+## Resource Intelligence and AI quality
+
+The versioned catalog in `unexpected_runtime/data/resource_catalog.json` indexes [sindresorhus/awesome](https://github.com/sindresorhus/awesome) as a permanent discovery source. Linked repositories are separate candidates: their license, maintenance, dependencies and security posture are not inherited from the list. Catalog states distinguish discovered, triaged, verified, approved and integrated. No catalog read installs or authorizes a tool.
+
+The authenticated command center exposes `GET /v1/resources`, `GET /v1/quality-evaluations` and the owner-initiated `POST /v1/quality-evaluations`. The CLI exposes `resources` and `quality-eval`. Quality runs are bounded to the versioned scenario set, use only a configured and verified non-mock provider, and request no privileged permissions. Reports retain case outcomes and output digests rather than duplicating raw output. Fixture/offline CI tests are labelled separately from live provider runs. There is no background catalog crawler, package installer, LLM-as-judge or automatic improvement promotion.
