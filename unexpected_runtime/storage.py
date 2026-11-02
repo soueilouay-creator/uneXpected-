@@ -28,6 +28,8 @@ class StateStore:
             CREATE TABLE IF NOT EXISTS agent_memory(agent_id TEXT NOT NULL, key TEXT NOT NULL, value_json TEXT NOT NULL, updated_at REAL NOT NULL, PRIMARY KEY(agent_id,key));
             CREATE TABLE IF NOT EXISTS shared_knowledge(knowledge_id TEXT PRIMARY KEY, source TEXT NOT NULL, content TEXT NOT NULL, trust_status TEXT NOT NULL, reviewed_by TEXT, created_at REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS idempotency(idempotency_key TEXT PRIMARY KEY, request_hash TEXT NOT NULL, result_json TEXT NOT NULL, created_at REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS idempotency_claims(idempotency_key TEXT PRIMARY KEY, request_hash TEXT NOT NULL, task_id TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('running','completed','failed')), result_json TEXT, created_at REAL NOT NULL, updated_at REAL NOT NULL);
+            CREATE INDEX IF NOT EXISTS idx_idempotency_claims_state_updated ON idempotency_claims(state,updated_at);
             CREATE TABLE IF NOT EXISTS outcomes(outcome_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, task_id TEXT, success INTEGER NOT NULL, feedback TEXT NOT NULL, provenance_json TEXT NOT NULL, created_at REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS proposals(proposal_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, base_version TEXT NOT NULL, candidate_version TEXT NOT NULL, candidate_instruction TEXT NOT NULL, changes TEXT NOT NULL, protected_change INTEGER NOT NULL, benchmark_id TEXT NOT NULL, status TEXT NOT NULL, evaluation_json TEXT, created_at REAL NOT NULL, protected_fields_json TEXT NOT NULL DEFAULT '[]', evaluation_context_json TEXT NOT NULL DEFAULT '{}');
             CREATE TABLE IF NOT EXISTS agent_versions(agent_id TEXT NOT NULL, version TEXT NOT NULL, instruction TEXT NOT NULL, change_log TEXT NOT NULL, active INTEGER NOT NULL, created_at REAL NOT NULL, PRIMARY KEY(agent_id,version));
@@ -83,6 +85,30 @@ class StateStore:
         return json.loads(row['result_json'])
     def set_idempotent(self,key:str,request_hash:str,result:dict[str,Any]):
         with self._session() as c: c.execute('INSERT OR IGNORE INTO idempotency(idempotency_key,request_hash,result_json,created_at) VALUES(?,?,?,?)',(key,request_hash,json.dumps(result,ensure_ascii=False),time.time()))
+    def claim_idempotency(self,key:str,request_hash:str,task_id:str,lease_seconds:float=660.0):
+        now=time.time()
+        with self._session() as c:
+            cur=c.execute("INSERT OR IGNORE INTO idempotency_claims(idempotency_key,request_hash,task_id,state,result_json,created_at,updated_at) VALUES(?,?,?,'running',NULL,?,?)",(key,request_hash,task_id,now,now))
+            if cur.rowcount==1: return {'state':'claimed','task_id':task_id}
+            row=c.execute('SELECT request_hash,task_id,state,result_json,updated_at FROM idempotency_claims WHERE idempotency_key=?',(key,)).fetchone()
+            if not row: raise RuntimeError('Idempotency claim disappeared during acquisition.')
+            if row['request_hash']!=request_hash: raise ValueError('Idempotency key reused with a different request payload.')
+            if row['state']=='running' and now-float(row['updated_at'])>lease_seconds:
+                c.execute("UPDATE idempotency_claims SET task_id=?,state='running',result_json=NULL,updated_at=? WHERE idempotency_key=? AND state='running' AND updated_at=?",(task_id,now,key,row['updated_at']))
+                check=c.execute('SELECT task_id,state,result_json FROM idempotency_claims WHERE idempotency_key=?',(key,)).fetchone()
+                if check['task_id']==task_id: return {'state':'claimed','task_id':task_id}
+                return {'state':'running','task_id':check['task_id']}
+            return {'state':row['state'],'task_id':row['task_id'],'result':json.loads(row['result_json']) if row['result_json'] else None}
+
+    def complete_idempotency(self,key:str,task_id:str,result:dict[str,Any])->bool:
+        with self._session() as c:
+            cur=c.execute("UPDATE idempotency_claims SET state='completed',result_json=?,updated_at=? WHERE idempotency_key=? AND task_id=? AND state='running'",(json.dumps(result,ensure_ascii=False),time.time(),key,task_id))
+        return cur.rowcount==1
+
+    def fail_idempotency(self,key:str,task_id:str,result:dict[str,Any])->bool:
+        with self._session() as c:
+            cur=c.execute("UPDATE idempotency_claims SET state='failed',result_json=?,updated_at=? WHERE idempotency_key=? AND task_id=? AND state='running'",(json.dumps(result,ensure_ascii=False),time.time(),key,task_id))
+        return cur.rowcount==1
     def add_knowledge(self,source:str,content:str):
         kid=str(uuid.uuid4())
         with self._session() as c: c.execute('INSERT INTO shared_knowledge(knowledge_id,source,content,trust_status,created_at) VALUES(?,?,?,?,?)',(kid,source,content,'pending',time.time()))
