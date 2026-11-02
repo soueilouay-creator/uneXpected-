@@ -99,6 +99,8 @@ class CommandCenterAPITests(unittest.TestCase):
             "/v1/improvements",
             "/v1/providers",
             "/v1/approvals",
+            "/v1/resources",
+            "/v1/quality-evaluations",
         )
         for route in routes:
             with self.subTest(route=route):
@@ -226,6 +228,63 @@ class CommandCenterAPITests(unittest.TestCase):
         )
         self.assertIn("lifecycleOption.disabled=!hasConfiguredLiveProvider;", js)
         self.assertIn("body?.result?.status", js)
+
+
+    def test_resource_catalog_and_quality_history_are_authenticated_and_discovery_only(self):
+        status, body = self.request("GET", "/v1/resources", token=self.token)
+        self.assertEqual(status, 200)
+        self.assertGreaterEqual(body["count"], 5)
+        self.assertTrue(body["summary"]["valid"])
+        self.assertTrue(all(item["adoption_status"] == "discovered" for item in body["items"]))
+        self.assertTrue(all(item["license"]["status"] != "verified" for item in body["items"]))
+
+        status, body = self.request("POST", "/v1/quality-evaluations",
+                                    body={"provider_route": "mock"}, token=self.token)
+        self.assertEqual(status, 409, body)
+        self.assertEqual(body["report"]["status"], "blocked")
+        self.assertEqual(body["report"]["execution_mode"], "live")
+        tasks_status, tasks = self.request("GET", "/v1/tasks", token=self.token)
+        self.assertEqual(tasks_status, 200)
+        self.assertEqual(tasks["count"], 0)
+
+        history_status, history = self.request("GET", "/v1/quality-evaluations", token=self.token)
+        self.assertEqual(history_status, 200)
+        self.assertEqual(history["count"], 1)
+        serialized = json.dumps(history)
+        self.assertNotIn("api_key", serialized.lower())
+        self.assertNotIn("authorization", serialized.lower())
+        self.assertNotIn("MOCK_OK", serialized)
+
+    def test_quality_evaluation_api_rejects_missing_route_unknown_fields_and_oversized_selection(self):
+        self.assertEqual(
+            self.request("POST", "/v1/quality-evaluations", body={}, token=self.token)[0],
+            400,
+        )
+        self.assertEqual(
+            self.request("POST", "/v1/quality-evaluations",
+                         body={"provider_route": "mock", "execute": True}, token=self.token)[0],
+            400,
+        )
+        self.assertEqual(
+            self.request("POST", "/v1/quality-evaluations",
+                         body={"provider_route": "mock", "scenario_ids": ["case"] * 9},
+                         token=self.token)[0],
+            400,
+        )
+        self.assertEqual(self.request("GET", "/v1/resources", token=None)[0], 401)
+        self.assertEqual(self.request("GET", "/v1/quality-evaluations", token=None)[0], 401)
+
+    def test_command_center_exposes_existing_intelligence_view(self):
+        html_status, html = self.request("GET", "/")
+        js_status, js = self.request("GET", "/assets/app.js")
+        self.assertEqual(html_status, 200)
+        self.assertEqual(js_status, 200)
+        self.assertIn('data-view="intelligence"', html)
+        self.assertIn('id="resource-list"', html)
+        self.assertIn('id="quality-evaluation-form"', html)
+        self.assertIn('/v1/resources', js)
+        self.assertIn('/v1/quality-evaluations', js)
+
 
 
 if __name__ == "__main__":
