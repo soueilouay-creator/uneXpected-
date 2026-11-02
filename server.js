@@ -75,7 +75,7 @@ function rateLimited(req) {
 function authorized(req, allowInternal = true) {
   const supplied = req.headers.authorization || '';
   const candidates = [ACCESS_TOKEN, ...(allowInternal ? [GATEWAY_INTERNAL_TOKEN] : [])]
-    .filter(token => typeof token === 'string' && token.length >= 32 && !/[^\\x20-\\x7e]/.test(token));
+    .filter(token => typeof token === 'string' && token.length >= 32 && !token.split('').some(ch => ch.charCodeAt(0) < 32 || ch.charCodeAt(0) > 126));
   return candidates.some(token => {
     const expected = 'Bearer ' + token;
     if (supplied.length !== expected.length) return false;
