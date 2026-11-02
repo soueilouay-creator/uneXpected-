@@ -119,6 +119,16 @@ class CommandCenterAPITests(unittest.TestCase):
                 self.assertIsInstance(body, dict)
                 self.assertIn("items" if route != "/v1/providers" else "providers", body)
 
+    def test_web_ui_exposes_provider_selection_and_connection_test(self):
+        html_status, html = self.request("GET", "/")
+        js_status, js = self.request("GET", "/assets/app.js")
+        self.assertEqual(html_status, 200)
+        self.assertEqual(js_status, 200)
+        self.assertIn('id="task-provider"', html)
+        self.assertIn('provider_route', js)
+        self.assertIn('/v1/providers/test', js)
+        self.assertIn('data-test-provider', js)
+
     def test_health_is_minimal_and_never_discloses_secret_or_internal_paths(self):
         status, body = self.request("GET", "/health")
         self.assertEqual(status, 200)
