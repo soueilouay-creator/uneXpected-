@@ -127,6 +127,31 @@ class ProviderTests(unittest.TestCase):
         with patch.dict("os.environ",env,clear=True):
             self.assertIsInstance(provider_from_env(),AIStudioGatewayProvider)
 
+    def test_provider_error_has_a_safe_machine_readable_code(self):
+        error=ProviderError("sensitive detail must not be logged",code="gateway_http_401")
+        self.assertEqual(error.code,"gateway_http_401")
+
+    def test_coordinator_emits_sanitized_provider_failure_correlation(self):
+        class FailingProvider:
+            name="unexpected-ai-studio-gateway"
+            def generate(self,**kwargs):
+                raise ProviderError("upstream response must not be exposed",code="gateway_http_401")
+        with tempfile.TemporaryDirectory() as state:
+            coordinator=Coordinator(state_dir=state,provider=FailingProvider(),max_workers=1,max_retries=0)
+            try:
+                with self.assertLogs("unexpected_runtime.coordinator",level="ERROR") as captured:
+                    result=coordinator.invoke("orchestrator","safe provider diagnostics test",deadline_seconds=5)
+                self.assertEqual(result.status,"failed")
+                self.assertIn("gateway_http_401",result.error)
+                records=[json.loads(record.getMessage()) for record in captured.records]
+                event=next(record for record in records if record.get("event")=="provider_error")
+                self.assertEqual(event["task_id"],result.task_id)
+                self.assertEqual(event["provider"],"unexpected-ai-studio-gateway")
+                self.assertEqual(event["error_code"],"gateway_http_401")
+                self.assertNotIn("upstream response",json.dumps(event))
+            finally:
+                coordinator.close()
+
 class APITests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
