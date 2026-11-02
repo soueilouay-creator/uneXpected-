@@ -64,7 +64,8 @@ class DeploymentContractTests(unittest.TestCase):
     def test_python_entrypoint_uses_render_port_and_public_bind(self):
         source = (ROOT / "unexpected_runtime" / "http_api.py").read_text(encoding="utf-8")
         self.assertIn('os.getenv("PORT"', source)
-        self.assertIn('host="0.0.0.0"', source)
+        self.assertIn('os.getenv("UNEXPECTED_RUNTIME_BIND_HOST","0.0.0.0")', source)
+        self.assertIn('ThreadingHTTPServer((host,int(port))', source)
 
 
 if __name__ == "__main__":
