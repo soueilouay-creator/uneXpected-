@@ -150,30 +150,63 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                 return self.send_json(200,{"count":len(items),"items":items})
             if path=="/v1/providers":
                 provider=getattr(active,"provider",None)
-                items=[]
-                if provider is not None:
-                    items=[{"name":getattr(provider,"name",type(provider).__name__),
+                if hasattr(provider,"status"):
+                    items=provider.status()
+                elif provider is not None:
+                    items=[{"id":"default","name":getattr(provider,"name",type(provider).__name__),
                             "configured":bool(getattr(provider,"configured",True)),
                             "verified":bool(getattr(provider,"verified",False)),
-                            "model":getattr(provider,"model",None)}]
+                            "model":getattr(provider,"model",None),"default":True,"live":True}]
+                else:
+                    items=[]
                 return self.send_json(200,{"providers":items})
             if path=="/v1/approvals":
                 return self.send_json(200,{"count":0,"items":[],"message":"No pending approval records are exposed. Privileged execution remains disabled."})
             return self.send_json(404,{"error":"Not found."})
         def do_POST(self):
             route=urlsplit(self.path).path
-            if route not in {"/v1/invoke", "/v1/lifecycle"}: return self.send_json(404,{"error":"Not found."})
+            if route not in {"/v1/invoke", "/v1/lifecycle", "/v1/providers/test"}: return self.send_json(404,{"error":"Not found."})
             is_lifecycle=route=="/v1/lifecycle"
+            is_provider_test=route=="/v1/providers/test"
             if not self.authorize(): return
             identity=self.client_address[0] if self.client_address else "unknown"
             active_limiter=lifecycle_limiter if is_lifecycle else limiter
             if not active_limiter.allow(identity): return self.send_json(429,{"error":"Request rate limit exceeded."})
             body=self.read_body()
             if body is None: return
-            allowed=({"agent_id","objective","inputs","deadline_seconds","max_corrections","max_improvements"}
+            if is_provider_test:
+                if set(body)!={"provider_route"} or not isinstance(body.get("provider_route"),str):
+                    return self.send_json(400,{"error":"provider_route is required."})
+                try:
+                    provider=active.provider.resolve(body["provider_route"]) if hasattr(active.provider,"resolve") else None
+                    if provider is None or getattr(provider,"name","")=="deterministic-mock":
+                        return self.send_json(400,{"error":"Mock is test-only and cannot be live-verified."})
+                    started=time.monotonic()
+                    provider.generate(system_prompt="You are performing a bounded provider connectivity check.",
+                                      user_prompt="Reply with exactly: uneXpected provider connection verified.",
+                                      agent_id="system-health",task_id="provider-test",timeout=10.0)
+                    elapsed_ms=round((time.monotonic()-started)*1000,2)
+                    if hasattr(active.provider,"mark_success"): active.provider.mark_success(body["provider_route"])
+                    elif hasattr(provider,"verified"): provider.verified=True
+                    active.store.log_event("provider_verified",payload={"route":body["provider_route"],
+                        "provider":getattr(provider,"name",type(provider).__name__),
+                        "model":getattr(provider,"model",None),"latency_ms":elapsed_ms})
+                    return self.send_json(200,{"ok":True,"provider_route":body["provider_route"],
+                        "provider":getattr(provider,"name",type(provider).__name__),
+                        "model":getattr(provider,"model",None),"latency_ms":elapsed_ms,"verified":True})
+                except Exception as exc:
+                    active.store.log_event("provider_test_failed",payload={"route":body.get("provider_route"),
+                        "error_type":type(exc).__name__})
+                    return self.send_json(502,{"ok":False,"error":f"Provider test failed ({type(exc).__name__})."})
+            allowed=({"agent_id","objective","inputs","deadline_seconds","max_corrections","max_improvements","provider_route"}
                      if is_lifecycle else
-                     {"agent_id","objective","inputs","deadline_seconds","max_steps","idempotency_key","source_refs"})
+                     {"agent_id","objective","inputs","deadline_seconds","max_steps","idempotency_key","source_refs","provider_route"})
             if set(body)-allowed: return self.send_json(400,{"error":"Unsupported fields; privileged actions are not exposed."})
+            provider_route=body.get("provider_route")
+            if provider_route is not None and not isinstance(provider_route,str): return self.send_json(400,{"error":"provider_route must be a string."})
+            if provider_route is not None:
+                try: active.provider.resolve(provider_route)
+                except Exception: return self.send_json(400,{"error":"Requested provider route is unavailable."})
             agent=body.get("agent_id"); objective=body.get("objective"); inputs=body.get("inputs",{})
             deadline=body.get("deadline_seconds",60.0 if is_lifecycle else 195.0)
             steps=body.get("max_steps",6)
@@ -210,13 +243,15 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                         result=active.run_lifecycle(agent.strip(),objective,inputs,
                                                     deadline_seconds=float(deadline),
                                                     max_corrections=corrections,
-                                                    max_improvements=improvements).to_dict()
+                                                    max_improvements=improvements,
+                                                    provider_route=provider_route).to_dict()
                     finally:
                         lifecycle_slots.release()
                     success=result.get("status")=="delivered" and result.get("delivered") is True
                 else:
                     result=active.invoke(agent.strip(),objective,inputs,deadline_seconds=float(deadline),
-                                         max_steps=steps,idempotency_key=idem,source_refs=tuple(refs)).to_dict()
+                                         max_steps=steps,idempotency_key=idem,source_refs=tuple(refs),
+                                         provider_route=provider_route).to_dict()
                     success=result.get("status")=="completed"
                 return self.send_json(200 if success else 502,{"result":result})
             except Exception as exc: return self.send_json(400,{"error":f"Task rejected or failed ({type(exc).__name__})."})
