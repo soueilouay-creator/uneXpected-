@@ -169,3 +169,135 @@ class StateStore:
             cur=c.execute('UPDATE capabilities SET status=?,record_json=?,updated_at=? WHERE capability_id=? AND status=?',
                           (record['status'],json.dumps(record,ensure_ascii=False,sort_keys=True),time.time(),record['capability_id'],expected_status))
         return cur.rowcount==1
+
+
+class _PostgresConnection:
+    """Small compatibility layer for StateStore's parameterized execute calls."""
+
+    def __init__(self, connection):
+        self.connection = connection
+
+    def execute(self, statement, parameters=()):
+        return self.connection.execute(statement.replace("?", "%s"), parameters or ())
+
+    def commit(self):
+        self.connection.commit()
+
+    def rollback(self):
+        self.connection.rollback()
+
+    def close(self):
+        self.connection.close()
+
+
+class PostgresStateStore(StateStore):
+    """PostgreSQL-backed StateStore with transactional, versioned schema migrations."""
+
+    def __init__(self, database_url: str):
+        value = str(database_url or "").strip()
+        if not value.startswith(("postgres://", "postgresql://")):
+            raise ValueError("UNEXPECTED_DATABASE_URL must be a PostgreSQL connection URL.")
+        self.database_url = value
+        self.path = Path("postgresql")
+        self.backend = "postgresql"
+        self.description = "postgresql"
+        self._init()
+
+    def _connect(self):
+        try:
+            import psycopg
+            from psycopg.rows import dict_row
+        except ImportError as exc:
+            raise RuntimeError("PostgreSQL storage requires the pinned psycopg runtime dependency.") from exc
+        connection = psycopg.connect(self.database_url, connect_timeout=8, row_factory=dict_row)
+        connection.execute("SET statement_timeout = '15000ms'")
+        return _PostgresConnection(connection)
+
+    def _init(self):
+        migration_dir = Path(__file__).resolve().parent / "migrations"
+        migrations = sorted(migration_dir.glob("[0-9][0-9][0-9]_*.sql"))
+        if not migrations:
+            raise RuntimeError("No PostgreSQL schema migrations are installed.")
+        with self._session() as connection:
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS schema_migrations "
+                "(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at DOUBLE PRECISION NOT NULL)"
+            )
+        for migration in migrations:
+            version = int(migration.name.split("_", 1)[0])
+            with self._session() as connection:
+                applied = connection.execute(
+                    "SELECT version FROM schema_migrations WHERE version = ?", (version,)
+                ).fetchone()
+                if applied:
+                    continue
+                statements = [item.strip() for item in migration.read_text(encoding="utf-8").split(";") if item.strip()]
+                for statement in statements:
+                    connection.execute(statement)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
+                    (version, migration.name, time.time())
+                )
+
+    def claim_next(self):
+        with self._session() as connection:
+            row = connection.execute(
+                "SELECT * FROM tasks WHERE status='queued' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED"
+            ).fetchone()
+            if not row:
+                return None
+            changed = connection.execute(
+                "UPDATE tasks SET status='running', updated_at=? WHERE task_id=? AND status='queued'",
+                (time.time(), row["task_id"])
+            )
+            return dict(row) if changed.rowcount == 1 else None
+
+    def set_idempotent(self, key: str, request_hash: str, result: dict[str, Any]):
+        with self._session() as connection:
+            connection.execute(
+                "INSERT INTO idempotency(idempotency_key, request_hash, result_json, created_at) "
+                "VALUES (?, ?, ?, ?) ON CONFLICT(idempotency_key) DO NOTHING",
+                (key, request_hash, json.dumps(result, ensure_ascii=False), time.time())
+            )
+
+    def set_baseline(self, agent_id: str, benchmark_id: str, report: dict[str, Any], *,
+                     active_version: str | None = None, instruction_sha256: str | None = None,
+                     report_sha256: str | None = None):
+        with self._session() as connection:
+            connection.execute(
+                "INSERT INTO baselines(agent_id,benchmark_id,report_json,created_at,active_version,instruction_sha256,report_sha256) "
+                "VALUES(?,?,?,?,?,?,?) ON CONFLICT(agent_id,benchmark_id) DO UPDATE SET "
+                "report_json=EXCLUDED.report_json, created_at=EXCLUDED.created_at, "
+                "active_version=EXCLUDED.active_version, instruction_sha256=EXCLUDED.instruction_sha256, "
+                "report_sha256=EXCLUDED.report_sha256",
+                (agent_id, benchmark_id, json.dumps(report, sort_keys=True, ensure_ascii=False), time.time(),
+                 active_version, instruction_sha256, report_sha256)
+            )
+
+    def ensure_base_version(self, agent_id: str, version: str, instruction: str):
+        with self._session() as connection:
+            connection.execute("SELECT pg_advisory_xact_lock(hashtext(?))", (agent_id,))
+            active = connection.execute(
+                "SELECT 1 FROM agent_versions WHERE agent_id=? AND active=1 FOR UPDATE", (agent_id,)
+            ).fetchone()
+            if not active:
+                connection.execute("UPDATE agent_versions SET active=0 WHERE agent_id=?", (agent_id,))
+                connection.execute(
+                    "INSERT INTO agent_versions(agent_id,version,instruction,change_log,active,created_at) "
+                    "VALUES(?,?,?,?,?,?) ON CONFLICT(agent_id,version) DO UPDATE SET "
+                    "instruction=EXCLUDED.instruction, active=1",
+                    (agent_id, version, instruction, "baseline", 1, time.time())
+                )
+
+    def promote_version(self, agent_id: str, version: str, instruction: str, change_log: str):
+        with self._session() as connection:
+            connection.execute("SELECT pg_advisory_xact_lock(hashtext(?))", (agent_id,))
+            connection.execute("UPDATE agent_versions SET active=0 WHERE agent_id=?", (agent_id,))
+            connection.execute(
+                "INSERT INTO agent_versions(agent_id,version,instruction,change_log,active,created_at) "
+                "VALUES(?,?,?,?,?,?) ON CONFLICT(agent_id,version) DO UPDATE SET "
+                "instruction=EXCLUDED.instruction, change_log=EXCLUDED.change_log, active=1, created_at=EXCLUDED.created_at",
+                (agent_id, version, instruction, change_log, 1, time.time())
+            )
+        self.log_event("version_promoted", agent_id=agent_id,
+                       payload={"version": version, "change_log": change_log})
