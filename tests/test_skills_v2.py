@@ -125,7 +125,7 @@ class AdvancedSkillBundleTests(unittest.TestCase):
                 resources=[("reference", "references/ref.md", "# Original\n")],
             )
             registry = SkillRegistry.load(self._manifest(root, [entry]), root)
-            selected = registry.resolve_all("maintenance-engineer", "nothing")[0]
+            selected = registry.resolve_all("maintenance-engineer", "nothing",\n                                             requested_skill_ids=("bundle-skill",))[0]
             ref_path = root / "skills/bundle-skill/references/ref.md"
             ref_path.write_text("# Tampered\n", encoding="utf-8")
             with self.assertRaises(SkillRegistryError):
