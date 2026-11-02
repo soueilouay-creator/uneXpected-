@@ -93,6 +93,7 @@ async function runtimeHealth() {
     const data = await response.json();
     return { ok: data?.ok === true && data?.storage_durable === true, configured: true, version: data?.version || null,
       provider: data?.provider || null, providerConfigured: data?.provider_configured === true,
+      registeredAgents: Number.isInteger(data?.registered_agents) ? data.registered_agents : null,
       storage: data?.storage_backend || null };
   } catch (error) {
     return { ok: false, configured: true, error: error?.name === 'TimeoutError' ? 'Runtime health timed out.' : 'Runtime health unavailable.' };
@@ -397,6 +398,13 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/styles.css') {
       res.writeHead(200, { 'content-type': MIME['.css'], 'cache-control': 'no-store' });
       return res.end(await readFile(join(ROOT, 'public', 'styles.css')));
+    }
+    if (req.method === 'GET' && ['/v1/status', '/v1/agents'].includes(url.pathname)) {
+      if (rateLimited(req)) return json(res, 429, { error: 'Rate limit exceeded. Wait one minute and try again.' });
+      if (!authorized(req, false)) return json(res, ACCESS_TOKEN.length >= 32 ? 401 : 503, {
+        error: ACCESS_TOKEN.length >= 32 ? 'Unauthorized.' : 'Owner access is not configured with a strong token.'
+      });
+      return forwardRuntime(req, res, url.pathname, undefined, 'GET');
     }
     if (req.method === 'GET' && url.pathname === '/v1/workspace/export') {
       if (rateLimited(req)) return json(res, 429, { error: 'Rate limit exceeded. Wait one minute and try again.' });
