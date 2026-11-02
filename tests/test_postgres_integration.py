@@ -2,12 +2,19 @@ from __future__ import annotations
 
 import os
 import uuid
+import json
+import tempfile
+import threading
+import urllib.request
 import unittest
+from unittest.mock import patch
 from concurrent.futures import ThreadPoolExecutor
 
 from unexpected_runtime.models import TaskRequest
 from unexpected_runtime.postgres_approval_ledger import PostgresApprovalLedger
 from unexpected_runtime.postgres_storage import PostgresStateStore
+from unexpected_runtime.coordinator import Coordinator
+from unexpected_runtime.http_api import create_server
 
 
 DSN = os.getenv("TEST_POSTGRES_DSN")
@@ -118,6 +125,81 @@ class PostgresRuntimeIntegrationTests(unittest.TestCase):
         self.assertEqual(replay["result"], result)
         with self.assertRaises(ValueError):
             self.store.claim_idempotency(key, "d" * 64, self.prefix + "-changed")
+
+    def test_one_python_command_center_uses_postgres_for_real_api_lifecycle(self):
+        token = "ci-command-center-token-" + uuid.uuid4().hex
+        with tempfile.TemporaryDirectory() as state_dir, patch.dict(os.environ, {
+            "UNEXPECTED_STORAGE_BACKEND": "postgres",
+            "UNEXPECTED_APPROVAL_LEDGER_BACKEND": "postgres",
+            "DATABASE_URL": DSN,
+            "UNEXPECTED_RUNTIME_API_TOKEN": token,
+            "UNEXPECTED_DEFAULT_PROVIDER": "mock",
+            "UNEXPECTED_STATE_DIR": state_dir,
+        }):
+            coordinator = Coordinator(state_dir=state_dir, max_workers=2, max_retries=0)
+            server = create_server(coordinator=coordinator, api_token=token)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            base = "http://127.0.0.1:" + str(server.server_address[1])
+            headers = {"Authorization": "Bearer " + token, "Content-Type": "application/json"}
+            try:
+                with urllib.request.urlopen(base + "/health", timeout=5) as response:
+                    health = json.loads(response.read())
+                    self.assertEqual(response.status, 200)
+                    self.assertTrue(health["ok"])
+                    self.assertEqual(health["storage"], "ready")
+
+                with urllib.request.urlopen(urllib.request.Request(base + "/v1/status", headers=headers), timeout=5) as response:
+                    status = json.loads(response.read())
+                    self.assertEqual(status["storage"]["backend"], "postgres")
+                    self.assertEqual(status["registered_agents"], 38)
+
+                payload = {
+                    "agent_id": self.agent,
+                    "objective": "Verify the unified PostgreSQL command center",
+                    "inputs": {"source": "ephemeral-ci"},
+                    "provider_route": "mock",
+                    "idempotency_key": self.prefix + "-http-idempotency",
+                }
+                body = json.dumps(payload).encode()
+                request = urllib.request.Request(base + "/v1/invoke", data=body, headers=headers, method="POST")
+                with urllib.request.urlopen(request, timeout=20) as response:
+                    result = json.loads(response.read())
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(result["status"], "completed")
+                    task_id = result["task_id"]
+
+                detail_request = urllib.request.Request(base + "/v1/tasks/" + task_id, headers=headers)
+                with urllib.request.urlopen(detail_request, timeout=5) as response:
+                    detail = json.loads(response.read())["task"]
+                    self.assertEqual(detail["provider_route"], "mock")
+                    self.assertEqual(detail["result"]["status"], "completed")
+
+                events_request = urllib.request.Request(base + "/v1/events?task_id=" + task_id, headers=headers)
+                with urllib.request.urlopen(events_request, timeout=5) as response:
+                    events = json.loads(response.read())["items"]
+                    provider_events = [event for event in events if event["event_type"] == "provider_used"]
+                    self.assertTrue(provider_events)
+                    self.assertTrue(json.loads(provider_events[0]["payload_json"])["mock"])
+
+                replay_request = urllib.request.Request(base + "/v1/invoke", data=body, headers=headers, method="POST")
+                with urllib.request.urlopen(replay_request, timeout=10) as response:
+                    replay = json.loads(response.read())
+                    self.assertTrue(replay["idempotent_replay"])
+                    self.assertEqual(replay["task_id"], task_id)
+
+                with urllib.request.urlopen(base + "/", timeout=5) as response:
+                    self.assertIn(b'id="proposal-form"', response.read())
+                try:
+                    urllib.request.urlopen(base + "/mobile/", timeout=5)
+                    self.fail("The v8 application must not expose a phone/PWA route.")
+                except urllib.error.HTTPError as error:
+                    self.assertEqual(error.code, 404)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+                coordinator.close()
 
     def test_postgres_approval_ledger_consumes_one_use_approval_atomically(self):
         ledger = PostgresApprovalLedger(DSN)
