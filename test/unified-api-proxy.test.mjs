@@ -27,6 +27,9 @@ test('owner-authenticated workspace requests are proxied only through the privat
   const runtime=createServer(async(req,res)=>{
     received.push({method:req.method,path:req.url,authorization:req.headers.authorization});
     res.writeHead(200,{'content-type':'application/json'});
+    if(req.method==='GET' && req.url==='/health') {
+      return res.end(JSON.stringify({ok:true,version:'7.3.1',storage_durable:true,storage_backend:'postgresql'}));
+    }
     if(req.method==='GET') return res.end(JSON.stringify({schema_version:1,records:[]}));
     let body='';
     for await(const chunk of req) body+=chunk;
