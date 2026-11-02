@@ -1,47 +1,93 @@
-# uneXpected v7.3.1 — Unified Self-Developing Agent Ecosystem
+# uneXpected v8 — Single Command Center
 
-A local, executable, quality-gated runtime scaffold for 38 canonical agent roles. It preserves 37 legacy specialist profiles and adds one self-improvement governor. The 120 upstream README-linked templates are mapped as workflow capabilities, not separate agents.
+uneXpected v8 is one governed Python application with one desktop web command center, one coordinator, one canonical 38-role registry, one provider router, and one authoritative state layer.
 
-## Quick start
+**The command center is the system.** It does not forward work to a separate AI Studio gateway or a second Python service.
+
+## What is included
+
+- One Python HTTP application and one public API boundary.
+- A desktop-first command center for system health, agents, tasks, lifecycle history, providers, capabilities, approvals, audit, and improvement proposals.
+- The canonical 38 specialist roles and existing skill registry.
+- The governed coordinator and seven-stage workflow: Request → Plan → Execute → Verify → Improve → Deliver → Learn.
+- Native server-side provider adapters for OpenAI, Anthropic, and OpenRouter, plus explicit deterministic mock mode.
+- SQLite for local development and PostgreSQL for hosted shared state.
+- Single-flight idempotency claims, replay detection, and a PostgreSQL one-use approval ledger.
+- Additive database migrations and an explicit no-fallback rule for hosted PostgreSQL.
+- A single Docker image and one Render web service definition.
+
+## Explicitly excluded
+
+- The previous phone/PWA app, mobile routes, service workers, install prompts, mobile workspace and phone-specific tests.
+- The separate Node.js AI Studio server and its gateway bridge.
+- Any second Python runtime service.
+- Automatic publishing, spending, payments, external messaging, account changes, deployment or other consequential writes.
+
+A future phone app, if requested, will be a separate client of the unified API. It will not contain a second coordinator or independent system state.
+
+## Local development
+
+Requires Python 3.10+.
 
 ```bash
-python -m unexpected_runtime.cli status
-python -m unexpected_runtime.cli list
-python -m unexpected_runtime.cli run orchestrator --objective 'Plan a safe test task'
-python -m unexpected_runtime.cli lifecycle research-scout --objective 'Research a safe test topic' --inputs '{"scope":"public information"}'
-
-# Build the ZIP fixture required by the package-integrity test.
-python - <<'PY'
-from pathlib import Path
-from zipfile import ZIP_DEFLATED, ZipFile
-root = Path.cwd()
-target = root.parent / 'uneXpected_v7.3.1_governed_runtime.zip'
-with ZipFile(target, 'w', ZIP_DEFLATED) as archive:
-    for path in sorted(root.rglob('*')):
-        if not path.is_file() or '__pycache__' in path.parts or path.suffix in {'.pyc', '.sqlite3', '.db'}:
-            continue
-        relative = path.relative_to(root)
-        if any(part in {'.git', '.venv', 'venv', 'state'} for part in relative.parts):
-            continue
-        if relative.name == '.env' or (relative.name.startswith('.env.') and relative.name != '.env.example'):
-            continue
-        archive.write(path, Path('uneXpected_v7') / relative)
-print(f'Built {target} ({target.stat().st_size} bytes)')
-PY
-UNEXPECTED_PACKAGE_ZIP=../uneXpected_v7.3.1_governed_runtime.zip python -m unittest discover -s tests -v
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+export UNEXPECTED_STORAGE_BACKEND=sqlite
+export UNEXPECTED_DEFAULT_PROVIDER=mock
+export UNEXPECTED_RUNTIME_API_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+export UNEXPECTED_RUNTIME_BIND_HOST=127.0.0.1
+export PORT=10000
+python -m unexpected_runtime.http_api
 ```
 
-The default provider is deterministic mock; mock output is not a live verification and may fail the review gate. Use a configured live provider for real lifecycle work. The new `lifecycle` command uses `project-manager`, the requested specialist and `code-reviewer`; after the initial review passes, the specialist iterates Improve → independent Verify (three rounds by default, configurable from 1–5); reviewer feedback drives the next round, and only a passing improved result is delivered locally. See [docs/VERIFIED_WORKFLOW.md](docs/VERIFIED_WORKFLOW.md). The optional AI Studio gateway connects the Python runtime to the existing OpenAI/Anthropic/OpenRouter service without copying provider API keys into Python. See docs/RUNTIME_CONNECTIVITY.md for secret handoff, authenticated runtime API, model modes, tool boundaries and Render limitations.
+Open `http://127.0.0.1:10000`. The command center asks for the API token; the browser keeps it in tab memory only. SQLite state is local development state, not durable hosted state.
 
-## 7.3.0 — Governed workflow and capability upgrade
+## Provider configuration
 
-- Added hash-pinned workflow-skill registry for creative-media, skill-engineering and self-improvement context.
-- Added provenance-aware capability metadata registry; metadata transitions do not execute external tools.
-- Replaced caller-asserted approval flags with a host ApprovalVerifier interface and canonical action-digest binding. Privileged actions default to deny.
-- Bound self-improvement evaluation to active-version, instruction and report fingerprints.
+Provider credentials must be stored in the host's secret manager, never in Git or browser storage.
 
-## 7.3.1 — GitHub approval authority
+- `OPENAI_API_KEY` and optional `OPENAI_MODEL`
+- `ANTHROPIC_API_KEY` and optional `ANTHROPIC_MODEL`
+- `OPENROUTER_API_KEY` and optional `OPENROUTER_MODEL`
+- `UNEXPECTED_DEFAULT_PROVIDER=mock|openai|anthropic|openrouter`
 
-The optional GitHub PR verifier validates the reviewed request document, current reviewer identity and permission, exact action digest, expiry and single-use replay ledger. It remains fail-closed until host configuration, persistent storage and live approval/replay tests are complete.
+A configured key is not a verified provider. Use the bounded **Test connection** action to verify a live route. Mock mode is never presented as a live provider.
 
-Real provider access, external tools, hosting and persistent production service must be configured and live-tested separately. No production deployment or live provider call is implied by source code or a passing mock test.
+## Hosted storage
+
+Set `UNEXPECTED_STORAGE_BACKEND=postgres` and supply `DATABASE_URL` in the host secret manager. The app refuses to start in PostgreSQL mode if the URL or required v8 schema is unavailable; it never silently falls back to ephemeral SQLite.
+
+Apply migrations in order from an isolated database branch before configuring the service:
+
+1. Existing schema version 1.
+2. `migrations/002_idempotency_claims.sql`.
+
+The v8 PostgreSQL adapter requires schema migration version 2. The included Render Blueprint creates one free web service only; it does not create a database.
+
+The current Neon Free plan has no scheduled backup snapshots. Verify the current limits, backup/export destination, and restore process before relying on it for durable production records.
+
+## Security and approval boundary
+
+- One bearer-token boundary protects all `/v1/*` APIs.
+- Provider keys and database credentials remain server-side.
+- The browser cannot read or write database tables directly.
+- All task execution passes through the Coordinator and permission policy.
+- The approval ledger binds a one-use approval ID to an action digest and consumes it atomically.
+- Consequential execution remains disabled until authenticated approval, transaction/replay, backup and restore tests all pass and the owner separately approves activation.
+- A capability catalogue record is not proof that an integration is installed or authorized.
+
+## Verification
+
+Run the full suite:
+
+```bash
+python -m compileall -q unexpected_runtime
+python -m unittest discover -s tests -v
+```
+
+The deployment contract tests assert one Python process, one Render web service, a `/health` check, PostgreSQL fail-closed behavior, and no phone/PWA assets in the v8 web tree.
+
+## Migration and rollback
+
+The original AI Studio repository and both old Render services remain untouched during migration. The v8 service must pass preview, provider, database, lifecycle, backup/restore and rollback checks before cutover. Retiring either old service is a separate operation requiring explicit final confirmation.
