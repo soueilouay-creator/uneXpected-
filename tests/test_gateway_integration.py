@@ -75,8 +75,10 @@ class ProviderTests(unittest.TestCase):
     def test_openrouter_fallback_requires_explicit_success_metadata(self):
         p=AIStudioGatewayProvider("https://gateway.example/orchestrate","g"*48,mode="openai")
         item={
+            "provider":"openrouter",
             "status":"LIVE · fallback response",
             "label":"OpenRouter fallback",
+            "requestedModel":"openrouter/free",
             "text":"must not be accepted without fallback attestation",
             "model":"nvidia/nemotron-3.5-lightning:free"
         }
