@@ -194,7 +194,7 @@ class Coordinator:
         for _ in range(max_tasks):
             row=self.store.claim_next()
             if not row: break
-            d=json.loads(row['payload_json']); req=TaskRequest(task_id=d['task_id'],agent_id=d['agent_id'],objective=d['objective'],inputs=d.get('inputs',{}),required_permissions=tuple(d.get('required_permissions',[])),deadline_seconds=d.get('deadline_seconds',30),max_steps=d.get('max_steps',6),idempotency_key=d.get('idempotency_key'),source_refs=tuple(d.get('source_refs',[])),created_at=d.get('created_at',time.time()))
+            d=json.loads(row['payload_json']); req=TaskRequest(task_id=d['task_id'],agent_id=d['agent_id'],objective=d['objective'],inputs=d.get('inputs',{}),required_permissions=tuple(d.get('required_permissions',[])),deadline_seconds=d.get('deadline_seconds',30),max_steps=d.get('max_steps',6),idempotency_key=d.get('idempotency_key'),source_refs=tuple(d.get('source_refs',[])),provider_route=d.get('provider_route'),created_at=d.get('created_at',time.time()))
             results.append(self._execute_with_deadline(req,CancellationToken()))
         return results
     def cancel(self,task_id:str)->bool:
