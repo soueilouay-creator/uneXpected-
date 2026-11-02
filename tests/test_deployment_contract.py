@@ -16,7 +16,7 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn("copy unexpected_runtime", dockerfile)
         self.assertIn("copy web", dockerfile)
         self.assertIn("copy agent_manifest.json", dockerfile)
-        self.assertIn("copy skill_manifest.json", dockerfile)
+        self.assertIn("copy agent_manifest.json skill_manifest.json ./", dockerfile)
         self.assertIn("copy skills", dockerfile)
         self.assertIn("copy workflow_profiles", dockerfile)
         self.assertIn("copy migrations", dockerfile)
