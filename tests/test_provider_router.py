@@ -183,6 +183,36 @@ class CoordinatorProviderRoutingTests(unittest.TestCase):
         task = self.coordinator.store.list_tasks(1)[0]
         self.assertEqual(task["provider_route"], "anthropic")
 
+    def test_full_lifecycle_uses_one_explicit_provider_route_for_every_stage(self):
+        class WorkflowProvider(self.TaggedProvider):
+            def generate(self, **kwargs):
+                self.calls += 1
+                agent = kwargs["agent_id"]
+                if agent == "project-manager":
+                    return "Plan: research, produce, verify and deliver."
+                if agent == "code-reviewer":
+                    return "VERDICT: PASS\nReview passed with evidence."
+                return "Research deliverable with sourced findings."
+        openai = WorkflowProvider("openai")
+        anthropic = WorkflowProvider("anthropic")
+        router = ProviderRouter({"mock": DeterministicMockProvider(), "openai": openai, "anthropic": anthropic}, default_route="openai")
+        coordinator = Coordinator(state_dir=self.tmp.name, provider=router, max_workers=4, max_retries=0)
+        try:
+            result = coordinator.run_lifecycle(
+                "research-scout", "Prepare a safe research note", {"scope": "public"},
+                max_corrections=0, max_improvements=1, provider_route="anthropic",
+            )
+            self.assertEqual(result.status, "delivered")
+            self.assertGreater(anthropic.calls, 0)
+            self.assertEqual(openai.calls, 0)
+            events = coordinator.store.events(200)
+            used = [event for event in events if event["event_type"] == "provider_used"]
+            self.assertTrue(used)
+            self.assertTrue(all(json.loads(event["payload_json"])["route"] == "anthropic" for event in used))
+            self.assertEqual(router.resolve(None).name, "openai")
+        finally:
+            coordinator.close()
+
     def test_unknown_route_rejects_before_task_is_persisted(self):
         with self.assertRaises(ProviderError):
             self.coordinator.invoke("orchestrator", "invalid route", provider_route="not-installed")
