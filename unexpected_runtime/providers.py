@@ -3,7 +3,16 @@ import json, os, urllib.error, urllib.request
 from urllib.parse import urlsplit
 from typing import Protocol
 
-class ProviderError(RuntimeError): pass
+class ProviderError(RuntimeError):
+    def __init__(self, message: str, *, code: str = "provider_error"):
+        super().__init__(message)
+        valid = (
+            isinstance(code, str)
+            and 1 <= len(code) <= 64
+            and code.isascii()
+            and all(char.islower() or char.isdigit() or char == "_" for char in code)
+        )
+        self.code = code if valid else "provider_error"
 class Provider(Protocol):
     name: str
     def generate(self, *, system_prompt: str, user_prompt: str, agent_id: str, task_id: str, timeout: float) -> str: ...
@@ -67,19 +76,36 @@ class AIStudioGatewayProvider:
         if self.default_timeout <= 0: raise ProviderError("Gateway timeout must be positive.")
         self.configured = bool(self._token)
     def generate(self, *, system_prompt: str, user_prompt: str, agent_id: str, task_id: str, timeout: float) -> str:
-        if not self._token: raise ProviderError("AI Studio gateway token is not configured in the runtime host.")
+        if not self._token:
+            raise ProviderError(
+                "AI Studio gateway token is not configured in the runtime host.",
+                code="gateway_token_missing",
+            )
         task = f"uneXpected runtime agent: {agent_id}; task: {task_id}\n\nSYSTEM:\n{system_prompt}\n\nTASK AND CONTEXT:\n{user_prompt}"
-        if len(task.encode("utf-16-le")) // 2 > 15000: raise ProviderError("Gateway task exceeds the 15,000 UTF-16-code-unit limit.")
+        if len(task.encode("utf-16-le")) // 2 > 15000:
+            raise ProviderError(
+                "Gateway task exceeds the 15,000 UTF-16-code-unit limit.",
+                code="gateway_payload_too_large",
+            )
         req = urllib.request.Request(self.endpoint, data=json.dumps({"task":task,"mode":self.mode},ensure_ascii=False).encode(),
             headers={"Content-Type":"application/json","Accept":"application/json","Authorization":"Bearer "+self._token},method="POST")
         try:
             opener=urllib.request.build_opener(_NoRedirect())
             with opener.open(req,timeout=min(max(float(timeout),0.1),self.default_timeout)) as resp: raw=resp.read(1_000_001)
-            if len(raw)>1_000_000: raise ProviderError("Gateway response exceeded 1 MB.")
+            if len(raw)>1_000_000:
+                raise ProviderError("Gateway response exceeded 1 MB.", code="gateway_response_too_large")
             data=json.loads(raw.decode("utf-8"))
-        except urllib.error.HTTPError as exc: raise ProviderError(f"AI Studio gateway rejected the request (HTTP {exc.code}).") from None
-        except ProviderError: raise
-        except Exception as exc: raise ProviderError(f"AI Studio gateway request failed ({type(exc).__name__}); check host diagnostics.") from None
+        except urllib.error.HTTPError as exc:
+            raise ProviderError(
+                f"AI Studio gateway rejected the request (HTTP {exc.code}).",
+                code=f"gateway_http_{exc.code}",
+            ) from None
+        except ProviderError:
+            raise
+        except json.JSONDecodeError:
+            raise ProviderError("AI Studio gateway returned invalid JSON.", code="gateway_invalid_json") from None
+        except Exception:
+            raise ProviderError("AI Studio gateway request failed; check sanitized host diagnostics.", code="gateway_transport_error") from None
         if not isinstance(data,dict) or data.get("ok") is not True or not isinstance(data.get("results"),dict):
             raise ProviderError("Gateway did not return a successful provider result.")
         candidates={"openai":("openai","synthesis"),"claude":("anthropic","synthesis"),"both":("synthesis","openai","anthropic")}[self.mode]
