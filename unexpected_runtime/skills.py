@@ -202,7 +202,17 @@ class SkillRegistry:
         return skill
 
     def validate_requested(self, agent_id: str, requested_skill_ids: Iterable[str] = ()) -> tuple[str, ...]:
-        requested = tuple(requested_skill_ids or ())
+        if requested_skill_ids is None:
+            requested = ()
+        elif isinstance(requested_skill_ids, (str, bytes)):
+            raise SkillRegistryError("requested_skill_ids must be a sequence of skill ID strings.")
+        else:
+            try:
+                requested = tuple(requested_skill_ids)
+            except TypeError:
+                raise SkillRegistryError("requested_skill_ids must be a sequence of skill ID strings.") from None
+        if any(not isinstance(skill_id, str) or not skill_id.strip() for skill_id in requested):
+            raise SkillRegistryError("Skill IDs must be non-empty strings.")
         if len(requested) > self.MAX_REQUESTED_SKILLS:
             raise SkillRegistryError(f"At most {self.MAX_REQUESTED_SKILLS} user-invoked skills may be selected.")
         if len(set(requested)) != len(requested):
