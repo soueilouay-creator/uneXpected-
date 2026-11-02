@@ -22,12 +22,13 @@ Each criterion has:
   "id": "TEST-01",
   "description": "The regression suite passes",
   "kind": "test",
+  "profile": "evidence-engine",
   "target": "0 failures",
   "required": true
 }
 ```
 
-Criterion IDs must be unique. `kind` is one of `artifact`, `test`, `source` or `measurement`. Every target is a measurable expected result. At least one criterion must be required. Callers may supply an explicit contract in `inputs.acceptance_criteria`; when present, it replaces the planner-generated criteria after the same validation.
+Criterion IDs must be unique. `kind` is one of `artifact`, `test`, `source` or `measurement`. Every target is a measurable expected result. At least one criterion must be required. When the Docker or Render test backend is enabled, every `test` criterion must include `profile: "evidence-engine"`; other profile names are rejected. With other checker configurations the profile field is optional. Callers may supply an explicit contract in `inputs.acceptance_criteria`; when present, it replaces the planner-generated criteria after the same validation.
 
 Planner instructions require artifact checks for every task, test checks for code or automation, source checks for factual research and source-backed claims, and measurement checks for quantified objectives. The reviewer also inspects whether the contract is sufficient for the original request and flags missing coverage.
 
@@ -68,7 +69,7 @@ The runtime supports two explicitly selected test backends:
 - `UNEXPECTED_TEST_EXECUTOR=docker` for CI or a self-hosted host with Docker.
 - `UNEXPECTED_TEST_EXECUTOR=render-sandbox` for a disposable Render Sandboxes microVM.
 
-Both execute only the fixed `evidence-engine` profile. Every `test` criterion for these backends must include the required `profile` field set to `evidence-engine`; omitting it blocks the check. Arbitrary commands are not accepted. The profile stages only `tests/test_evidence_engine.py`, `unexpected_runtime/__init__.py`, `unexpected_runtime/evidence.py` and `unexpected_runtime/workflow.py`. The Docker backend requires an immutable image digest and runs with `--network=none`, a read-only root, dropped capabilities, no-new-privileges, a non-root UID, memory/CPU/PID limits and a guest timeout. Host stdout/stderr are drained incrementally into a fixed-size tail buffer, so output volume does not increase host memory use. The Render backend creates an ephemeral microVM with `network_policy="deny-all"`, uploads only those four files, applies a guest timeout, and explicitly terminates the sandbox. A failed or unconfirmed cleanup blocks PASS.
+Both execute only the fixed `evidence-engine` profile. Every `test` criterion for these backends must include the required `profile` field set to `evidence-engine`; omitting it blocks the check. Arbitrary commands are not accepted. This profile runs a fixed checked-in regression suite from `tests/test_evidence_engine.py` and its trusted runtime dependencies; it does not execute the candidate deliverable. Therefore, a passing profile proves that the fixed evidence-engine tests passed in the isolated backend, not that candidate code was executed or tested. Criteria that require executing the candidate are unsupported unless a separate, candidate-specific trusted checker is implemented and configured. The Docker backend requires an immutable image digest and runs with `--network=none`, a read-only root, dropped capabilities, no-new-privileges, a non-root UID, memory/CPU/PID limits and a guest timeout. Host stdout/stderr are drained incrementally into a fixed-size tail buffer, so output volume does not increase host memory use. The Render backend creates an ephemeral microVM with `network_policy="deny-all"`, uploads only the fixed profile files and their trusted dependencies, applies a guest timeout, and explicitly terminates the sandbox. A failed or unconfirmed cleanup blocks PASS.
 
 Render configuration is held on the host only. Before enabling the backend, install the pinned runtime dependencies on the host with `python -m pip install --disable-pip-version-check -r requirements.txt`; this installs the Render SDK from `requirements.txt`. Then set `RENDER_API_KEY`, `RENDER_WORKSPACE_ID` and `UNEXPECTED_TEST_EXECUTOR=render-sandbox` in the runtime host's secret manager. The token is used only by the host SDK client; it is never injected into the sandbox. `UNEXPECTED_TEST_SANDBOX_TIMEOUT_SECONDS` bounds the microVM lifetime. Status reports the backend as blocked when the SDK is unavailable. The GitHub Actions workflow uses a Docker image resolved to an immutable digest for its end-to-end isolated test run; this is a CI container backend, not evidence that the Render microVM service has been enabled.
 
