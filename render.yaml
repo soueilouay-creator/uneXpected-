@@ -20,6 +20,10 @@ services:
         generateValue: true
       - key: UNEXPECTED_DEFAULT_PROVIDER
         value: mock
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        value: openrouter/free
       - key: UNEXPECTED_MAX_WORKERS
         value: "4"
       - key: UNEXPECTED_MAX_RETRIES
