@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY unexpected_runtime ./unexpected_runtime
 COPY agent_manifest.json skill_manifest.json ./
 COPY skills ./skills
+COPY self_improvement ./self_improvement
 COPY workflow_profiles ./workflow_profiles
 COPY web ./web
 COPY migrations ./migrations
