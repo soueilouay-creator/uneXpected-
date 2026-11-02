@@ -42,7 +42,7 @@
 - Modify: `.env.example`
 
 **Interfaces:**
-- Produces `TrustedSourceRetriever(allowed_domains, timeout_seconds=8, max_bytes=262144, max_sources=5)`.
+- Produces `TrustedSourceRetriever(allowed_domains, timeout_seconds=8, max_bytes=262144, max_sources=3)`.
 - Produces callable `SourceEvidenceChecker(retriever)` compatible with `EvidenceEngine`.
 - Produces `source_retriever_from_env()`; no allowlist means no checker is registered.
 - Source evidence returns title, exact URL, content type, retrieval time, SHA-256 and bounded excerpt for independent review.
@@ -86,7 +86,7 @@
 
 **Interfaces:**
 - Produces fixed test profile `evidence-engine` mapped only to `python -m unittest discover -s tests -p test_evidence_engine.py -v`.
-- Produces `RenderSandboxTestExecutor(workspace_root, workspace_id, timeout_seconds=300)`, selected with `UNEXPECTED_TEST_EXECUTOR=render-sandbox`; uses Render SDK 1.6.0, an ephemeral sandbox, `network_policy="deny-all"`, bounded readiness/exec/cleanup, and an explicit four-file profile allowlist.
+- Produces `RenderSandboxTestExecutor(workspace_root, workspace_id=..., token=..., timeout_seconds=300)`, selected with `UNEXPECTED_TEST_EXECUTOR=render-sandbox`; uses Render SDK 1.6.0, an ephemeral sandbox, `network_policy="deny-all"`, bounded readiness/exec/cleanup, and an explicit four-file profile allowlist.
 - Produces `DockerTestExecutor(workspace_root, image_digest, timeout_seconds=180)`, selected only in CI with `UNEXPECTED_TEST_EXECUTOR=docker`; requires an immutable image digest, no network, read-only root, non-root user, dropped capabilities, no-new-privileges, PID/memory/CPU/time bounds and an explicit source-file staging allowlist.
 - Produces `test_executor_from_env()` and environment-based evidence-checker wiring. Explicit constructor-injected checkers continue to take precedence over environment discovery.
 - Both executors return `passed`, exit code, parsed test count, bounded output and a sandbox/container provenance reference. Cleanup failure fails the evidence check.
@@ -136,7 +136,7 @@
 - The native `Coordinator.run_lifecycle(...)` uses both configured adapters without changing the public lifecycle API.
 - A deterministic provider fixture drives planner, specialist, reviewer and improvement calls; it does not impersonate a live model.
 - The real smoke objective is to prepare a short explanation of Python `unittest` test discovery, retrieve the official Python documentation, run uneXpected's evidence-engine tests inside the no-network test sandbox, improve the report and re-run both checks before delivery.
-- The live integration test is enabled only by an explicit CI environment flag; it uses Docker in CI for isolated test execution and live HTTPS retrieval from `docs.python.org`. The Render SDK backend is contract-tested and remains opt-in until `RENDER_API_KEY` and `RENDER_WORKSPACE_ID` exist in the runtime secret store.
+- The live integration test is enabled only by manually dispatching GitHub Actions with `run_live_evidence=true`; it uses Docker for isolated test execution and live HTTPS retrieval from `docs.python.org`. The Render SDK backend is contract-tested and remains opt-in until `RENDER_API_KEY` and `RENDER_WORKSPACE_ID` exist in the runtime secret store.
 
 - [ ] **Step 1: Add the focused failing integration test**
   - Assert the full sequence reaches `delivered` only after two current evidence reports and two reviewer PASS verdicts.
@@ -156,7 +156,7 @@
   - Document how operators set Render secrets in the host secret manager; never set a placeholder or ask for the secret in chat.
 
 - [ ] **Step 4: Verify the focused pass**
-  - Run: `python -m unittest tests.test_evidence_live_lifecycle -v` with the CI opt-in environment.
+  - Run: `python -m unittest tests.test_evidence_live_lifecycle -v` with the CI opt-in environment after manually dispatching the workflow with `run_live_evidence=true`.
   - Expected: one completed lifecycle, two successful isolated test executions, two real official-source retrievals, two independent review passes and a delivered result.
 
 - [ ] **Step 5: Run the full integration check**
