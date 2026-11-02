@@ -212,8 +212,8 @@ class CommandCenterAPITests(unittest.TestCase):
         self.assertEqual(tasks.get("count"), 0)
 
     def test_mock_mode_ui_defaults_to_runtime_invocation_and_gates_lifecycle(self):
-        html_status, html = self.request("/")
-        js_status, js = self.request("/assets/app.js")
+        html_status, html = self.request("GET", "/")
+        js_status, js = self.request("GET", "/assets/app.js")
         self.assertEqual(html_status, 200)
         self.assertEqual(js_status, 200)
         self.assertIn(
