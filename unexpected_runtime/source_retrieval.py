@@ -217,7 +217,7 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
             raise
 
 
-def _read_response_bounded(connection: http.client.HTTPSConnection, response: http.client.HTTPResponse,
+def _read_response_bounded(sock: Any, response: http.client.HTTPResponse,
                            *, deadline: float, max_bytes: int,
                            clock: Callable[[], float] = time.monotonic) -> bytes:
     """Read with one absolute deadline; slow chunks cannot reset the full timeout."""
@@ -226,8 +226,8 @@ def _read_response_bounded(connection: http.client.HTTPSConnection, response: ht
         remaining = deadline - clock()
         if remaining <= 0:
             raise SourceRetrievalError("Source response exceeded its overall deadline.")
-        if connection.sock is not None:
-            connection.sock.settimeout(remaining)
+        if sock is not None:
+            sock.settimeout(remaining)
         # HTTPResponse.read() can perform multiple socket reads before it returns.
         # read1() performs at most one underlying read, so the next iteration
         # recalculates the absolute deadline after each response-body chunk.
@@ -275,8 +275,9 @@ def _fetch_pinned_https(
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise SourceRetrievalError("Source response headers exceeded the overall deadline.")
-        if connection.sock is not None:
-            connection.sock.settimeout(remaining)
+        response_socket = connection.sock
+        if response_socket is not None:
+            response_socket.settimeout(remaining)
         response = connection.getresponse()
         headers = {key.lower(): value for key, value in response.getheaders()}
         declared_length = headers.get("content-length")
@@ -287,7 +288,7 @@ def _fetch_pinned_https(
                 raise SourceRetrievalError("Source response has an invalid content length.") from None
             if declared_size < 0 or declared_size > max_bytes:
                 raise SourceRetrievalError("Source response exceeds the configured byte limit.")
-        body = _read_response_bounded(connection, response, deadline=deadline, max_bytes=max_bytes)
+        body = _read_response_bounded(response_socket, response, deadline=deadline, max_bytes=max_bytes)
         return response.status, headers, body
     except SourceRetrievalError:
         raise
