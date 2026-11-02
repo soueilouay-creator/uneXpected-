@@ -14,6 +14,11 @@ from unexpected_runtime.test_execution import (
     TestExecutionConfigurationError,
     TestEvidenceChecker,
     test_executor_from_env,
+    _profile_manifest,
+    _profile_manifest_sha256,
+    _evidence_reference,
+    _stage_profile,
+    TEST_PROFILES,
     _run_bounded_process,
 )
 
@@ -34,10 +39,7 @@ def make_workspace():
     for relative in FILES:
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
-        if relative == "tests/test_evidence_engine.py":
-            shutil.copyfile(source_root / relative, path)
-        else:
-            path.write_text("fixture", encoding="utf-8")
+        shutil.copyfile(source_root / relative, path)
     return temp, root
 
 
@@ -272,22 +274,47 @@ class TestExecutorFactoryTests(unittest.TestCase):
             with self.assertRaises(TestExecutionConfigurationError):
                 test_executor_from_env()
 
-    def test_evidence_checker_requires_pass_with_exit_and_test_count(self):
+    def test_evidence_checker_requires_the_exact_profile_manifest_and_bound_reference(self):
+        manifest = _profile_manifest(TEST_PROFILES["evidence-engine"])
+        manifest_digest = _profile_manifest_sha256(TEST_PROFILES["evidence-engine"])
+
         class Executor:
-            def __call__(self, candidate, criterion, context):
-                return {
-                    "passed": False,
-                    "actual": {"exit_code": 0, "tests_run": 0},
-                    "evidence_ref": "sandbox://test",
-                    "details": "No unittest result summary was present.",
+            def __init__(self):
+                self.actual = {
+                    "profile": "evidence-engine",
+                    "executor": "docker",
+                    "test_profile_manifest": manifest,
+                    "test_profile_manifest_sha256": manifest_digest,
+                    "exit_code": 0,
+                    "tests_run": 1,
+                    "cleanup_confirmed": True,
+                    "status": "completed",
+                    "output_tail": PASS_OUTPUT,
                 }
 
-        checker = TestEvidenceChecker(Executor())
-        result = checker("candidate", {"id": "TEST-01", "target": "all tests pass"},
-                         {"source_refs": []})
-        self.assertFalse(result["passed"])
-        self.assertEqual(result["actual"]["tests_run"], 0)
-        self.assertEqual(result["evidence_ref"], "sandbox://test")
+            def __call__(self, candidate, criterion, context):
+                return {
+                    "passed": True,
+                    "actual": dict(self.actual),
+                    "evidence_ref": _evidence_reference("docker-test", self.actual),
+                    "details": "Fixed sandbox profile passed.",
+                }
+
+        executor = Executor()
+        checker = TestEvidenceChecker(executor)
+        criterion = {
+            "id": "TEST-01",
+            "target": "all tests pass",
+            "profile": "evidence-engine",
+        }
+        result = checker("candidate", criterion, {"source_refs": []})
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["actual"]["test_profile_manifest"], manifest)
+        self.assertEqual(result["actual"]["test_profile_manifest_sha256"], manifest_digest)
+
+        executor.actual["test_profile_manifest"]["unexpected_runtime/evidence.py"] = "0" * 64
+        tampered = checker("candidate", criterion, {"source_refs": []})
+        self.assertFalse(tampered["passed"])
 
 
 if __name__ == "__main__":
