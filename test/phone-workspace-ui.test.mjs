@@ -68,3 +68,19 @@ test('mobile navigation is hidden from focus when closed and manages keyboard fo
   assert.match(css, /\.nav-item\s*\{\s*min-height:\s*2\.75rem/);
   assert.match(css, /\.composer-icon-button\s*\{\s*min-width:\s*2\.5rem;\s*min-height:\s*2\.75rem/);
 });
+
+
+test('workspace sync is explicit, owner-authenticated and never overwrites an existing local record', async () => {
+  const html = await read('mobile/index.html');
+  const app = await read('mobile/app.js');
+  assert.match(html, /id="syncBtn"/);
+  assert.match(html, /id="syncState"/);
+  assert.match(html, /conflicts are retained for review/i);
+  assert.match(app, /async function syncWorkspace\(/);
+  assert.match(app, /authorization: `Bearer \$\{token\}`/);
+  assert.match(app, /method: 'POST'[\s\S]*\/v1\/workspace\/import/);
+  assert.match(app, /\/v1\/workspace\/export/);
+  assert.match(app, /if \(!local\) \{[\s\S]*await store\.put\(remote\.type, remote\.payload\)/);
+  assert.doesNotMatch(app, /await store\.put\(remote\.type, remote\.payload\)\s*;\s*else/);
+  assert.match(app, /Access token is not included/);
+});
