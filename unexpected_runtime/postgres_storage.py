@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Any, Callable, Iterator
 from urllib.parse import urlsplit
+from .postgres_idempotency import PostgresIdempotencyMixin
 import json
 import time
 import uuid
@@ -12,7 +13,7 @@ class PostgresStorageError(RuntimeError):
     pass
 
 
-class PostgresStateStore:
+class PostgresStateStore(PostgresIdempotencyMixin):
     """PostgreSQL implementation of the runtime StateStore contract.
 
     The schema is managed by checked-in migrations. This class never creates,
@@ -34,8 +35,8 @@ class PostgresStateStore:
                     row = connection.execute(
                         "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1"
                     ).fetchone()
-                    if not row or int(row["version"]) < 1:
-                        raise PostgresStorageError("PostgreSQL schema migrations are not initialized.")
+                    if not row or int(row["version"]) < 2:
+                        raise PostgresStorageError("PostgreSQL v8 migrations are not initialized; migration 002 is required.")
             except PostgresStorageError:
                 raise
             except Exception as exc:
