@@ -250,7 +250,7 @@ def provider_router_from_env() -> ProviderRouter:
     if anthropic_key:
         providers["anthropic"] = AnthropicProvider(
             anthropic_key,
-            os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-latest"),
+            os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929"),
             float(os.getenv("ANTHROPIC_TIMEOUT_SECONDS", "30")),
         )
     if openrouter_key:
