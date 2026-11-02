@@ -196,5 +196,37 @@ class CommandCenterAPITests(unittest.TestCase):
         self.assertEqual(len(body.get("items", [])), 38)
 
 
+    def test_lifecycle_requires_live_provider_before_creating_stage_tasks(self):
+        payload = {
+            "agent_id": "research-scout",
+            "objective": "Check runtime plumbing only",
+        }
+        status, body = self.request(
+            "POST", "/v1/lifecycle", body=payload, token=self.token
+        )
+        self.assertEqual(status, 409, body)
+        self.assertIn("requires a configured live AI provider", body.get("error", ""))
+
+        tasks_status, tasks = self.request("/v1/tasks", token=self.token)
+        self.assertEqual(tasks_status, 200)
+        self.assertEqual(tasks.get("count"), 0)
+
+    def test_mock_mode_ui_defaults_to_runtime_invocation_and_gates_lifecycle(self):
+        html_status, html = self.request("/")
+        js_status, js = self.request("/assets/app.js")
+        self.assertEqual(html_status, 200)
+        self.assertEqual(js_status, 200)
+        self.assertIn(
+            '<option value="invoke" selected>Single governed invocation (runtime test)</option>',
+            html,
+        )
+        self.assertIn(
+            '<option value="lifecycle" disabled>Full verified lifecycle (requires a live AI provider)</option>',
+            html,
+        )
+        self.assertIn("lifecycleOption.disabled = !hasConfiguredLiveProvider;", js)
+        self.assertIn("body?.result?.status", js)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
