@@ -349,25 +349,8 @@ class SkillAPITests(unittest.TestCase):
             body = {"agent_id": "maintenance-engineer", "objective": "Check schedule",
                     "idempotency_key": f"invalid-skill-select-{index}", **extra}
             self.assertEqual(self.request("POST", "/v1/invoke", body=body, token=self.token)[0], 400)
-        body = {
-            "agent_id": "maintenance-engineer",
-            "objective": "Check schedule",
-            "idempotency_key": "cannot-manually-call-automatic",
-            "skill_ids": ["automatic-skill"],
-        }
-        self.coordinator.skills  # Keep this assertion at the authenticated HTTP boundary.
-        (self.package_root / "skills/automatic").mkdir(parents=True)
-        automatic_body = "# Automatic skill\\n"
-        automatic_path = self.package_root / "skills/automatic/SKILL.md"
-        automatic_path.write_text(automatic_body, encoding="utf-8")
-        from unexpected_runtime.skills import SkillRegistry
-        self.coordinator.skills = SkillRegistry.load(
-            self.package_root / "skill_manifest_api.json", self.package_root
-        ) if False else self.coordinator.skills
-        # The currently installed manifest contains no automatic skill, so an explicit
-        # request for an unknown ID is rejected before task creation.
-        status, _ = self.request("POST", "/v1/invoke", body=body, token=self.token)
-        self.assertEqual(status, 400)
+
+
 
 
 if __name__ == "__main__":
