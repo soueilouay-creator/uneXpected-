@@ -41,6 +41,8 @@ jobs:
           print(f'Built {target} ({target.stat().st_size} bytes)')
           PY
           echo "UNEXPECTED_PACKAGE_ZIP=$RUNNER_TEMP/uneXpected_v7.3.1_governed_runtime.zip" >> "$GITHUB_ENV"
+      - name: Rebuild SHA-256 inventory for the consolidated source tree
+        run: python tools/generate_file_inventory.py --write
       - name: Run regression suite
         run: python -m unittest discover -s tests -v
       - name: CLI smoke tests
