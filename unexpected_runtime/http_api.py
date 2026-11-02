@@ -14,6 +14,7 @@ MAX_SOURCE_REF_CHARS=2048
 MAX_WORKSPACE_RECORDS=1000
 MAX_WORKSPACE_RECORD_BYTES=256*1024
 MAX_WORKSPACE_TOTAL_BYTES=2*1024*1024
+MAX_WORKSPACE_BODY_BYTES=MAX_WORKSPACE_TOTAL_BYTES+64*1024
 
 class _RateLimiter:
     def __init__(self, limit=None): self.lock=threading.Lock(); self.entries={}; self.limit=limit
@@ -57,14 +58,14 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             if not hmac.compare_digest(supplied_bytes, expected_bytes):
                 self.send_json(401,{"error":"Unauthorized."}); return False
             return True
-        def read_body(self):
+        def read_body(self, max_bytes=MAX_BODY_BYTES):
             raw_length=self.headers.get("Content-Length")
             if raw_length is None:
                 self.send_json(411,{"error":"Content-Length is required."}); return None
             try: length=int(raw_length)
             except ValueError: self.send_json(400,{"error":"Invalid Content-Length."}); return None
             if length<0: self.send_json(400,{"error":"Invalid Content-Length."}); return None
-            if length>MAX_BODY_BYTES: self.send_json(413,{"error":"Request body too large."}); return None
+            if length>max_bytes: self.send_json(413,{"error":"Request body too large."}); return None
             try: obj=json.loads(self.rfile.read(length).decode("utf-8"))
             except (UnicodeDecodeError,json.JSONDecodeError): self.send_json(400,{"error":"Body must be valid UTF-8 JSON."}); return None
             if not isinstance(obj,dict): self.send_json(400,{"error":"Body must be a JSON object."}); return None
@@ -94,7 +95,7 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                 if not self.authorize(): return
                 if not limiter.allow(self.client_address[0] if self.client_address else "unknown"):
                     return self.send_json(429,{"error":"Request rate limit exceeded."})
-                body=self.read_body()
+                body=self.read_body(MAX_WORKSPACE_BODY_BYTES)
                 if body is None: return
                 if set(body)!={"schema_version","device_id","records"} or body.get("schema_version")!=1:
                     return self.send_json(400,{"error":"Workspace import requires schema_version=1, device_id and records only."})
