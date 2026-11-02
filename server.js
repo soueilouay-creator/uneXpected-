@@ -13,6 +13,9 @@ const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5-202509
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openrouter/free';
 const OPENROUTER_KEY = String(process.env.OPENROUTER_API_KEY || '').trim();
 const ACCESS_TOKEN = process.env.UNEXPECTED_ACCESS_TOKEN || '';
+const RUNTIME_INTERNAL_URL = String(process.env.UNEXPECTED_RUNTIME_INTERNAL_URL || '').replace(/\\/$/, '');
+const RUNTIME_INTERNAL_TOKEN = String(process.env.UNEXPECTED_RUNTIME_INTERNAL_TOKEN || '').trim();
+const GATEWAY_INTERNAL_TOKEN = String(process.env.UNEXPECTED_GATEWAY_INTERNAL_TOKEN || '').trim();
 const ANTHROPIC_WORKSPACE_ID = String(process.env.ANTHROPIC_WORKSPACE_ID || '').trim();
 const OPENAI_KEY_NAMES = ['OPENAI_API_KEY', 'OPENAI_SECRET_KEY', 'OPENAI_API_TOKEN', 'OPENAI_KEY'];
 const ANTHROPIC_KEY_NAMES = ['ANTHROPIC_API_KEY', 'ANTHROPIC_SECRET_KEY', 'ANTHROPIC_API_TOKEN', 'ANTHROPIC_KEY', 'CLAUDE_API_KEY'];
@@ -69,12 +72,53 @@ function rateLimited(req) {
   }
   return bucket.count > RATE_LIMIT;
 }
-function authorized(req) {
-  if (!ACCESS_TOKEN) return false;
+function authorized(req, allowInternal = true) {
   const supplied = req.headers.authorization || '';
-  const expected = 'Bearer ' + ACCESS_TOKEN;
-  if (supplied.length !== expected.length) return false;
-  return timingSafeEqual(Buffer.from(supplied), Buffer.from(expected));
+  const candidates = [ACCESS_TOKEN, ...(allowInternal ? [GATEWAY_INTERNAL_TOKEN] : [])]
+    .filter(token => typeof token === 'string' && token.length >= 32 && token.isAscii?.() !== false);
+  return candidates.some(token => {
+    const expected = 'Bearer ' + token;
+    if (supplied.length !== expected.length) return false;
+    return timingSafeEqual(Buffer.from(supplied), Buffer.from(expected));
+  });
+}
+async function runtimeHealth() {
+  if (!RUNTIME_INTERNAL_URL) return { ok: false, configured: false, error: 'Internal runtime is not configured.' };
+  try {
+    const response = await fetch(`${RUNTIME_INTERNAL_URL}/health`, {
+      signal: AbortSignal.timeout(1500),
+      redirect: 'error'
+    });
+    if (!response.ok) return { ok: false, configured: true, status: response.status };
+    const data = await response.json();
+    return { ok: data?.ok === true, configured: true, version: data?.version || null,
+      provider: data?.provider || null, providerConfigured: data?.provider_configured === true,
+      storage: data?.storage_backend || null };
+  } catch (error) {
+    return { ok: false, configured: true, error: error?.name === 'TimeoutError' ? 'Runtime health timed out.' : 'Runtime health unavailable.' };
+  }
+}
+async function forwardRuntime(req, res, route, body) {
+  if (!RUNTIME_INTERNAL_URL || RUNTIME_INTERNAL_TOKEN.length < 32) {
+    return json(res, 503, { error: 'Unified runtime is not configured.' });
+  }
+  const timeout = route === '/v1/lifecycle' ? 135_000 : 205_000;
+  try {
+    const upstream = await fetch(`${RUNTIME_INTERNAL_URL}${route}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'authorization': 'Bearer ' + RUNTIME_INTERNAL_TOKEN
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeout),
+      redirect: 'error'
+    });
+    const data = await upstream.json().catch(() => ({ error: 'Runtime returned invalid JSON.' }));
+    return json(res, upstream.status, data);
+  } catch (error) {
+    return json(res, 502, { error: error?.name === 'TimeoutError' ? 'Unified runtime request timed out.' : 'Unified runtime is unavailable.' });
+  }
 }
 async function readBody(req) {
   let data = '';
@@ -283,11 +327,15 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://' + (req.headers.host || 'localhost'));
     if (req.method === 'GET' && url.pathname === '/health') {
-      return json(res, 200, {
-        ok: true,
-        service: 'uneXpected AI Studio',
-        mode: ACCESS_TOKEN ? 'live-ready' : 'locked',
-        authConfigured: Boolean(ACCESS_TOKEN),
+      const runtime = await runtimeHealth();
+      const integrated = Boolean(RUNTIME_INTERNAL_URL);
+      const healthy = integrated ? runtime.ok : process.env.NODE_ENV === 'test';
+      return json(res, healthy ? 200 : 503, {
+        ok: healthy,
+        service: 'uneXpected unified application',
+        mode: ACCESS_TOKEN.length >= 32 && integrated && runtime.ok ? 'unified-ready' : 'locked',
+        runtime,
+        authConfigured: ACCESS_TOKEN.length >= 32,
         providers: {
           openai: { configured: Boolean(OPENAI_SECRET.value), verified: providerVerified.openai, model: OPENAI_MODEL, credentialSource: OPENAI_SECRET.name, candidates: candidateStatus(OPENAI_KEY_NAMES, 'openai') },
           anthropic: { configured: Boolean(ANTHROPIC_SECRET.value), verified: providerVerified.anthropic, model: ANTHROPIC_MODEL, credentialSource: ANTHROPIC_SECRET.name, candidates: candidateStatus(ANTHROPIC_KEY_NAMES, 'anthropic'), workspaceConfigured: Boolean(ANTHROPIC_WORKSPACE_ID) },
@@ -349,6 +397,22 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/styles.css') {
       res.writeHead(200, { 'content-type': MIME['.css'], 'cache-control': 'no-store' });
       return res.end(await readFile(join(ROOT, 'public', 'styles.css')));
+    }
+    if (req.method === 'POST' && ['/v1/lifecycle', '/v1/invoke'].includes(url.pathname)) {
+      if (rateLimited(req)) return json(res, 429, { error: 'Rate limit exceeded. Wait one minute and try again.' });
+      if (!authorized(req, false)) return json(res, ACCESS_TOKEN.length >= 32 ? 401 : 503, {
+        error: ACCESS_TOKEN.length >= 32 ? 'Unauthorized.' : 'Owner access is not configured with a strong token.'
+      });
+      const body = await readBody(req);
+      if (!body || typeof body !== 'object' || Array.isArray(body)) return json(res, 400, { error: 'Body must be a JSON object.' });
+      const lifecycle = url.pathname === '/v1/lifecycle';
+      const allowed = new Set(lifecycle
+        ? ['agent_id', 'objective', 'inputs', 'deadline_seconds', 'max_corrections', 'max_improvements']
+        : ['agent_id', 'objective', 'inputs', 'deadline_seconds', 'max_steps', 'idempotency_key', 'source_refs']);
+      if (Object.keys(body).some(key => !allowed.has(key))) {
+        return json(res, 400, { error: 'Unsupported fields; approval and privileged permission fields are never accepted here.' });
+      }
+      return forwardRuntime(req, res, url.pathname, body);
     }
     if (req.method === 'POST' && ['/orchestrate', '/test-provider'].includes(url.pathname)) {
       if (rateLimited(req)) return json(res, 429, { error: 'Rate limit exceeded. Wait one minute and try again.' });
