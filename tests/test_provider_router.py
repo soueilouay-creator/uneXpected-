@@ -295,8 +295,10 @@ class CoordinatorProviderRoutingTests(unittest.TestCase):
             self.verified = False
             self.retry_safe = False
             self.calls = 0
+            self.last_user_payload = None
         def generate(self, **kwargs):
             self.calls += 1
+            self.last_user_payload = json.loads(kwargs["user_prompt"])
             return self.name + " route response"
 
     def setUp(self):
@@ -322,6 +324,23 @@ class CoordinatorProviderRoutingTests(unittest.TestCase):
         self.assertEqual(self.router.resolve(None).name, "openai")
         task = self.coordinator.store.list_tasks(1)[0]
         self.assertEqual(task["provider_route"], "anthropic")
+
+    def test_runtime_capabilities_are_not_also_reported_as_unavailable(self):
+        openrouter = self.TaggedProvider("openrouter")
+        self.router.providers["openrouter"] = openrouter
+
+        result = self.coordinator.invoke(
+            "orchestrator", "minimal provider capability check", provider_route="openrouter"
+        )
+
+        self.assertEqual(result.status, "completed")
+        self.assertEqual(openrouter.calls, 1)
+        payload = openrouter.last_user_payload
+        self.assertIn("provider.chat", payload["runtime_capabilities"])
+        self.assertFalse(
+            set(payload["runtime_capabilities"]) & set(payload["unavailable_external_capabilities"]),
+            "A capability cannot be simultaneously advertised as available and unavailable.",
+        )
 
     def test_full_lifecycle_uses_one_explicit_provider_route_for_every_stage(self):
         class WorkflowProvider(self.TaggedProvider):
