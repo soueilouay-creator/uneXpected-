@@ -10,6 +10,8 @@ from pathlib import Path
 from unexpected_runtime.coordinator import Coordinator
 from unexpected_runtime.http_api import create_server
 from unexpected_runtime.providers import DeterministicMockProvider
+from unexpected_runtime.models import EvaluationReport
+from unexpected_runtime.improvement import ImprovementGovernor
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -125,9 +127,52 @@ class CommandCenterAPITests(unittest.TestCase):
         self.assertEqual(html_status, 200)
         self.assertEqual(js_status, 200)
         self.assertIn('id="task-provider"', html)
+        self.assertIn('id="proposal-form"', html)
         self.assertIn('provider_route', js)
         self.assertIn('/v1/providers/test', js)
         self.assertIn('data-test-provider', js)
+
+    def test_task_detail_and_task_filtered_events_are_available(self):
+        result = self.coordinator.invoke("orchestrator", "command center task detail", source_refs=("test-source",))
+        status, body = self.request("GET", "/v1/tasks/" + result.task_id, token=self.token)
+        self.assertEqual(status, 200)
+        self.assertEqual(body["task"]["task_id"], result.task_id)
+        self.assertEqual(body["task"]["result"]["status"], "completed")
+        event_status, events = self.request("GET", "/v1/events?task_id=" + result.task_id, token=self.token)
+        self.assertEqual(event_status, 200)
+        self.assertTrue(events["items"])
+        self.assertTrue(all(item.get("task_id") == result.task_id for item in events["items"]))
+
+    def test_improvement_proposal_endpoint_is_authenticated_and_never_promotes(self):
+        report = EvaluationReport(
+            benchmark_id="command-center-baseline",
+            scenario_ids=("scenario-one",),
+            score=0.7,
+            critical_checks={"safety": True},
+            noncritical_passed=1,
+            noncritical_total=1,
+            required_critical_check_ids=("safety",),
+            acceptance_check_ids=("safety", "clarity"),
+            provider_mode="mock",
+            rubric_id="command-center-test-rubric",
+        )
+        ImprovementGovernor(self.coordinator).set_baseline("orchestrator", report)
+        payload = {
+            "agent_id": "orchestrator",
+            "benchmark_id": "command-center-baseline",
+            "candidate_instruction": "Produce clearer source-linked plans.",
+            "changes": "Improve source citation quality and explicit uncertainty.",
+            "protected_fields": [],
+        }
+        self.assertEqual(self.request("POST", "/v1/improvements/propose", body=payload)[0], 401)
+        status, body = self.request("POST", "/v1/improvements/propose", body=payload, token=self.token)
+        self.assertEqual(status, 201, body)
+        proposal_id = body["proposal"]["proposal_id"]
+        self.assertEqual(body["proposal"]["status"], "pending")
+        detail_status, detail = self.request("GET", "/v1/improvements/" + proposal_id, token=self.token)
+        self.assertEqual(detail_status, 200)
+        self.assertEqual(detail["proposal"]["proposal_id"], proposal_id)
+        self.assertEqual(self.request("POST", "/v1/improvements/promote", body={}, token=self.token)[0], 404)
 
     def test_health_is_minimal_and_never_discloses_secret_or_internal_paths(self):
         status, body = self.request("GET", "/health")
