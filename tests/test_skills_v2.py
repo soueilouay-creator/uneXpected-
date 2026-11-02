@@ -242,6 +242,18 @@ class AdvancedSkillBundleTests(unittest.TestCase):
 
 
 
+    def test_requested_skill_ids_reject_strings_and_non_string_values(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            entry = self._write_skill(
+                root, "manual", "# Manual\\n", invocation_mode="user_invocable"
+            )
+            registry = SkillRegistry.load(self._manifest(root, [entry]), root)
+            for requested in ("manual", [None], [[]], ["  "]):
+                with self.assertRaises(SkillRegistryError):
+                    registry.validate_requested("maintenance-engineer", requested)
+
+
     def test_approval_action_digest_binds_selected_skill_ids(self):
         base = {
             "agent_id": "maintenance-engineer",
@@ -268,7 +280,7 @@ class SkillAPITests(unittest.TestCase):
         self.package_root.mkdir()
         self.skill_dir = self.package_root / "skills" / "manual"
         self.skill_dir.mkdir(parents=True)
-        self.skill_body = "# Approved maintenance checklist\\n"
+        self.skill_body = "# Approved maintenance checklist\n"
         (self.skill_dir / "SKILL.md").write_text(self.skill_body, encoding="utf-8")
         self.manual_skill = {
             "id": "manual-checklist",
@@ -372,6 +384,4 @@ class SkillAPITests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main(verbosity=2)
-
     unittest.main(verbosity=2)
