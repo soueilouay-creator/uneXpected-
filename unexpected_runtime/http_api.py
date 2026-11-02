@@ -293,9 +293,10 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                 if not isinstance(refs,list) or len(refs)>32 or any(not isinstance(x,str) or not x or len(x)>MAX_SOURCE_REF_CHARS for x in refs): return self.send_json(400,{"error":"Invalid source_refs."})
             try:
                 if is_lifecycle:
+                    provider_router = getattr(active, "provider", None)
                     selected_provider = (
-                        active.provider.resolve(provider_route)
-                        if hasattr(active.provider, "resolve") else active.provider
+                        provider_router.resolve(provider_route)
+                        if hasattr(provider_router, "resolve") else provider_router
                     )
                     if getattr(selected_provider, "name", "") == "deterministic-mock":
                         return self.send_json(409, {
