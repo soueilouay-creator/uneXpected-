@@ -358,7 +358,7 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                 if idem is not None and (not isinstance(idem,str) or len(idem)>128): return self.send_json(400,{"error":"Invalid idempotency key."})
                 if not isinstance(refs,list) or len(refs)>32 or any(not isinstance(x,str) or not x or len(x)>MAX_SOURCE_REF_CHARS for x in refs): return self.send_json(400,{"error":"Invalid source_refs."})
                 if (not isinstance(skill_ids,list) or len(skill_ids)>4
-                        or any(not isinstance(x,str) or not x or len(x)>128 for x in skill_ids)
+                        or any(not isinstance(x,str) or not x.strip() or len(x)>128 for x in skill_ids)
                         or len(set(skill_ids))!=len(skill_ids)):
                     return self.send_json(400,{"error":"skill_ids must be a list of at most 4 unique non-empty skill IDs."})
             try:
