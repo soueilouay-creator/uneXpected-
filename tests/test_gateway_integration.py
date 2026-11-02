@@ -48,8 +48,10 @@ class ProviderTests(unittest.TestCase):
             "results":{
                 "openai":{"status":"FAILED","error":"primary unavailable"},
                 "openrouter":{
+                    "provider":"openrouter",
                     "status":"LIVE · fallback response",
                     "label":"OpenRouter fallback",
+                    "requestedModel":"openrouter/free",
                     "text":"verified fallback answer",
                     "model":"nvidia/nemotron-3.5-lightning:free"
                 }
@@ -81,7 +83,8 @@ class ProviderTests(unittest.TestCase):
             None,
             {"attempted":False,"provider":"openrouter","status":"succeeded"},
             {"attempted":True,"provider":"other","status":"succeeded"},
-            {"attempted":True,"provider":"openrouter","status":"failed"}
+            {"attempted":True,"provider":"openrouter","status":"failed"},
+            {"attempted":True,"provider":"openrouter","status":"succeeded","requestedModel":"openrouter/free","model":"tampered-model"}
         )
         for attestation in invalid_attestations:
             payload={"ok":True,"results":{"openrouter":item}}
