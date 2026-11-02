@@ -41,7 +41,7 @@ class Coordinator:
         close_store=getattr(self.store,'close',None)
         if callable(close_store): close_store()
     def status(self):
-        return {'ecosystem_version':'7.3.1','registered_agents':len(self.registry),'provider':getattr(self.provider,'name',type(self.provider).__name__),
+        return {'ecosystem_version':'8.0.0-preview','registered_agents':len(self.registry),'provider':getattr(self.provider,'name',type(self.provider).__name__),
                 'mode':'local-runtime-scaffold','max_workers':self.max_workers,'max_retries':self.max_retries,
                 'state_db':str(getattr(self.store,'path','managed-postgres')),'background_service':'not running unless separately hosted','external_connectors':'not configured',
                 'approval_verifier':'github-pr-review' if self.approval_verifier else 'not configured (privileged actions fail closed)'}
