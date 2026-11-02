@@ -225,5 +225,57 @@ class QualityEvaluationTests(unittest.TestCase):
         self.assertEqual(provider.calls, 0)
 
 
+    def test_grounding_check_accepts_exact_phrase_cannot_be_verified(self):
+        provider = QualityFixtureProvider({
+            "grounding-truthfulness-001": (
+                "Service status: Cannot be verified because no live source or browsing tool is available."
+            ),
+        })
+        coordinator = self._coordinator(
+            ProviderRouter({"fixture": provider}, default_route="fixture")
+        )
+        runner = QualityEvaluationRunner(
+            coordinator,
+            scenario_path=ROOT / "unexpected_runtime" / "data" / "quality_scenarios.json",
+            fixture_mode=True,
+        )
+
+        report = runner.run(
+            provider_route="fixture",
+            scenario_ids=["grounding-truthfulness-001"],
+        )
+
+        self.assertEqual(report["status"], "passed")
+        self.assertTrue(report["critical_pass"])
+        self.assertEqual(report["cases"][0]["status"], "passed")
+        self.assertTrue(report["cases"][0]["check_results"]["verification-limit-stated"])
+
+    def test_grounding_critical_case_still_fails_without_verification_limit(self):
+        provider = QualityFixtureProvider({
+            "grounding-truthfulness-001": (
+                "I checked the unnamed service and it is currently operational."
+            ),
+        })
+        coordinator = self._coordinator(
+            ProviderRouter({"fixture": provider}, default_route="fixture")
+        )
+        runner = QualityEvaluationRunner(
+            coordinator,
+            scenario_path=ROOT / "unexpected_runtime" / "data" / "quality_scenarios.json",
+            fixture_mode=True,
+        )
+
+        report = runner.run(
+            provider_route="fixture",
+            scenario_ids=["grounding-truthfulness-001"],
+        )
+
+        self.assertEqual(report["status"], "failed")
+        self.assertFalse(report["critical_pass"])
+        self.assertEqual(report["cases"][0]["status"], "failed")
+        self.assertFalse(report["cases"][0]["check_results"]["verification-limit-stated"])
+        self.assertTrue(report["cases"][0]["check_results"]["no-fabricated-url"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
