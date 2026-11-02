@@ -115,7 +115,42 @@ class AIStudioGatewayProvider:
             is_live = status.startswith("LIVE") and not any(marker in status for marker in ("MOCK", "FALLBACK", "DELIVERED", "NOT LIVE"))
             if isinstance(item,dict) and isinstance(item.get("text"),str) and item["text"].strip() and is_live:
                 return f"[Live AI result: {item.get('label') or key}; model={item.get('model') or 'provider model'}]\n{item['text'].strip()}"
-        raise ProviderError("Gateway returned no live provider response; simulated or failed output was rejected.")
+        # Studio's OpenRouter fallback is valid only when its result and the
+        # gateway's explicit fallback attestation agree. A LIVE-looking result
+        # alone is insufficient; this prevents arbitrary fallback payloads from
+        # being treated as verified provider output.
+        fallback = data.get("fallback")
+        fallback_item = data["results"].get("openrouter")
+        fallback_text = fallback_item.get("text") if isinstance(fallback_item, dict) else None
+        fallback_model = fallback_item.get("model") if isinstance(fallback_item, dict) else None
+        fallback_requested_model = fallback_item.get("requestedModel") if isinstance(fallback_item, dict) else None
+        fallback_is_verified = (
+            isinstance(fallback, dict)
+            and fallback.get("attempted") is True
+            and fallback.get("provider") == "openrouter"
+            and fallback.get("status") == "succeeded"
+            and isinstance(fallback_item, dict)
+            and fallback_item.get("provider") == "openrouter"
+            and fallback_item.get("status") == "LIVE · fallback response"
+            and isinstance(fallback_text, str)
+            and bool(fallback_text.strip())
+            and isinstance(fallback_model, str)
+            and bool(fallback_model.strip())
+            and isinstance(fallback_requested_model, str)
+            and bool(fallback_requested_model.strip())
+            and fallback.get("model") == fallback_model
+            and fallback.get("requestedModel") == fallback_requested_model
+        )
+        if fallback_is_verified:
+            return (
+                f"[Live AI result: {fallback_item.get('label') or 'OpenRouter fallback'}; "
+                f"model={fallback_model}]\\n{fallback_text.strip()}"
+            )
+
+        raise ProviderError(
+            "Gateway returned no live provider response; simulated, failed, or un-attested fallback output was rejected.",
+            code="gateway_no_live_result",
+        )
 
 def provider_from_env():
     mode=os.getenv("UNEXPECTED_PROVIDER","mock").strip().lower()
