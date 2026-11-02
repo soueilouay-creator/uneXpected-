@@ -63,7 +63,7 @@ class SkillRegistryTests(unittest.TestCase):
             root = Path(tmp)
             registry = SkillRegistry.load(self._fixture(root), root)
             selected = registry.list()[0]
-            with patch.object(Path, 'read_bytes', side_effect=OSError('file disappeared')):
+            with patch.object(Path, 'open', side_effect=OSError('file disappeared')):
                 with self.assertRaises(SkillRegistryError):
                     registry.read_context(selected)
 
@@ -93,12 +93,12 @@ class SkillRegistryTests(unittest.TestCase):
             root = Path(tmp)
             registry = SkillRegistry.load(self._fixture(root), root)
             selected = registry.list()[0]
-            original = Path.read_bytes
-            with patch.object(Path, 'read_bytes', autospec=True,
-                              side_effect=lambda path: original(path)) as read_bytes:
+            original = Path.open
+            with patch.object(Path, 'open', autospec=True,
+                              side_effect=lambda path, *args, **kwargs: original(path, *args, **kwargs)) as open_file:
                 value = registry.read_context(selected)
             self.assertIn('Verified demo skill', value)
-            self.assertEqual(read_bytes.call_count, 1)
+            self.assertEqual(open_file.call_count, 1)
 
     def test_modified_skill_hash_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
