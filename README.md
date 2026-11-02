@@ -63,7 +63,7 @@ Apply migrations in order from an isolated database branch before configuring th
 1. Existing schema version 1.
 2. `migrations/002_idempotency_claims.sql`.
 
-The v8 PostgreSQL adapter requires schema migration version 2. The included Render Blueprint creates one free web service only; it does not create a database.
+For a fresh PostgreSQL database, apply `migrations/001_initial.sql` followed by `migrations/002_idempotency_claims.sql`. For an existing schema-v1 database, first compare it against migration 001, then apply only migration 002. The v8 adapter refuses to start before schema version 2. The included Render Blueprint creates one free web service only; it does not create a database.
 
 The current Neon Free plan has no scheduled backup snapshots. Verify the current limits, backup/export destination, and restore process before relying on it for durable production records.
 
