@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import os
+import json
 import os
 import re
 import selectors
@@ -39,7 +39,12 @@ TEST_PROFILES: dict[str, dict[str, Any]] = {
             "-v",
         ),
         "guest_timeout_seconds": 120,
-        "trusted_files": {"tests/test_evidence_engine.py": "895bdd493ba846f2ac0c5bd8a67eeede5ef40b3c1862c17329ed1a87f907956e"},
+        "trusted_files": {
+            "tests/test_evidence_engine.py": "895bdd493ba846f2ac0c5bd8a67eeede5ef40b3c1862c17329ed1a87f907956e",
+            "unexpected_runtime/__init__.py": "772770998e0dad14d84cfcb2a7f834855162ea025747d646864cd374322e00e6",
+            "unexpected_runtime/evidence.py": "cacba534f92070722f6974c18354fe6308abddb8ff0eaaae486fbab0041ca02f",
+            "unexpected_runtime/workflow.py": "f1dabd3cb4f283fef0200c0459e14b2fc0b9c8d240256e4aa8644b3003b38900",
+        },
     }
 }
 
@@ -55,7 +60,47 @@ def _profile(criterion: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     return profile_id, TEST_PROFILES[profile_id]
 
 
+_PROFILE_FILE_DIGEST = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _profile_manifest(profile: dict[str, Any]) -> dict[str, str]:
+    """Return the complete, canonical path-to-digest manifest for a fixed profile."""
+    files = profile.get("files")
+    trusted_files = profile.get("trusted_files")
+    if (
+        not isinstance(files, (tuple, list))
+        or not files
+        or any(not isinstance(path, str) or not path for path in files)
+        or len(set(files)) != len(files)
+        or not isinstance(trusted_files, dict)
+        or set(trusted_files) != set(files)
+    ):
+        raise TestExecutionConfigurationError(
+            "Every fixed test profile file must have exactly one pinned SHA-256 digest."
+        )
+    manifest: dict[str, str] = {}
+    for relative in sorted(files):
+        path = Path(relative)
+        digest = trusted_files[relative]
+        if path.is_absolute() or ".." in path.parts or not _PROFILE_FILE_DIGEST.fullmatch(digest if isinstance(digest, str) else ""):
+            raise TestExecutionConfigurationError("The fixed test profile manifest is invalid.")
+        manifest[relative] = digest
+    return manifest
+
+
+def _profile_manifest_sha256(profile: dict[str, Any]) -> str:
+    data = json.dumps(_profile_manifest(profile), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(data.encode("utf-8")).hexdigest()
+
+
+def _evidence_reference(scheme: str, actual: dict[str, Any]) -> str:
+    """Bind provenance to the exact measured record and complete profile manifest."""
+    data = json.dumps(actual, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return f"{scheme}://sha256/{hashlib.sha256(data.encode('utf-8')).hexdigest()}"
+
+
 def _stage_profile(workspace_root: Path, profile: dict[str, Any]) -> tempfile.TemporaryDirectory[str]:
+    manifest = _profile_manifest(profile)
     root = workspace_root.expanduser().resolve(strict=True)
     if not root.is_dir():
         raise TestExecutionConfigurationError("Test workspace root must be a directory.")
@@ -74,28 +119,21 @@ def _stage_profile(workspace_root: Path, profile: dict[str, Any]) -> tempfile.Te
                 resolved = source.resolve(strict=True)
                 resolved.relative_to(root)
             except (OSError, ValueError):
-                raise TestExecutionConfigurationError(
-                    "A fixed test profile file is missing or escapes the workspace."
-                ) from None
+                raise TestExecutionConfigurationError("A fixed test profile file is missing or escapes the workspace.") from None
             if not resolved.is_file():
                 raise TestExecutionConfigurationError("Fixed test profile files must be regular non-symlink files.")
-            expected_digest = profile.get("trusted_files", {}).get(relative)
-            if expected_digest is not None:
-                actual_digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
-                if actual_digest != expected_digest:
-                    raise TestExecutionConfigurationError(
-                        "A pinned test profile file changed; review and update the trusted profile digest before execution."
-                    )
+            staged_bytes = resolved.read_bytes()
+            if hashlib.sha256(staged_bytes).hexdigest() != manifest[relative]:
+                raise TestExecutionConfigurationError("A pinned test profile file changed; review and update the trusted profile digest before execution.")
             destination = stage_root / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.parent.chmod(0o755)
-            shutil.copyfile(resolved, destination)
+            destination.write_bytes(staged_bytes)
             destination.chmod(0o644)
         return staging
     except BaseException:
         staging.cleanup()
         raise
-
 
 def _bounded_output(stdout: Any, stderr: Any = "") -> str:
     def as_text(value: Any) -> str:
@@ -204,6 +242,8 @@ class DockerTestExecutor:
 
     def __call__(self, candidate: Any, criterion: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         profile_id, profile = _profile(criterion)
+        manifest = _profile_manifest(profile)
+        manifest_sha256 = _profile_manifest_sha256(profile)
         staging = _stage_profile(self.workspace_root, profile)
         container_name = "unexpected-test-" + uuid.uuid4().hex[:20]
         argv = [
@@ -246,6 +286,9 @@ class DockerTestExecutor:
             )
             actual = {
                 "profile": profile_id,
+                "executor": "docker",
+                "test_profile_manifest": manifest,
+                "test_profile_manifest_sha256": manifest_sha256,
                 "exit_code": exit_code,
                 "tests_run": tests_run,
                 "status": "completed" if not timed_out else "timeout",
@@ -264,14 +307,11 @@ class DockerTestExecutor:
                 "cleanup_confirmed": cleanup_confirmed,
                 "output_tail": output[-4000:],
             }
-            digest = hashlib.sha256(
-                (container_name + "\n" + str(exit_code) + "\n" + output).encode("utf-8")
-            ).hexdigest()
             return {
                 "passed": passed,
                 "actual": actual,
                 "expected": criterion.get("target", "all tests in the fixed profile pass"),
-                "evidence_ref": "docker-test://sha256/" + digest,
+                "evidence_ref": _evidence_reference("docker-test", actual),
                 "details": (
                     "Isolated Docker test profile executed with network disabled and bounded host-side output."
                     if passed else
@@ -339,6 +379,8 @@ class RenderSandboxTestExecutor:
 
     async def _execute(self, criterion: dict[str, Any]) -> dict[str, Any]:
         profile_id, profile = _profile(criterion)
+        manifest = _profile_manifest(profile)
+        manifest_sha256 = _profile_manifest_sha256(profile)
         sandboxes = self._client()
         staging = _stage_profile(self.workspace_root, profile)
         sandbox_id = None
@@ -409,6 +451,9 @@ class RenderSandboxTestExecutor:
         )
         actual = {
             "profile": profile_id,
+            "executor": "render-sandbox",
+            "test_profile_manifest": manifest,
+            "test_profile_manifest_sha256": manifest_sha256,
             "sandbox_id": sandbox_id,
             "exit_code": exit_code,
             "tests_run": tests_run,
@@ -418,14 +463,11 @@ class RenderSandboxTestExecutor:
             "cleanup_confirmed": cleanup_confirmed,
             "output_tail": output[-4000:],
         }
-        digest = hashlib.sha256(
-            ((sandbox_id or "no-sandbox") + "\n" + str(exit_code) + "\n" + output).encode("utf-8")
-        ).hexdigest()
         return {
             "passed": passed,
             "actual": actual,
             "expected": criterion.get("target", "all tests in the fixed profile pass"),
-            "evidence_ref": "render-sandbox://sha256/" + digest,
+            "evidence_ref": _evidence_reference("render-sandbox", actual),
             "details": failure or (
                 "Isolated Render Sandbox test profile completed with network egress denied."
                 if passed else
@@ -451,19 +493,30 @@ class TestEvidenceChecker:
         result = self.executor(candidate, criterion, context)
         if not isinstance(result, dict):
             raise TestExecutionConfigurationError("Test executor returned an invalid result.")
+        _, profile = _profile(criterion)
+        expected_manifest = _profile_manifest(profile)
+        expected_manifest_sha256 = _profile_manifest_sha256(profile)
         actual = result.get("actual")
+        manifest_verified = (
+            isinstance(actual, dict)
+            and actual.get("test_profile_manifest") == expected_manifest
+            and actual.get("test_profile_manifest_sha256") == expected_manifest_sha256
+        )
+        executor_id = actual.get("executor") if isinstance(actual, dict) else None
+        expected_scheme = {"docker": "docker-test", "render-sandbox": "render-sandbox"}.get(executor_id)
+        evidence_ref = result.get("evidence_ref")
+        reference_verified = (
+            expected_scheme is not None and isinstance(evidence_ref, str)
+            and evidence_ref == _evidence_reference(expected_scheme, actual)
+        )
         passed = (
-            result.get("passed") is True
-            and isinstance(actual, dict)
-            and type(actual.get("exit_code")) is int
-            and actual.get("exit_code") == 0
-            and isinstance(actual.get("tests_run"), int)
-            and not isinstance(actual.get("tests_run"), bool)
-            and actual.get("tests_run") > 0
-            and actual.get("cleanup_confirmed") is True
+            result.get("passed") is True and isinstance(actual, dict)
+            and manifest_verified and reference_verified
+            and type(actual.get("exit_code")) is int and actual.get("exit_code") == 0
+            and isinstance(actual.get("tests_run"), int) and not isinstance(actual.get("tests_run"), bool)
+            and actual.get("tests_run") > 0 and actual.get("cleanup_confirmed") is True
             and actual.get("status") == "completed"
         )
-        evidence_ref = result.get("evidence_ref")
         if not isinstance(evidence_ref, str) or not evidence_ref.strip():
             raise TestExecutionConfigurationError("Test executor did not return a provenance reference.")
         return {
