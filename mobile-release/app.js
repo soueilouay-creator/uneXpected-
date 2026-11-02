@@ -13,7 +13,7 @@ let activeProjectId = null;
 let selectedProfileId = null;
 let selectedSkillId = null;
 let activeProfileTab = 'agents';
-let selectedModel = 'openai';
+let selectedModel = 'unexpected';
 let agents = [];
 let skills = [];
 let sessionToken = '';
@@ -159,7 +159,7 @@ function showView(name) {
 }
 
 function setSelectedModel(mode) {
-  if (!['openai', 'claude', 'openrouter', 'both', 'local'].includes(mode)) mode = 'openai';
+  if (!['unexpected', 'openai', 'claude', 'openrouter', 'both', 'local'].includes(mode)) mode = 'unexpected';
   selectedModel = mode;
   $('#modelMode').value = mode;
   $$('[data-model]').forEach(button => {
@@ -175,6 +175,7 @@ function setSelectedModel(mode) {
   local?.setAttribute('aria-pressed', String(mode === 'local'));
   const hint = $('#modelModeHint');
   const hintText = {
+    unexpected: 'uneXpected will route this request through Plan → Execute → Verify → Improve → Deliver → Learn.',
     openai: 'ChatGPT selected.',
     claude: 'Claude selected.',
     openrouter: 'OpenRouter selected.',
@@ -185,7 +186,7 @@ function setSelectedModel(mode) {
   const route = $('#routeCaption');
   if (route && !requestBusy) route.textContent = `Next message · ${modeLabel(mode)}`;
   if (mode !== 'local' && !sessionToken) {
-    $('#voiceStatus').textContent = 'Add your gateway access token in Control center to send.';
+    $('#voiceStatus').textContent = 'Add your owner access token in Control center to use the unified workspace.';
   }
 }
 
@@ -513,30 +514,75 @@ async function sendChat(event) {
       memories: await store.list('memories'),
       improvements: await store.list('improvements')
     } : {};
-    const response = await fetch(`${gatewayBase()}/orchestrate`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + sessionToken },
-      body: JSON.stringify({ task: buildTaskEnvelope(prompt, role, context), mode: selectedModel })
-    });
+    const response = mode === 'unexpected'
+      ? await fetch(`${location.origin}/v1/lifecycle`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: 'Bearer ' + sessionToken },
+          body: JSON.stringify({
+            agent_id: role.id,
+            objective: prompt,
+            inputs: {
+              task_envelope: buildTaskEnvelope(prompt, role, context),
+              selected_role: { id: role.id, name: role.name, version: role.version },
+              selected_skill: skill ? { id: skill.id, name: skill.name, instructions: skill.instructions } : null,
+              user_context: context
+            },
+            deadline_seconds: 60,
+            max_corrections: 1,
+            max_improvements: 1
+          })
+        })
+      : await fetch(`${gatewayBase()}/orchestrate`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: 'Bearer ' + sessionToken },
+          body: JSON.stringify({ task: buildTaskEnvelope(prompt, role, context), mode: selectedModel })
+        });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || `Gateway request failed (${response.status}).`);
-    const cards = collectProviderCards(payload);
-    assistant.responseCards = cards;
-    assistant.fallback = payload.fallback || null;
-    assistant.providerSummary = cards.map(card => ({ provider: card.provider, model: card.model, requestedModel: card.requestedModel, latencyMs: card.latencyMs, fallback: card.isFallback }));
-    assistant.speechText = responseSpeechText(payload, mode);
+    if (!response.ok) throw new Error(payload.error || `${mode === 'unexpected' ? 'Workflow' : 'Gateway'} request failed (${response.status}).`);
     assistant.isLoading = false;
-    if (!payload.ok || !cards.some(card => Boolean(card.text))) {
-      assistant.isError = true;
-      assistant.content = cards.map(card => card.error).filter(Boolean).join('\n') || 'No usable model response was returned. No simulated answer was shown.';
-      assistant.label = 'No verified model response';
-      toast('No live model response was received.');
+
+    if (mode === 'unexpected') {
+      const workflow = payload.result || {};
+      assistant.workflow = {
+        status: workflow.status || 'unknown',
+        delivered: workflow.delivered === true,
+        corrections: workflow.corrections || 0,
+        improvements: workflow.improvements || 0,
+        verificationHistory: workflow.verification_history || [],
+        reviewer: workflow.verification_history?.at(-1)?.reviewer_agent || 'code-reviewer'
+      };
+      assistant.provider = 'unexpected';
+      assistant.providerLabel = 'uneXpected governed workflow';
+      assistant.label = workflow.delivered === true ? 'Verified workflow delivery' : 'Workflow blocked · not delivered';
+      if (workflow.delivered === true && typeof workflow.delivery?.output === 'string') {
+        assistant.content = workflow.delivery.output;
+        assistant.speechText = assistant.content;
+        assistant.isError = false;
+      } else {
+        assistant.isError = true;
+        assistant.content = workflow.error || workflow.execution?.text ||
+          'The workflow did not pass independent verification. No result was marked as delivered.';
+        assistant.content += `\n\nWorkflow status: ${workflow.status || 'unknown'}. Nothing was published or sent externally.`;
+        toast('The governed workflow did not verify delivery.');
+      }
     } else {
-      const firstSuccessful = cards.find(card => card.text);
-      assistant.provider = firstSuccessful?.provider || '';
-      assistant.providerLabel = firstSuccessful?.label || modeLabel(mode);
-      assistant.label = cards.length > 1 ? 'Provider results · compare each answer' : `Answered by ${firstSuccessful?.label || 'the selected provider'}`;
-      assistant.content = cards.map(card => card.text || card.error).filter(Boolean).join('\n\n');
+      const cards = collectProviderCards(payload);
+      assistant.responseCards = cards;
+      assistant.fallback = payload.fallback || null;
+      assistant.providerSummary = cards.map(card => ({ provider: card.provider, model: card.model, requestedModel: card.requestedModel, latencyMs: card.latencyMs, fallback: card.isFallback }));
+      assistant.speechText = responseSpeechText(payload, mode);
+      if (!payload.ok || !cards.some(card => Boolean(card.text))) {
+        assistant.isError = true;
+        assistant.content = cards.map(card => card.error).filter(Boolean).join('\n') || 'No usable model response was returned. No simulated answer was shown.';
+        assistant.label = 'No verified model response';
+        toast('No live model response was received.');
+      } else {
+        const firstSuccessful = cards.find(card => card.text);
+        assistant.provider = firstSuccessful?.provider || '';
+        assistant.providerLabel = firstSuccessful?.label || modeLabel(mode);
+        assistant.label = cards.length > 1 ? 'Provider results · compare each answer' : `Answered by ${firstSuccessful?.label || 'the selected provider'}`;
+        assistant.content = cards.map(card => card.text || card.error).filter(Boolean).join('\n\n');
+      }
     }
   } catch (error) {
     assistant.isLoading = false;
