@@ -27,3 +27,6 @@
 - Quality reports are persisted in the existing audit event stream with scenario IDs, case states, check outcomes, model/route provenance and output digests. They do not duplicate raw model output or include credentials.
 - Results can inform a proposal, but only the existing Improvement Governor and its fixed benchmark, regression, approval and rollback rules may promote changes. The evaluator cannot alter instructions, policy, permissions, providers or code.
 - Awesome resource refresh, external project installation, scheduling and integration authorization are not automatic and are not part of this release.
+
+
+Regression comparison uses the most recent prior passing report only when the scenario-set ID and revision, exact selected scenario IDs, provider route, provider identity/model, execution mode and quality method all match. A previously passing case that now fails is labelled `regression`; its underlying failure class is retained for diagnosis. A different model, provider, fixture/live mode or scenario revision is never used as a baseline.
