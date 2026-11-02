@@ -6,6 +6,7 @@ import json
 import tempfile
 import threading
 import urllib.request
+import urllib.error
 import unittest
 from unittest.mock import patch
 from concurrent.futures import ThreadPoolExecutor
