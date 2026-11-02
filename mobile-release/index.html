@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1017">
+  <meta name="description" content="Your private uneXpected AI workspace.">
+  <title>uneXpected — Your AI workspace</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#mainContent">Skip to main content</a>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar" aria-label="Main navigation" inert aria-hidden="true">\n      <h2 class="visually-hidden">Main menu</h2>
+      <div class="sidebar-brand">
+        <div class="brand-mark" aria-hidden="true"><span>u</span></div>
+        <div class="brand-copy"><strong>uneXpected</strong></div>
+        <button class="icon-button sidebar-close" id="sidebarClose" type="button" aria-label="Close navigation">×</button>
+      </div>
+
+      <button class="new-chat-button" id="newChatBtn" type="button">
+        <span class="new-chat-plus" aria-hidden="true">＋</span><span>New chat</span>
+      </button>
+
+      <nav class="primary-nav" aria-label="Main menu">
+        <h2 class="nav-label">Navigation</h2>
+        <button class="nav-item" data-view="home" type="button"><span class="nav-icon">⌂</span><span>Overview</span></button>
+        <button class="nav-item active" data-view="chat" type="button"><span class="nav-icon">◌</span><span>Conversations</span></button>
+        <button class="nav-item" data-view="projects" type="button"><span class="nav-icon">▦</span><span>Projects</span></button>
+        <button class="nav-item" data-view="memory" type="button"><span class="nav-icon">⌘</span><span>Memory</span></button>
+        <div class="nav-label nav-label-spaced">Tools</div>
+        <button class="nav-item" data-view="agents" type="button"><span class="nav-icon">✳</span><span>Profiles</span><span class="nav-count">40</span></button>
+        <div class="nav-label nav-label-spaced">Preferences</div>
+        <button class="nav-item" data-view="settings" type="button"><span class="nav-icon">⚙</span><span>Control center</span></button>
+      </nav>
+
+      <div class="sidebar-history">
+        <div class="history-heading"><span>Recent conversations</span></div>
+        <label class="history-search"><span aria-hidden="true">⌕</span><input id="chatSearch" type="search" placeholder="Search chats" aria-label="Find a conversation"></label>
+        <div class="chat-list" id="chatList"><div class="sidebar-empty">Your conversations will appear here.</div></div>
+      </div>
+
+      <div class="sidebar-bottom">
+        <div class="connection-row"><span class="connection-dot" id="connectionDot"></span><div><strong id="connectionLabel">On this device</strong><small id="connectionDetail">Private by default</small></div></div>
+        <button class="profile-button" id="avatarBtn" type="button"><span class="profile-avatar">•</span><span class="profile-copy"><strong>Personal workspace</strong><small>Local-first · private by default</small></span></button>
+      </div>
+    </aside>
+
+    <button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="Close navigation" tabindex="-1" aria-hidden="true"></button>
+
+    <main class="main-content" id="mainContent" tabindex="-1">
+      <header class="mobile-topbar">
+        <button class="icon-button menu-button" id="sidebarToggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar"><span></span><span></span></button>
+        <a class="mobile-brand" href="#" data-go="home"><span class="brand-mark small" aria-hidden="true"><span>u</span></span><strong>uneXpected</strong></a>
+        <button class="top-status" id="mobileConnection" type="button" data-go="settings" aria-label="Open connection settings"><span class="connection-dot"></span></button>
+      </header>
+
+      <section class="view home-view" id="view-home">
+        <div class="view-heading">
+          <div><h1>Your work. Your intelligence.</h1><p>Conversations and projects in one place.</p></div>
+          <div class="date-label" id="todayLabel"></div>
+        </div>
+        <div class="home-hero">
+          <div class="hero-copy">
+            <h2>One conversation.<br>Three perspectives.</h2>
+            <p>Move between ChatGPT, Claude and OpenRouter.</p>
+            <div class="hero-actions"><button class="button button-primary" data-go="chat" type="button">Start a conversation <span>↗</span></button><button class="button button-quiet" data-go="projects" type="button">View projects</button></div>
+          </div>
+          <div class="hero-art" aria-hidden="true">
+            <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="orbit orbit-three"></div>
+            <div class="core-orb"><span>u</span></div>
+            <div class="model-node node-chatgpt"><span class="node-glyph">✳</span><small>CHATGPT</small></div>
+            <div class="model-node node-claude"><span class="node-glyph">◈</span><small>CLAUDE</small></div>
+            <div class="model-node node-router"><span class="node-glyph">⌘</span><small>OPENROUTER</small></div>
+          </div>
+        </div>
+        <div class="overview-grid">
+          <article class="overview-stat"><strong id="statProjects">0</strong><span>Projects</span></article>
+          <article class="overview-stat"><strong id="statChats">0</strong><span>Conversations</span></article>
+          <article class="overview-stat"><strong id="statMemory">0</strong><span>Memories</span></article>
+        </div>
+        <div class="section-heading"><div><h2>Recent activity</h2></div><button class="text-link" data-go="chat" type="button">All conversations ↗</button></div>
+        <div class="recent-list" id="recentList"><div class="empty-inline"><span>◌</span><strong>No recent work yet</strong></div></div>
+      </section>
+
+      <section class="view chat-view active" id="view-chat">
+        <div class="chat-page-heading">
+          <div class="chat-title-group"><h1 id="chatHeading">New conversation</h1><p id="routeCaption">Next message · ChatGPT</p></div>
+          <div class="chat-head-actions"><button class="icon-button" id="deleteChatBtn" type="button" aria-label="Delete conversation" title="Delete conversation">⌫</button></div>
+        </div>
+
+        <div class="chat-workspace">
+          <div class="message-list" id="messageList" aria-live="polite" aria-relevant="additions text">
+            <div class="chat-welcome">
+              <div class="welcome-symbol"><span>u</span><i></i></div>
+              <h2>What are we working on?</h2>
+              <p>Pick a model and send your first message.</p>
+              <div class="prompt-suggestions">
+                <button class="prompt-card" data-prompt="Help me turn an idea into a practical project plan with milestones." type="button"><span class="prompt-icon">↗</span><span><strong>Plan a project</strong></span><span class="prompt-arrow">→</span></button>
+                <button class="prompt-card" data-prompt="A 24 VDC sensor is counting intermittently. Help me troubleshoot it safely, step by step." type="button"><span class="prompt-icon">⌁</span><span><strong>Troubleshoot</strong></span><span class="prompt-arrow">→</span></button>
+              </div>
+            </div>
+          </div>
+
+          <div class="composer-dock">
+            <div class="composer-shell">
+              <div class="composer-topline">
+                <h2 class="model-picker-label"><span class="model-picker-dot"></span><span>Choose a model</span></h2>
+                <div class="composer-tools"><label class="context-consent" title="Include recent conversation, saved memories and approved improvement notes"><input id="shareContext" type="checkbox"><span>Include saved context</span></label><span class="profile-chip" id="profileChip">research-scout</span></div>
+              </div>
+
+              <div class="provider-switcher" role="group" aria-label="Choose the model for your next message">
+                <button class="provider-option active" data-model="openai" type="button" aria-pressed="true"><span class="provider-symbol chatgpt-symbol">✳</span><span><strong>ChatGPT</strong></span><span class="provider-check">✓</span></button>
+                <button class="provider-option" data-model="claude" type="button" aria-pressed="false"><span class="provider-symbol claude-symbol">◈</span><span><strong>Claude</strong></span><span class="provider-check">✓</span></button>
+                <button class="provider-option" data-model="openrouter" type="button" aria-pressed="false"><span class="provider-symbol router-symbol">⌘</span><span><strong>OpenRouter</strong><small>Free</small></span><span class="provider-check">✓</span></button>
+                <button class="compare-option" id="compareBtn" type="button" aria-pressed="false" title="Ask ChatGPT and Claude, then request a synthesis">Compare <span>⇄</span></button>
+                <button class="local-option" id="localModeBtn" type="button" aria-pressed="false" title="Use local workspace tools without a model request">Local</button>
+                <select id="modelMode" class="visually-hidden" tabindex="-1" aria-hidden="true"><option value="openai"></option><option value="claude"></option><option value="openrouter"></option><option value="both"></option><option value="local"></option></select>
+              </div>
+
+              <form id="chatForm" class="message-composer">
+                <label class="sr-only" for="chatInput">Message uneXpected</label>
+                <textarea id="chatInput" rows="1" maxlength="8500" placeholder="Message…" aria-label="Message uneXpected"></textarea>
+                <div class="composer-footer">
+                  <div class="composer-hints"><span class="composer-hint"><span class="hint-dot"></span><span id="voiceStatus">Ready</span></span></div>
+                  <div class="composer-actions">
+                    <button class="composer-icon-button" id="voiceInputBtn" type="button" aria-label="Start voice input" title="Voice input">⌁</button>
+                    <button class="composer-icon-button" id="voiceModeBtn" type="button" aria-pressed="false" title="Voice conversation">◖</button>
+                    <button class="composer-icon-button" id="speakLastBtn" type="button" title="Read the last reply aloud">◗</button>
+                    <button class="send-button" id="sendBtn" type="submit" aria-label="Send message"><span>↑</span></button>
+                  </div>
+                </div>
+              </form>
+            </div>
+            <p class="composer-disclaimer">Verify important answers.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="view standard-view" id="view-projects">
+        <div class="view-heading"><div><h1>Projects</h1><p>Keep goals, tasks and decisions together.</p></div><button class="button button-primary" id="addProjectBtn" type="button">＋ New project</button></div>
+        <div class="project-grid" id="projectGrid"></div>
+        <div class="empty-state hidden" id="projectEmpty"><span class="empty-state-icon">▦</span><h2>Create your first project</h2><p>Bring the important parts of a goal into one practical workspace.</p><button class="button button-primary" id="emptyProjectBtn" type="button">Create project</button></div>
+        <div class="project-detail hidden" id="projectDetail"></div>
+      </section>
+
+      <section class="view standard-view" id="view-memory">
+        <div class="view-heading"><div><h1>Memory</h1><p>Save the context you want uneXpected to keep.</p></div><button class="button button-primary" id="addMemoryBtn" type="button">＋ Add note</button></div>
+        <div class="memory-intro"><span class="memory-symbol">⌘</span><div><strong>Your knowledge stays yours.</strong><p>Notes stay on this device. They are not included in model requests unless you opt in for that message.</p></div></div>
+        <div class="memory-list" id="memoryList"></div>
+        <div class="empty-state hidden" id="memoryEmpty"><span class="empty-state-icon">◇</span><h2>No saved memories yet</h2><p>Add useful decisions, preferences or project facts to your workspace.</p></div>
+      </section>
+
+      <section class="view standard-view" id="view-agents">
+        <div class="view-heading"><div><h1>Profiles</h1><p>Choose a profile for your next request.</p></div><span class="count-pill" id="agentCount">40 profiles</span></div>
+        <div class="warning-note"><strong>Profile library, not independent running agents</strong><p>These are workflow references. They do not prove that 40 separate agents are executing in the background.</p></div>
+        <div class="profile-tabs"><button id="showAgentsBtn" class="profile-tab active" type="button">40 Profiles</button><button id="showSkillsBtn" class="profile-tab" type="button">2 Skills</button></div>
+        <label class="agent-search"><span>⌕</span><input id="agentSearch" type="search" placeholder="Search workflows…" aria-label="Search profiles"></label>
+        <div class="agent-grid" id="agentGrid"></div>
+      </section>
+
+      <section class="view standard-view" id="view-settings">
+        <div class="view-heading"><div><h1>Settings</h1></div></div>
+        <div class="settings-layout">
+          <section class="settings-section">
+            <div class="settings-section-head"><span class="settings-section-icon">◈</span><div><h2>AI connection</h2></div><span id="gatewayStatus" class="status-tag">Not checked</span></div>
+            <div class="settings-grid">
+              <label class="form-field"><span>AI server address</span><input id="gatewayUrl" type="url" placeholder="Leave empty to use this app's host"></label>
+              <label class="form-field"><span>App access token</span><input id="accessToken" type="password" autocomplete="off" placeholder="Paste your access token"></label>
+            </div>
+            <p class="field-note">The access token stays in memory only. Provider keys stay on the server.</p>
+            <div class="button-row"><button class="button button-secondary" id="checkGatewayBtn" type="button">Check gateway</button><label class="test-provider-label">Test provider<select id="testProviderSelect"><option value="openai">ChatGPT</option><option value="anthropic">Claude</option><option value="openrouter">OpenRouter</option></select></label><button class="button button-primary" id="testProviderBtn" type="button">Run real test</button></div>
+            <div class="result-box hidden" id="gatewayDetails" role="status" aria-live="polite"></div>
+            <div class="provider-health-list" id="providerHealthList"><span>ChatGPT · not checked</span><span>Claude · not checked</span><span>OpenRouter · not checked</span></div>
+          </section>
+
+          <section class="settings-section">
+            <div class="settings-section-head"><span class="settings-section-icon">◖</span><div><h2>Voice & conversation</h2></div></div>
+            <div class="settings-grid">
+              <label class="form-field"><span>Speech language</span><select id="voiceLanguage"><option value="en-US">English (US)</option><option value="fr-FR">Français</option><option value="ar-TN">العربية (تونس)</option><option value="ar-SA">العربية (الفصحى)</option></select></label>
+              <label class="form-field"><span>Speaking voice</span><select id="voiceSelect"><option value="">Device default voice</option></select></label>
+            </div>
+            <label class="form-field range-field"><span>Speaking speed <strong id="voiceRateLabel">1.0×</strong></span><input id="voiceRate" type="range" min="0.6" max="1.5" step="0.1" value="1"></label>
+            <label class="toggle-field"><input id="autoSpeakToggle" type="checkbox"><span class="toggle-track"></span><span><strong>Read assistant replies aloud automatically</strong><small>Uses your device's speech synthesis when supported.</small></span></label>
+            <div class="button-row"><button class="button button-secondary" id="testVoiceBtn" type="button">Test voice</button><button class="button button-secondary" id="stopVoiceBtn" type="button">Stop speaking</button></div>
+            <p class="field-note">Microphone access starts only after you tap a voice control. Speech recognition depends on browser and device support.</p>
+          </section>
+
+          <section class="settings-section">
+            <div class="settings-section-head"><span class="settings-section-icon">▤</span><div><h2>Local data & backups</h2></div></div>
+            <div class="data-status-row"><span>Browser database</span><strong id="storageState">Checking…</strong></div>
+            <div class="data-status-row"><span>Persistent storage</span><strong id="persistState">Checking…</strong></div>
+            <div class="button-row"><button class="button button-secondary" id="exportBtn" type="button">Export backup</button><button class="button button-secondary" id="importBtn" type="button">Restore backup</button><input type="file" id="importFile" accept="application/json,.json" class="hidden"></div>
+            <button class="danger-link" id="clearDataBtn" type="button">Delete all local workspace data</button>
+          </section>
+
+          <section class="settings-section">
+            <div class="settings-section-head"><span class="settings-section-icon">✦</span><div><h2>Improve uneXpected</h2></div><button class="button button-secondary button-small" id="addImprovementBtn" type="button">＋ Add idea</button></div>
+            <p class="field-note">Approved ideas are for planning only; they do not change code or deploy automatically.</p>
+            <div class="improvement-list" id="improvementList"></div>
+            <div class="empty-inline" id="improvementEmpty"><strong>No improvement proposals yet</strong><p>Save feedback and measurable ideas as we work together.</p></div>
+          </section>
+          <section class="settings-footer"><strong>uneXpected Phone · 0.4.0</strong><span>Local-first companion · Remote models require a reachable authenticated gateway.</span><span>Full v7 runtime execution is not implied by this profile browser.</span></section>
+        </div>
+      </section>
+
+      
+    </main>
+  </div>
+
+  <dialog class="workspace-dialog" id="simpleDialog">
+    <form id="dialogForm" method="dialog">
+      <div class="dialog-head"><div><div class="eyebrow" id="dialogEyebrow">WORKSPACE</div><h2 id="dialogTitle">New item</h2></div><button class="icon-button" id="dialogCloseBtn" type="button" aria-label="Close dialog">×</button></div>
+      <div id="dialogBody" class="dialog-body"></div>
+      <div class="dialog-actions"><button class="button button-secondary" id="dialogCancelBtn" type="button">Cancel</button><button class="button button-primary" id="dialogSaveBtn" type="submit">Save</button></div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <button class="install-button hidden" id="installBtn" type="button">Install uneXpected</button>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
