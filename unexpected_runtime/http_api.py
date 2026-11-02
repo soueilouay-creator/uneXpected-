@@ -70,9 +70,11 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             path=urlsplit(self.path).path
             if path=="/health":
                 provider=getattr(active,"provider",None)
+                storage_backend=getattr(active.store,"backend","sqlite")
                 return self.send_json(200,{"ok":True,"service":"uneXpected governed runtime","version":__version__,
                     "provider":getattr(provider,"name",type(provider).__name__ if provider else "unavailable"),
                     "provider_configured":bool(getattr(provider,"configured",True)),
+                    "storage_backend":storage_backend,"storage_durable":storage_backend=="postgresql",
                     "authentication_configured":len(token)>=32,"privileged_actions":"fail-closed"})
             if path=="/v1/status":
                 if not self.authorize(): return
