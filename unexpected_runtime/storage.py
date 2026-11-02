@@ -180,6 +180,7 @@ class StateStore:
             item['objective']=payload.get('objective','')
             item['inputs']=payload.get('inputs',{})
             item['source_refs']=payload.get('source_refs',[])
+            item['provider_route']=payload.get('provider_route')
             item['result']=json.loads(item.pop('result_json')) if item.get('result_json') else None
             items.append(item)
         return items
