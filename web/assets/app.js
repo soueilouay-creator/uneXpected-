@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const state = { token: "", agents: [], status: null };
+  const state = { token: "", agents: [], providers: [], status: null };
   const $ = (id) => document.getElementById(id);
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const time = (v) => { if (!v) return "—"; const n=Number(v); const d=new Date(n>1e12?n:n*1000); return Number.isNaN(d.getTime())?String(v):d.toLocaleString(); };
@@ -12,7 +12,14 @@
     const response=await fetch(path,{...options,headers,cache:"no-store"});
     const type=response.headers.get("content-type")||"";
     const body=type.includes("application/json")?await response.json():await response.text();
-    if (!response.ok) throw new Error(body?.error||("Request failed ("+response.status+")"));
+    if (!response.ok) {
+      const taskStatus = body?.result?.status;
+      const taskError = body?.result?.error;
+      const message = body?.error ||
+        (taskStatus ? "Task "+taskStatus+(taskError ? ": "+taskError : " did not complete.") :
+        ("Request failed ("+response.status+")"));
+      throw new Error(message);
+    }
     return body;
   }
   function setConnected(ok) {
@@ -33,11 +40,26 @@
     $("proposal-agent").innerHTML=state.agents.map(a=>'<option value="'+esc(a.id)+'">'+esc(a.name)+" · "+esc(a.id)+'</option>').join("");
   }
   function renderProviders(items) {
+    state.providers=items;
     const selector=$("task-provider");
     const previous=selector.value;
     selector.innerHTML='<option value="">Default configured route</option>'+items.map(p=>'<option value="'+esc(p.id)+'" '+(!p.configured?'disabled':'')+'>'+esc(p.id)+(p.default?' · default':'')+'</option>').join("");
     if(items.some(p=>p.id===previous&&p.configured))selector.value=previous;
     $("provider-grid").innerHTML=items.length?items.map(p=>'<article><h4>'+esc(p.name)+'</h4><p>'+esc(p.model||"Model not disclosed")+'</p>'+readiness("Configuration",p.live?(p.configured?"Configured":"Not configured"):"Built-in test mode",!p.live||p.configured)+readiness("Live verification",p.live?(p.verified?"Verified":"Not verified"):"Not applicable",!p.live||p.verified)+(p.live&&p.configured?'<button class="button secondary provider-test" data-test-provider="'+esc(p.id)+'" type="button">Test connection</button>':'<small>Mock mode · not a live provider</small>')+'</article>').join(""):'<div class="empty">No provider adapters are available.</div>';
+    syncLifecycleMode();
+  }
+  function syncLifecycleMode() {
+    const providers=state.providers||[];
+    const defaultProvider=providers.find(p=>p.default);
+    const selectedId=$("task-provider").value||defaultProvider?.id;
+    const selectedProvider=providers.find(p=>p.id===selectedId);
+    const hasConfiguredLiveProvider=Boolean(selectedProvider?.live&&selectedProvider?.configured&&selectedProvider?.verified);
+    const lifecycleOption=$("task-mode").querySelector('option[value="lifecycle"]');
+    lifecycleOption.disabled=!hasConfiguredLiveProvider;
+    lifecycleOption.textContent=hasConfiguredLiveProvider
+      ? "Full verified lifecycle"
+      : "Full verified lifecycle (requires a live AI provider)";
+    if(!hasConfiguredLiveProvider&&$("task-mode").value==="lifecycle")$("task-mode").value="invoke";
   }
   async function refresh() {
     $("refresh").disabled=true;
@@ -102,6 +124,7 @@
     finally { button.disabled=false;button.textContent="Test connection"; }
   });
   $("agent-search").addEventListener("input",e=>{const q=e.target.value.toLowerCase();document.querySelectorAll("#agent-grid article").forEach(card=>card.hidden=!card.textContent.toLowerCase().includes(q));});
+  $("task-provider").addEventListener("change",syncLifecycleMode);
   $("auth-form").addEventListener("submit",async e=>{e.preventDefault();state.token=$("auth-token").value.trim();$("auth-error").textContent="";await refresh();if(state.status)$("auth-overlay").classList.add("hidden");});
   $("proposal-form").addEventListener("submit",async e=>{
     e.preventDefault();const button=$("proposal-submit");button.disabled=true;$("proposal-result").textContent="Submitting proposal for review…";
