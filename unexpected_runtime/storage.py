@@ -64,6 +64,11 @@ class StateStore:
             cur=c.execute("UPDATE tasks SET status=?,result_json=?,updated_at=? WHERE task_id=? AND status NOT IN ('completed','failed','cancelled','timeout')",
                           (status,json.dumps(result,ensure_ascii=False) if result is not None else None,time.time(),task_id))
         return cur.rowcount == 1
+    def mark_task_timeout(self,task_id:str,result:dict[str,Any])->bool:
+        with self._session() as c:
+            cur=c.execute("UPDATE tasks SET status='timeout',result_json=?,updated_at=? WHERE task_id=? AND status!='completed'",
+                          (json.dumps(result,ensure_ascii=False),time.time(),task_id))
+        return cur.rowcount==1
     def claim_next(self):
         with self._session() as c:
             c.execute('BEGIN IMMEDIATE')
