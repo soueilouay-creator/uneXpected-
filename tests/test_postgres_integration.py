@@ -63,21 +63,22 @@ class PostgresRuntimeIntegrationTests(unittest.TestCase):
         self.assertTrue(self.store.check_health())
 
     def test_state_store_baselines_versions_proposals_and_capabilities(self):
+        agent_id = self.prefix + "-agent"
         report = {"score": 0.9, "critical_checks": {"safety": True}, "provider_mode": "mock"}
         self.store.set_baseline(
-            self.agent, self.prefix, report,
-            active_version="1.0.0", instruction_sha256="a" * 64, report_sha256="b" * 64,
+            agent_id, self.prefix, report,
+            active_version=self.prefix, instruction_sha256="a" * 64, report_sha256="b" * 64,
         )
-        self.assertEqual(self.store.get_baseline(self.agent, self.prefix), report)
-        self.assertEqual(self.store.get_baseline_evidence(self.agent, self.prefix)["active_version"], "1.0.0")
+        self.assertEqual(self.store.get_baseline(agent_id, self.prefix), report)
+        self.assertEqual(self.store.get_baseline_evidence(agent_id, self.prefix)["active_version"], self.prefix)
 
-        self.store.ensure_base_version(self.agent, self.prefix, "baseline instruction")
-        active = self.store.active_version(self.agent, self.prefix, "baseline instruction")
+        self.store.ensure_base_version(agent_id, self.prefix, "baseline instruction")
+        active = self.store.active_version(agent_id, self.prefix, "baseline instruction")
         self.assertEqual(active["version"], self.prefix)
-        self.store.promote_version(self.agent, self.prefix + "-next", "candidate", "CI candidate")
-        self.assertEqual(self.store.active_version(self.agent, self.prefix, "ignored")["version"], self.prefix + "-next")
-        self.store.rollback_version(self.agent, self.prefix, "CI rollback")
-        self.assertEqual(self.store.active_version(self.agent, self.prefix, "ignored")["version"], self.prefix)
+        self.store.promote_version(agent_id, self.prefix + "-next", "candidate", "CI candidate")
+        self.assertEqual(self.store.active_version(agent_id, self.prefix, "ignored")["version"], self.prefix + "-next")
+        self.store.rollback_version(agent_id, self.prefix, "CI rollback")
+        self.assertEqual(self.store.active_version(agent_id, self.prefix, "ignored")["version"], self.prefix)
 
         proposal_id = self.prefix + "-proposal"
         proposal = {
@@ -165,8 +166,9 @@ class PostgresRuntimeIntegrationTests(unittest.TestCase):
                 body = json.dumps(payload).encode()
                 request = urllib.request.Request(base + "/v1/invoke", data=body, headers=headers, method="POST")
                 with urllib.request.urlopen(request, timeout=20) as response:
-                    result = json.loads(response.read())
+                    envelope = json.loads(response.read())
                     self.assertEqual(response.status, 200)
+                    result = envelope["result"]
                     self.assertEqual(result["status"], "completed")
                     task_id = result["task_id"]
 
@@ -185,7 +187,7 @@ class PostgresRuntimeIntegrationTests(unittest.TestCase):
 
                 replay_request = urllib.request.Request(base + "/v1/invoke", data=body, headers=headers, method="POST")
                 with urllib.request.urlopen(replay_request, timeout=10) as response:
-                    replay = json.loads(response.read())
+                    replay = json.loads(response.read())["result"]
                     self.assertTrue(replay["idempotent_replay"])
                     self.assertEqual(replay["task_id"], task_id)
 
