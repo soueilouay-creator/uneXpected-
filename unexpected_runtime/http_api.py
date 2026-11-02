@@ -293,6 +293,18 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                 if not isinstance(refs,list) or len(refs)>32 or any(not isinstance(x,str) or not x or len(x)>MAX_SOURCE_REF_CHARS for x in refs): return self.send_json(400,{"error":"Invalid source_refs."})
             try:
                 if is_lifecycle:
+                    selected_provider = (
+                        active.provider.resolve(provider_route)
+                        if hasattr(active.provider, "resolve") else active.provider
+                    )
+                    if getattr(selected_provider, "name", "") == "deterministic-mock":
+                        return self.send_json(409, {
+                            "error": (
+                                "Full verified lifecycle requires a configured live AI provider; "
+                                "deterministic mock only verifies runtime plumbing. Use Single governed "
+                                "invocation for a runtime test or configure and verify a live provider."
+                            )
+                        })
                     if active.max_workers < 2 or not lifecycle_slots.acquire(blocking=False):
                         return self.send_json(503,{"error":"Lifecycle capacity exhausted."})
                     try:
