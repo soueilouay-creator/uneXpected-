@@ -358,6 +358,7 @@ class CoordinatorProviderRoutingTests(unittest.TestCase):
         openai = WorkflowProvider("openai")
         anthropic = WorkflowProvider("anthropic")
         router = ProviderRouter({"mock": DeterministicMockProvider(), "openai": openai, "anthropic": anthropic}, default_route="openai")
+        router.mark_success("anthropic")  # Model routing test assumes a prior successful live connection check.
         coordinator = Coordinator(state_dir=self.tmp.name, provider=router, max_workers=4, max_retries=0)
         try:
             result = coordinator.run_lifecycle(
