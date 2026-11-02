@@ -1,4 +1,4 @@
-name: uneXpected runtime CI
+name: uneXpected v8 command center CI
 
 on:
   pull_request:
@@ -17,15 +17,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install runtime dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
       - name: Compile runtime
         run: python -m compileall -q unexpected_runtime
-      - name: Build package integrity fixture
+      - name: Build v8 source integrity fixture
         run: |
           python - <<'PY'
           from pathlib import Path
           from zipfile import ZIP_DEFLATED, ZipFile
+          import os
           root = Path.cwd()
-          target = Path(__import__('os').environ['RUNNER_TEMP']) / 'uneXpected_v7.3.1_governed_runtime.zip'
+          target = Path(os.environ['RUNNER_TEMP']) / 'uneXpected_v8_command_center.zip'
           with ZipFile(target, 'w', ZIP_DEFLATED) as archive:
               for path in sorted(root.rglob('*')):
                   if not path.is_file() or '__pycache__' in path.parts or path.suffix in {'.pyc', '.sqlite3', '.db'}:
@@ -35,12 +38,14 @@ jobs:
                       continue
                   if relative.name == '.env' or (relative.name.startswith('.env.') and relative.name != '.env.example'):
                       continue
-                  archive.write(path, Path('uneXpected_v7') / relative)
+                  archive.write(path, Path('uneXpected_v8') / relative)
           print(f'Built {target} ({target.stat().st_size} bytes)')
           PY
-          echo "UNEXPECTED_PACKAGE_ZIP=$RUNNER_TEMP/uneXpected_v7.3.1_governed_runtime.zip" >> "$GITHUB_ENV"
-      - name: Run regression suite
+          echo "UNEXPECTED_PACKAGE_ZIP=$RUNNER_TEMP/uneXpected_v8_command_center.zip" >> "$GITHUB_ENV"
+      - name: Run regression and security suite
         run: python -m unittest discover -s tests -v
+      - name: Build single-process Docker image
+        run: docker build --pull -t unexpected-v8-command-center:ci .
       - name: CLI smoke tests
         run: |
           python -m unexpected_runtime.cli status
