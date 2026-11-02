@@ -153,12 +153,62 @@ class TrustedSourceRetrieverTests(unittest.TestCase):
                 return b"data"
         times = iter([0.0, 0.3, 0.6, 0.9, 1.2])
         connection, response = FakeConnection(), SlowResponse()
+        captured_socket = connection.sock
+        connection.sock = None  # HTTPConnection.getresponse() may clear this reference.
         with self.assertRaisesRegex(SourceRetrievalError, "overall deadline"):
-            _read_response_bounded(connection, response, deadline=1.0, max_bytes=1024,
+            _read_response_bounded(captured_socket, response, deadline=1.0, max_bytes=1024,
                                    clock=lambda: next(times))
         self.assertEqual(response.calls, 4)
-        self.assertEqual(len(connection.sock.timeouts), 4)
-        self.assertGreater(connection.sock.timeouts[0], connection.sock.timeouts[-1])
+        self.assertEqual(len(captured_socket.timeouts), 4)
+        self.assertGreater(captured_socket.timeouts[0], captured_socket.timeouts[-1])
+
+    def test_fetch_retains_socket_for_body_reads_after_getresponse_clears_it(self):
+        from unittest.mock import patch
+        from unexpected_runtime import source_retrieval
+
+        class FakeSocket:
+            def __init__(self):
+                self.timeouts = []
+            def settimeout(self, value):
+                self.timeouts.append(value)
+
+        class FakeResponse:
+            status = 200
+            def __init__(self):
+                self.chunks = [b"verified body", b""]
+                self.closed = False
+            def getheaders(self):
+                return [("content-type", "text/plain")]
+            def read1(self, size):
+                return self.chunks.pop(0)
+            def close(self):
+                self.closed = True
+
+        captured_socket = FakeSocket()
+        response = FakeResponse()
+
+        class FakeConnection:
+            def __init__(self, host, address, timeout_seconds, *, deadline):
+                self.sock = captured_socket
+                self.closed = False
+            def request(self, method, target, headers):
+                return None
+            def getresponse(self):
+                self.sock = None
+                return response
+            def close(self):
+                self.closed = True
+
+        with patch.object(source_retrieval, "_PinnedHTTPSConnection", FakeConnection):
+            status, headers, body = source_retrieval._fetch_pinned_https(
+                "docs.python.org", "93.184.216.34", "/document", 1.0, 1024
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["content-type"], "text/plain")
+        self.assertEqual(body, b"verified body")
+        self.assertGreaterEqual(len(captured_socket.timeouts), 3)
+        self.assertTrue(response.closed)
 
     def test_real_chunked_response_cannot_extend_absolute_deadline(self):
         import http.client
