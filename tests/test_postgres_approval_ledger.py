@@ -5,6 +5,7 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 
 from unexpected_runtime.postgres_approval_ledger import PostgresApprovalLedger
+from unexpected_runtime.approvals import GitHubPullRequestApprovalVerifier
 
 
 class Cursor:
@@ -85,6 +86,23 @@ class PostgresApprovalLedgerTests(unittest.TestCase):
         self.db.fail = True
         with self.assertRaises(RuntimeError):
             self.ledger.consume_once("github-pr:19:db-down", "d" * 64)
+
+    def test_github_verifier_delegates_consumption_to_injected_postgres_ledger(self):
+        class Ledger:
+            def __init__(self):
+                self.calls = []
+            def consume_once(self, approval_id, action_digest):
+                self.calls.append((approval_id, action_digest))
+                return True
+        ledger = Ledger()
+        verifier = GitHubPullRequestApprovalVerifier(
+            repository="owner/repo",
+            token="github-read-only-token",
+            trusted_reviewers=("reviewer",),
+            ledger=ledger,
+        )
+        self.assertTrue(verifier._consume_once("github-pr:20:proposal", "e" * 64))
+        self.assertEqual(ledger.calls, [("github-pr:20:proposal", "e" * 64)])
 
     def test_rejects_non_postgres_dsn(self):
         with self.assertRaises(ValueError):
