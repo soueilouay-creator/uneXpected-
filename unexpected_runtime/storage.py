@@ -169,3 +169,31 @@ class StateStore:
             cur=c.execute('UPDATE capabilities SET status=?,record_json=?,updated_at=? WHERE capability_id=? AND status=?',
                           (record['status'],json.dumps(record,ensure_ascii=False,sort_keys=True),time.time(),record['capability_id'],expected_status))
         return cur.rowcount==1
+    def list_tasks(self,limit:int=100):
+        bounded=max(1,min(int(limit),200))
+        with self._session() as c:
+            rows=c.execute('SELECT task_id,agent_id,status,payload_json,result_json,created_at,updated_at FROM tasks ORDER BY created_at DESC LIMIT ?',(bounded,)).fetchall()
+        items=[]
+        for row in rows:
+            item=dict(row)
+            payload=json.loads(item.pop('payload_json') or '{}')
+            item['objective']=payload.get('objective','')
+            item['inputs']=payload.get('inputs',{})
+            item['source_refs']=payload.get('source_refs',[])
+            item['result']=json.loads(item.pop('result_json')) if item.get('result_json') else None
+            items.append(item)
+        return items
+
+    def list_proposals(self,limit:int=100):
+        bounded=max(1,min(int(limit),200))
+        with self._session() as c:
+            rows=c.execute('SELECT proposal_id,agent_id,base_version,candidate_version,changes,protected_change,benchmark_id,status,evaluation_json,created_at,protected_fields_json,evaluation_context_json FROM proposals ORDER BY created_at DESC LIMIT ?',(bounded,)).fetchall()
+        items=[]
+        for row in rows:
+            item=dict(row)
+            item['protected_change']=bool(item['protected_change'])
+            item['evaluation']=json.loads(item.pop('evaluation_json')) if item.get('evaluation_json') else None
+            item['protected_fields']=json.loads(item.pop('protected_fields_json') or '[]')
+            item['evaluation_context']=json.loads(item.pop('evaluation_context_json') or '{}')
+            items.append(item)
+        return items
