@@ -1,6 +1,6 @@
 # Resource Intelligence and AI Quality Evaluation Implementation Plan
 
-> **For agentic workers:** Use the host's available task-by-task implementation workflow. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Use the host's available task-by-task implementation workflow. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Add a governed Awesome resource catalog and a bounded AI-output evaluation runner to uneXpected v8 without creating new roles, services, dependencies, permissions or consequential execution paths.
 
@@ -40,29 +40,29 @@
 - `ResourceRegistry.validate() -> dict`
 - CLI: `python -m unexpected_runtime.cli resources [--category CATEGORY] [--status STATUS] [--validate]`
 
-- [ ] **Step 1: Add failing registry tests**
+- [x] **Step 1: Add failing registry tests**
 
 Assert default catalog loads the permanent Awesome root source, all resource IDs and canonical URLs are unique, all candidate entries retain their source-list provenance, and child licenses are not inherited from Awesome. Add invalid fixture tests for duplicate IDs, duplicate canonical URLs, unsupported statuses, `verified` without a resource-specific license/maintenance/security evidence, and `integrated` without an integration test reference.
 
-- [ ] **Step 2: Verify the expected failure**
+- [x] **Step 2: Verify the expected failure**
 
 Run: `python -m unittest discover -s tests -p 'test_resource_intelligence.py' -v`  
 Expected: import or missing-registry behavior fails because the module/catalog do not exist; tests must not fail from syntax or fixture setup.
 
-- [ ] **Step 3: Implement the read-only registry**
+- [x] **Step 3: Implement the read-only registry**
 
 Load JSON from the package data path by default. Validate schema version, source IDs, resource IDs, absolute HTTPS/HTTP canonical URLs, source references, controlled states and adoption prerequisites. Keep unreviewed child-project license/maintenance/security fields explicitly unverified. Provide deterministic filtering and summary output. Do not implement network refresh, catalog mutations, code downloads or package installs.
 
-- [ ] **Step 4: Verify the focused pass**
+- [x] **Step 4: Verify the focused pass**
 
 Run the same focused unittest command. Expected: valid catalog passes; each malformed or premature-adoption fixture raises a precise validation error.
 
-- [ ] **Step 5: Verify CLI and structure integration**
+- [x] **Step 5: Verify CLI and structure integration**
 
 Run: `python -m unexpected_runtime.cli resources --validate`  
 Expected: JSON validation summary is valid and reports candidate counts without claiming installation. Run `python -m unittest discover -s tests -p 'test_structure.py' -v` after updating the source inventory at the end of the change set.
 
-- [ ] **Step 6: Commit the passing deliverable**
+- [x] **Step 6: Commit the passing deliverable**
 
 Commit the catalog, registry, focused tests, CLI surface and required documentation together after their focused checks pass.
 
@@ -80,29 +80,29 @@ Commit the catalog, registry, focused tests, CLI surface and required documentat
 - `QualityEvaluationRunner.run(provider_route: str | None = None, scenario_ids: list[str] | None = None) -> dict`
 - CLI: `python -m unexpected_runtime.cli quality-eval [--provider-route ROUTE] [--scenario ID ...]`
 
-- [ ] **Step 1: Add failing runner tests**
+- [x] **Step 1: Add failing runner tests**
 
 Use an actual Coordinator and test-only provider fixture. Cover one passing scenario per category, a failing case and failure classification, blocked task results, report/event persistence, secret-free reports, invalid scenario contracts, and route preflight. For mock and unverified routes assert zero tasks and zero provider calls; this is the critical fail-closed contract. Fixture mode must be explicit and report `execution_mode=fixture/offline`.
 
-- [ ] **Step 2: Verify the expected failure**
+- [x] **Step 2: Verify the expected failure**
 
 Run: `python -m unittest discover -s tests -p 'test_quality_evaluation.py' -v`  
 Expected: runner import/missing-behavior assertion fails for the specific unimplemented contract, not from malformed fixture or test command.
 
-- [ ] **Step 3: Implement the minimum evaluator**
+- [x] **Step 3: Implement the minimum evaluator**
 
 Validate a fixed versioned scenario set and unique scenario IDs. Bound cases to 8, each case deadline to at most 30 seconds, and response evidence to a digest/length rather than duplicating raw model output. Preflight a configured, verified, non-mock provider before task enqueue in live mode. Allow an explicitly enabled test fixture provider only in test construction; never expose fixture mode in the public API/CLI. Invoke each scenario via `Coordinator.invoke` with empty required permissions and a pinned route. Apply deterministic checks for `contains_all`, `contains_any`, `forbidden_any` and shallow JSON required-key validity. Classify failures as provider_unavailable_or_unverified, timeout, execution_failure, output_format_failure, instruction_following_failure, prompt_injection_failure, grounding_provenance_failure, safety_boundary_failure or regression. Mark incomplete/blocked runs distinctly; only pass if all critical checks pass and the noncritical pass rate is at least 90%. Persist summary and case evidence with non-secret event payloads.
 
-- [ ] **Step 4: Verify the focused pass**
+- [x] **Step 4: Verify the focused pass**
 
 Run the same focused unittest command. Expected: fixture report is explicitly offline, passing/failing cases are accurately classified, and a rejected route leaves task count and provider calls at zero.
 
-- [ ] **Step 5: Verify CLI integration**
+- [x] **Step 5: Verify CLI integration**
 
 Run: `python -m unexpected_runtime.cli quality-eval --provider-route mock`  
 Expected: bounded refusal/blocked result with no task creation; no output may label mock as live quality. Run focused suite again.
 
-- [ ] **Step 6: Commit the passing deliverable**
+- [x] **Step 6: Commit the passing deliverable**
 
 Commit evaluator, scenario data, tests, CLI and evaluation-contract documentation together.
 
@@ -121,28 +121,28 @@ Commit evaluator, scenario data, tests, CLI and evaluation-contract documentatio
 - Authenticated `POST /v1/quality-evaluations` accepts only `provider_route` and optional bounded `scenario_ids`; it returns a report or a blocked result. No task is created on preflight refusal.
 - The single existing `intelligence` view renders Resource Intelligence and Quality Evaluation, and refreshes from these APIs.
 
-- [ ] **Step 1: Add failing API/UI tests**
+- [x] **Step 1: Add failing API/UI tests**
 
 Assert every new route requires bearer auth; resource reads return the validated catalog; evaluation history returns reports without secret or full-output leakage; mock/unverified POST receives a blocked response with zero task rows; unknown fields and excessive scenario IDs are rejected; the existing UI includes an Intelligence view and uses both new routes.
 
-- [ ] **Step 2: Verify expected failure**
+- [x] **Step 2: Verify expected failure**
 
 Run: `python -m unittest discover -s tests -p 'test_command_center_api.py' -v`  
 Expected: the new routes/UI assertions fail because those endpoints and view do not exist yet.
 
-- [ ] **Step 3: Implement authenticated bounded API and UI**
+- [x] **Step 3: Implement authenticated bounded API and UI**
 
 Keep all route handling within the existing bearer-token handler and request limiter. Cap API limits and scenario IDs. Read evaluation report events from the existing store, parse only known event payloads, and return summary evidence. Add an Intelligence tab to the existing app; list resource name/category/status/source and show a manual evaluation action with provider selection, last run and case failures. Do not store the access token or provider credentials beyond existing tab-memory behavior.
 
-- [ ] **Step 4: Verify focused API/UI pass**
+- [x] **Step 4: Verify focused API/UI pass**
 
 Run the same API test command. Expected: auth, schema, route rejection, no-task preflight and UI wiring assertions pass.
 
-- [ ] **Step 5: Verify affected suites**
+- [x] **Step 5: Verify affected suites**
 
 Run: `python -m unittest discover -s tests -p 'test_resource_intelligence.py' -v` and `python -m unittest discover -s tests -p 'test_quality_evaluation.py' -v`. Expected: both remain green after API/UI integration.
 
-- [ ] **Step 6: Commit the passing deliverable**
+- [x] **Step 6: Commit the passing deliverable**
 
 Commit API, tests and existing command-center UI together.
 
@@ -161,29 +161,29 @@ Commit API, tests and existing command-center UI together.
 - Source inventory SHA-256 covers every tracked file except itself.
 - Documentation distinguishes fixture/harness checks from live-provider semantic evaluation and says Awesome is a permanent reference, not an installation list.
 
-- [ ] **Step 1: Add failing structure/CI contract assertions**
+- [x] **Step 1: Add failing structure/CI contract assertions**
 
 Assert catalog/scenario files are included in Docker image/package, source index and status gates are documented, no new third-party dependency is introduced, and the inventory exactly matches all tracked files with correct SHA-256.
 
-- [ ] **Step 2: Verify expected failure**
+- [x] **Step 2: Verify expected failure**
 
 Run: `python -m unittest discover -s tests -p 'test_structure.py' -v`  
 Expected: failures identify missing required catalog/scenario assets or stale inventory until the implementation is complete.
 
-- [ ] **Step 3: Update package/CI/documentation contracts**
+- [x] **Step 3: Update package/CI/documentation contracts**
 
 Add JSON validation to CI, make sure the existing Docker `COPY unexpected_runtime` includes package data, update release evaluation documentation and regenerate the source inventory over every tracked file other than the inventory itself.
 
-- [ ] **Step 4: Verify full regression**
+- [x] **Step 4: Verify full regression**
 
 Run: `python -m compileall -q unexpected_runtime && python -m unittest discover -s tests -v`  
 Expected: all tests pass except the pre-existing optional v6 fixture skip. CI must also pass PostgreSQL migration/integration, inventory check, Docker build/container smoke and CLI smoke.
 
-- [ ] **Step 5: Read back commit and CI evidence**
+- [x] **Step 5: Read back commit and CI evidence**
 
 Verify PR #11 is still open/draft/unmerged, verify exact branch head, read back all changed files, and confirm a successful GitHub Actions run for that exact head. No Render deploy is part of this plan.
 
-- [ ] **Step 6: Commit the final verified inventory and plan evidence**
+- [x] **Step 6: Commit the final verified inventory and plan evidence**
 
 Update the plan checkboxes and progress record only after evidence is captured; commit the completed plan/inventory record.
 
@@ -192,3 +192,14 @@ Update the plan checkboxes and progress record only after evidence is captured; 
 - Live model quality is only meaningful against a selected configured and verified provider/model. The first release does not select a provider automatically; the owner chooses one for a live run.
 - No automatic source refresh cadence is selected. The catalog remains a reviewed version-controlled snapshot until a host-backed scheduler is separately designed and authorized.
 - No child project is approved for installation by this implementation; future adoption requires individual license, maintenance, dependency, security, cost and integration review.
+
+
+## Completed implementation evidence — 2026-11-02
+
+- Resource Intelligence registry/catalog, CLI, authenticated read API and existing command-center view are implemented. All six initial linked candidates remain discovery-only; their licenses, maintenance and security reviews remain unverified. No linked project was installed.
+- AI Quality Evaluation runner/scenarios, CLI, authenticated API and command-center view are implemented. Live evaluation requires explicit provider route selection and a configured/verified non-mock provider before task creation. CI fixture mode is test-only and labelled fixture/offline.
+- Deterministic quality checks cover instruction format, prompt injection, grounding/source honesty, consequential-action refusal, structured JSON and false background-work claims. Reports include case/check evidence and output digests; raw output and secrets are not copied into the quality report.
+- Regression comparisons only use a prior passing report with the same scenario-set ID/revision, exact scenario IDs, provider route/identity/model, execution mode and evaluation method. Regressed cases retain the underlying failure class.
+- GitHub Actions run #467 (ID `41503472451`) completed successfully for code/inventory head `46750b3fe0498e2c08159946d110231046465b50`: **218 tests passed, 1 optional skip**. Compile, catalog/scenario JSON validation, PostgreSQL 16 migrations, SHA-256 inventory, single-process Docker build, actual-container health/auth/38-role/task smoke and CLI smoke all passed.
+- CI fixture results prove evaluator and safety contracts; they are not live semantic model-quality evidence. No live quality evaluation was initiated.
+- No database migration, new third-party dependency, additional role, paid service, external tool installation, Render deployment, service retirement or PR merge was performed. Consequential actions remain fail-closed.
