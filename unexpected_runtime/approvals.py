@@ -22,6 +22,13 @@ class ApprovalVerifier(Protocol):
         ...
 
 
+class ApprovalLedger(Protocol):
+    """Durable one-use ledger for verified approval consumption."""
+
+    def consume_once(self, approval_id: str, action_digest: str) -> bool:
+        ...
+
+
 def canonical_action_digest(action_details: Mapping[str, Any]) -> str:
     """Hash exact operation metadata without persisting its private payload values."""
     if not isinstance(action_details, Mapping):
@@ -54,7 +61,8 @@ class GitHubPullRequestApprovalVerifier:
                  base_branch: str = 'main', max_age_seconds: int = 3600,
                  ledger_path: str | Path = 'state/approval-ledger.sqlite3',
                  timeout_seconds: float = 8.0,
-                 transport: Callable[[str], Any] | None = None):
+                 transport: Callable[[str], Any] | None = None,
+                 ledger: ApprovalLedger | None = None):
         if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository or ''):
             raise ValueError('A fixed GitHub owner/repository is required.')
         reviewers = tuple(dict.fromkeys(str(x).strip().lower() for x in trusted_reviewers if str(x).strip()))
@@ -75,6 +83,7 @@ class GitHubPullRequestApprovalVerifier:
         self.ledger_path = Path(ledger_path)
         self.timeout_seconds = float(timeout_seconds)
         self.transport = transport
+        self.ledger = ledger
 
     def _get_json(self, path: str) -> Any:
         if self.transport is not None:
@@ -134,6 +143,8 @@ class GitHubPullRequestApprovalVerifier:
         return data
 
     def _consume_once(self, approval_id: str, action_digest: str) -> bool:
+        if self.ledger is not None:
+            return self.ledger.consume_once(approval_id, action_digest)
         self.ledger_path.parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(self.ledger_path, timeout=5.0, isolation_level=None) as connection:
             connection.execute('PRAGMA busy_timeout=5000')
@@ -266,6 +277,16 @@ def approval_verifier_from_env(state_dir: str | Path | None = None) -> GitHubPul
             or repository.lower() not in set(allowed_repositories)):
         return None
     try:
+        ledger_backend = os.getenv('UNEXPECTED_APPROVAL_LEDGER_BACKEND', os.getenv('UNEXPECTED_STORAGE_BACKEND', 'sqlite')).strip().lower()
+        ledger = None
+        if ledger_backend == 'postgres':
+            database_url = os.getenv('DATABASE_URL', '').strip()
+            if not database_url:
+                return None
+            from .postgres_approval_ledger import PostgresApprovalLedger
+            ledger = PostgresApprovalLedger(database_url)
+        elif ledger_backend != 'sqlite':
+            return None
         max_age = int(os.getenv('UNEXPECTED_GITHUB_APPROVAL_MAX_AGE_SECONDS', '3600'))
         timeout = float(os.getenv('UNEXPECTED_GITHUB_APPROVAL_TIMEOUT_SECONDS', '8'))
         ledger_override = os.getenv('UNEXPECTED_APPROVAL_LEDGER_PATH', '').strip()
@@ -278,6 +299,7 @@ def approval_verifier_from_env(state_dir: str | Path | None = None) -> GitHubPul
             max_age_seconds=max_age,
             timeout_seconds=timeout,
             ledger_path=ledger_path,
+            ledger=ledger,
         )
     except (TypeError, ValueError):
         return None
