@@ -80,8 +80,9 @@ def migrate(source_path: Path, database_url: str) -> dict[str, Any]:
                 imported = target.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
                 if imported != len(values):
                     raise RuntimeError(f"Row-count verification failed for table {table}.")
+                order_sql = ", ".join('"' + column + '"' for column in order)
                 target_rows = target.execute(
-                    f'SELECT {columns_sql} FROM "{table}" ORDER BY {", ".join(f"\"{column}\"" for column in order)}'
+                    f'SELECT {columns_sql} FROM "{table}" ORDER BY {order_sql}'
                 ).fetchall()
                 target_values = [tuple(row[column] if isinstance(row, dict) else row[index]
                                        for index, column in enumerate(columns)) for row in target_rows]
