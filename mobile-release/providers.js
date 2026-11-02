@@ -1,6 +1,7 @@
-export const PROVIDER_MODES = Object.freeze(['openai', 'claude', 'openrouter', 'both', 'local']);
+export const PROVIDER_MODES = Object.freeze(['unexpected', 'openai', 'claude', 'openrouter', 'both', 'local']);
 
 const LABELS = Object.freeze({
+  unexpected: 'uneXpected Workflow',
   openai: 'ChatGPT',
   anthropic: 'Claude',
   openrouter: 'OpenRouter',
@@ -46,6 +47,7 @@ export function collectProviderCards(payload) {
 
 export function modeLabel(mode) {
   return ({
+    unexpected: 'uneXpected 7-stage workflow',
     openai: 'ChatGPT',
     claude: 'Claude',
     openrouter: 'OpenRouter',
