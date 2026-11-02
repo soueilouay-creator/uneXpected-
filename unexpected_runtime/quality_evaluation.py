@@ -77,6 +77,8 @@ class QualityEvaluationRunner:
                 raise QualityEvaluationError(f"duplicate scenario id: {scenario_id}")
             ids.add(scenario_id)
             _nonempty(scenario.get("category"), f"scenario[{scenario_id}].category")
+            if scenario.get("category") not in CATEGORY_FAILURES:
+                raise QualityEvaluationError(f"scenario[{scenario_id}] has an unsupported category.")
             _nonempty(scenario.get("agent_id"), f"scenario[{scenario_id}].agent_id")
             _nonempty(scenario.get("objective"), f"scenario[{scenario_id}].objective")
             if not isinstance(scenario.get("inputs", {}), dict):
@@ -301,6 +303,8 @@ class QualityEvaluationRunner:
                 if result.status != "completed" or not output or len(output) > MAX_OUTPUT_CHARS:
                     case["status"] = "failed"
                     case["failure_class"] = self._failure_class(scenario["category"], result.status, output)
+                    checks = {check["id"]: False for check in scenario["checks"]}
+                    case["check_results"] = checks
                 else:
                     checks = {
                         check["id"]: self._evaluate_check(check, output)
@@ -310,16 +314,16 @@ class QualityEvaluationRunner:
                     case["status"] = "passed" if all(checks.values()) else "failed"
                     if case["status"] == "failed":
                         case["failure_class"] = self._failure_class(scenario["category"], result.status, output)
-                    for check_id, passed in checks.items():
-                        total_checks += 1
+                for check_id, passed in checks.items():
+                    total_checks += 1
+                    if passed:
+                        passed_checks += 1
+                    if scenario["critical"]:
+                        critical_checks[check_id] = passed
+                    else:
+                        noncritical_total += 1
                         if passed:
-                            passed_checks += 1
-                        if scenario["critical"]:
-                            critical_checks[check_id] = passed
-                        else:
-                            noncritical_total += 1
-                            if passed:
-                                noncritical_passed += 1
+                            noncritical_passed += 1
             except Exception as exc:
                 case["status"] = "blocked"
                 case["failure_class"] = "execution_failure"
