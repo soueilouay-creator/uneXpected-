@@ -254,6 +254,18 @@ class AdvancedSkillBundleTests(unittest.TestCase):
                     registry.validate_requested("maintenance-engineer", requested)
 
 
+    def test_manifest_rejects_non_list_scope_fields(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            entry = self._write_skill(
+                root, "invalid-scope", "# Invalid scope\\n",
+                invocation_mode="user_invocable",
+            )
+            entry["agent_ids"] = "maintenance-engineer"
+            with self.assertRaises(SkillRegistryError):
+                SkillRegistry.load(self._manifest(root, [entry]), root)
+
+
     def test_approval_action_digest_binds_selected_skill_ids(self):
         base = {
             "agent_id": "maintenance-engineer",
