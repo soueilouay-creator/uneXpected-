@@ -5,7 +5,7 @@ from typing import Any
 import json, os, time, uuid, hashlib, math
 from .models import TaskRequest, AgentMessage, TaskResult, CancellationToken, ApprovalContext, PermissionDenied, CycleLimitError, BudgetExceeded, UnknownAgent
 from .registry import AgentRegistry
-from .providers import provider_from_env
+from .providers import provider_router_from_env
 from .permissions import PermissionPolicy
 from .approvals import ApprovalVerifier, approval_verifier_from_env
 from .storage import StateStore
@@ -19,7 +19,7 @@ class Coordinator:
         root=Path(state_dir or os.getenv('UNEXPECTED_STATE_DIR',Path(__file__).resolve().parent.parent/'state'))
         root.mkdir(parents=True,exist_ok=True)
         self.store=StateStore(root/'uneXpected.sqlite3')
-        self.provider=provider or provider_from_env()
+        self.provider=provider or provider_router_from_env()
         self.skills=SkillRegistry.load(skill_manifest_path)
         self.approval_verifier = approval_verifier if approval_verifier is not None else approval_verifier_from_env(state_dir=root)
         self.permissions=PermissionPolicy(self.approval_verifier); self.max_workers=workers; self.max_retries=retries
@@ -56,8 +56,11 @@ class Coordinator:
     def shared_knowledge_action_details(knowledge_id:str):
         return {'action':'shared_knowledge.approve','knowledge_id':knowledge_id,'required_permissions':['approve_knowledge']}
     def invoke(self, agent_id:str, objective:str, inputs:dict[str,Any]|None=None, *, required_permissions=(), deadline_seconds=30.0,
-               max_steps=6,idempotency_key=None,source_refs=(),token:CancellationToken|None=None,approval:ApprovalContext|None=None):
+               max_steps=6,idempotency_key=None,source_refs=(),provider_route:str|None=None,token:CancellationToken|None=None,approval:ApprovalContext|None=None):
         spec=self.registry.get(agent_id)
+        if provider_route is not None:
+            if not hasattr(self.provider,'resolve'): raise ValueError('This provider does not support per-task routing.')
+            self.provider.resolve(provider_route)
         if max_steps<1 or max_steps>12: raise BudgetExceeded('max_steps must be between 1 and 12.')
         if not math.isfinite(float(deadline_seconds)) or deadline_seconds<=0 or deadline_seconds>600: raise ValueError('deadline_seconds must be >0 and <=600.')
         action_details=self.invoke_action_details(agent_id,objective,inputs,required_permissions=required_permissions,
@@ -65,12 +68,12 @@ class Coordinator:
         if len(set(required_permissions)) > 1:
             raise PermissionDenied('A single action may request only one privileged permission scope; split and approve separate actions.')
         for scope in required_permissions: self.permissions.authorize(spec,scope,approval,action_details=action_details)
-        request_hash=hashlib.sha256(json.dumps({'agent_id':agent_id,'objective':objective,'inputs':inputs or {},'required_permissions':list(required_permissions),'source_refs':list(source_refs)},sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+        request_hash=hashlib.sha256(json.dumps({'agent_id':agent_id,'objective':objective,'inputs':inputs or {},'required_permissions':list(required_permissions),'source_refs':list(source_refs),'provider_route':provider_route},sort_keys=True,ensure_ascii=False).encode()).hexdigest()
         if idempotency_key:
             cached=self.store.get_idempotent(idempotency_key,request_hash)
             if cached:
                 r=TaskResult.from_dict(cached); r.idempotent_replay=True; self.store.log_event('idempotency_replay',r.task_id,agent_id,{'key_hash':hashlib.sha256(idempotency_key.encode()).hexdigest()[:12]}); return r
-        req=TaskRequest.create(agent_id,objective,inputs=inputs or {},required_permissions=tuple(required_permissions),deadline_seconds=deadline_seconds,max_steps=max_steps,idempotency_key=idempotency_key,source_refs=tuple(source_refs))
+        req=TaskRequest.create(agent_id,objective,inputs=inputs or {},required_permissions=tuple(required_permissions),deadline_seconds=deadline_seconds,max_steps=max_steps,idempotency_key=idempotency_key,source_refs=tuple(source_refs),provider_route=provider_route)
         self.store.enqueue(req); result=self._execute_with_deadline(req,token or CancellationToken())
         if idempotency_key and result.status=='completed': self.store.set_idempotent(idempotency_key,request_hash,result.to_dict())
         return result
@@ -119,11 +122,18 @@ class Coordinator:
             payload['verified_skill']={'id':skill_spec.id,'version':skill_spec.version,
                                        'source_ref':skill_spec.source_ref,'sha256':skill_spec.sha256}
         attempts=0; output=''; error=None; status='failed'
+        try:
+            provider=self.provider.resolve(req.provider_route) if hasattr(self.provider,'resolve') else self.provider
+        except Exception as exc:
+            result=TaskResult(req.task_id,spec.id,'failed',error=f'Provider route unavailable ({type(exc).__name__}).',started_at=start,finished_at=time.time())
+            self.store.mark_task(req.task_id,'failed',result.to_dict())
+            self.store.log_event('provider_route_rejected',req.task_id,spec.id,{'route':req.provider_route})
+            return result
         for attempt in range(self.max_retries+1):
             attempts=attempt+1
             if token.cancelled: status='cancelled'; error='Cancelled before provider attempt.'; break
             try:
-                pf=self.provider_pool.submit(self.provider.generate,system_prompt=system,user_prompt=json.dumps(payload,ensure_ascii=False),agent_id=spec.id,task_id=req.task_id,timeout=max(0.1,req.deadline_seconds-(time.time()-start)))
+                pf=self.provider_pool.submit(provider.generate,system_prompt=system,user_prompt=json.dumps(payload,ensure_ascii=False),agent_id=spec.id,task_id=req.task_id,timeout=max(0.1,req.deadline_seconds-(time.time()-start)))
                 output=pf.result(timeout=max(0.1,req.deadline_seconds-(time.time()-start)))
                 if token.cancelled: status='cancelled'; error='Cancelled while provider call was in flight; result discarded.'
                 else: status='completed'
@@ -133,9 +143,13 @@ class Coordinator:
             except Exception as e:
                 error=f'{type(e).__name__}: provider invocation failed'
                 self.store.log_event('provider_error',req.task_id,spec.id,{'attempt':attempts,'error_type':type(e).__name__})
-                if attempt<self.max_retries and bool(getattr(self.provider, 'retry_safe', False)) and not token.cancelled:
+                if attempt<self.max_retries and bool(getattr(provider, 'retry_safe', False)) and not token.cancelled:
                     self.store.log_event('provider_retry',req.task_id,spec.id,{'attempt':attempts}); continue
                 break
+        if status=='completed' and hasattr(self.provider,'mark_success'):
+            self.provider.mark_success(req.provider_route)
+        elif status=='completed' and hasattr(provider,'verified') and getattr(provider,'name','')!='deterministic-mock':
+            provider.verified=True
         result=TaskResult(req.task_id,spec.id,status,output=output,provenance=tuple(req.source_refs),attempts=attempts,error=error,started_at=start,finished_at=time.time())
         persisted = self.store.mark_task(req.task_id,status,result.to_dict())
         if not persisted:
@@ -218,7 +232,8 @@ class Coordinator:
         self.store.log_event('task_graph_completed',payload={'completed_nodes':len(results),'total_nodes':len(nodes)})
         return out
     def run_lifecycle(self, agent_id:str, objective:str, inputs:dict[str,Any]|None=None, *,
-                      max_corrections:int=1, max_improvements:int=3, deadline_seconds:float=60.0):
+                      max_corrections:int=1, max_improvements:int=3, deadline_seconds:float=60.0,
+                      provider_route:str|None=None):
         """Run Request -> Plan -> Execute -> Verify -> Improve & Deliver -> Learn.
 
         The planner, worker, and independent reviewer are real registered roles.
@@ -244,7 +259,7 @@ class Coordinator:
         def invoke_stage(stage:str, role_id:str, stage_objective:str, payload:dict[str,Any]) -> tuple[str, str]:
             result = self.invoke(role_id, stage_objective, payload,
                                  deadline_seconds=deadline_seconds, max_steps=6,
-                                 source_refs=(f"workflow-stage:{stage}",))
+                                 source_refs=(f"workflow-stage:{stage}",), provider_route=provider_route)
             stage_task_ids.append(result.task_id)
             self.store.log_event("workflow_stage_result", result.task_id, role_id,
                                  {"stage": stage, "status": result.status})
