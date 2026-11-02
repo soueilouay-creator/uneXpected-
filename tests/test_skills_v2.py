@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from unexpected_runtime.coordinator import Coordinator
+from unexpected_runtime.providers import DeterministicMockProvider
 from unexpected_runtime.skills import SkillRegistry, SkillRegistryError
 
 
@@ -130,7 +132,7 @@ class AdvancedSkillBundleTests(unittest.TestCase):
             root = Path(temp)
             entry = self._write_skill(
                 root, "bundle-skill", "# Main\n",
-                resources=[("reference", "../../outside.md", "# Outside\n")],
+                resources=[("reference", "../../../outside.md", "# Outside\n")],
             )
             manifest = self._manifest(root, [entry])
             with self.assertRaises(SkillRegistryError):
@@ -163,6 +165,77 @@ class AdvancedSkillBundleTests(unittest.TestCase):
             registry = SkillRegistry.load(manifest, root)
             self.assertEqual(registry.resolve_all("maintenance-engineer", "uptime")[0].invocation_mode,
                              "automatic")
+
+    def test_coordinator_attaches_explicit_skill_and_persists_selection(self):
+        with tempfile.TemporaryDirectory() as temp:
+            temp_root = Path(temp)
+            package_root = temp_root / "package"
+            package_root.mkdir()
+            entry = self._write_skill(
+                package_root, "manual-skill", "# Approved maintenance workflow\\n",
+                invocation_mode="user_invocable",
+            )
+            manifest = self._manifest(package_root, [entry])
+            provider = DeterministicMockProvider()
+            coordinator = Coordinator(
+                manifest_path=Path(__file__).resolve().parents[1] / "agent_manifest.json",
+                state_dir=temp_root / "state",
+                provider=provider,
+                skill_manifest_path=manifest,
+                skill_package_root=package_root,
+                max_retries=0,
+            )
+            try:
+                result = coordinator.invoke(
+                    "maintenance-engineer",
+                    "Review the maintenance checklist",
+                    requested_skill_ids=("manual-skill",),
+                    idempotency_key="manual-skill-selection",
+                )
+                self.assertEqual(result.status, "completed")
+                self.assertIn("Approved maintenance workflow", provider.requests[-1]["system_prompt"])
+                provider_payload = json.loads(provider.requests[-1]["user_prompt"])
+                self.assertEqual(provider_payload["verified_skills"][0]["id"], "manual-skill")
+                task = coordinator.store.get_task(result.task_id)
+                persisted = json.loads(task["payload_json"])
+                self.assertEqual(persisted["requested_skill_ids"], ["manual-skill"])
+            finally:
+                coordinator.close()
+
+    def test_idempotency_digest_binds_explicit_skill_selection(self):
+        with tempfile.TemporaryDirectory() as temp:
+            temp_root = Path(temp)
+            package_root = temp_root / "package"
+            package_root.mkdir()
+            first = self._write_skill(
+                package_root, "manual-one", "# One\\n", invocation_mode="user_invocable"
+            )
+            second = self._write_skill(
+                package_root, "manual-two", "# Two\\n", invocation_mode="user_invocable"
+            )
+            coordinator = Coordinator(
+                manifest_path=Path(__file__).resolve().parents[1] / "agent_manifest.json",
+                state_dir=temp_root / "state",
+                provider=DeterministicMockProvider(),
+                skill_manifest_path=self._manifest(package_root, [first, second]),
+                skill_package_root=package_root,
+                max_retries=0,
+            )
+            try:
+                first_result = coordinator.invoke(
+                    "maintenance-engineer", "Review checklist",
+                    requested_skill_ids=("manual-one",),
+                    idempotency_key="same-skill-selection-key",
+                )
+                self.assertEqual(first_result.status, "completed")
+                with self.assertRaises(ValueError):
+                    coordinator.invoke(
+                        "maintenance-engineer", "Review checklist",
+                        requested_skill_ids=("manual-two",),
+                        idempotency_key="same-skill-selection-key",
+                    )
+            finally:
+                coordinator.close()
 
 
 if __name__ == "__main__":
