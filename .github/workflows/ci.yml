@@ -74,6 +74,50 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Build single-process Docker image
         run: docker build --pull -t unexpected-v8-command-center:ci .
+      - name: Boot container and smoke-test the actual image
+        run: |
+          set -euo pipefail
+          docker run -d --name unexpected-v8-smoke -p 10000:10000 \
+            -e UNEXPECTED_STORAGE_BACKEND=sqlite \
+            -e UNEXPECTED_STATE_DIR=/tmp/uneXpected-smoke \
+            -e UNEXPECTED_DEFAULT_PROVIDER=mock \
+            -e UNEXPECTED_RUNTIME_API_TOKEN=ci-container-token-0123456789abcdef0123456789abcdef \
+            unexpected-v8-command-center:ci
+          cleanup() { docker logs unexpected-v8-smoke || true; docker rm -f unexpected-v8-smoke >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          python - <<'PY'
+          import json, time, urllib.error, urllib.request
+          base = "http://127.0.0.1:10000"
+          token = "ci-container-token-0123456789abcdef0123456789abcdef"
+          for attempt in range(30):
+              try:
+                  with urllib.request.urlopen(base + "/health", timeout=2) as response:
+                      health = json.loads(response.read())
+                  break
+              except Exception:
+                  if attempt == 29:
+                      raise
+                  time.sleep(1)
+          assert health["ok"] is True, health
+          with urllib.request.urlopen(base + "/", timeout=5) as response:
+              assert b"uneXpected" in response.read()
+          try:
+              urllib.request.urlopen(base + "/v1/status", timeout=5)
+              raise AssertionError("Protected status endpoint unexpectedly allowed anonymous access.")
+          except urllib.error.HTTPError as error:
+              assert error.code == 401
+          headers = {"Authorization": "Bearer " + token, "Content-Type": "application/json"}
+          request = urllib.request.Request(base + "/v1/agents", headers=headers)
+          with urllib.request.urlopen(request, timeout=5) as response:
+              agents = json.loads(response.read())
+          assert agents["count"] == 38, agents.get("count")
+          payload = json.dumps({"agent_id":"orchestrator","objective":"Container image smoke test"}).encode()
+          request = urllib.request.Request(base + "/v1/invoke", data=payload, headers=headers, method="POST")
+          with urllib.request.urlopen(request, timeout=20) as response:
+              result = json.loads(response.read())["result"]
+          assert result["status"] == "completed", result
+          print("Container smoke passed: health, UI, auth, 38 agents and task invocation.")
+          PY
       - name: CLI smoke tests
         run: |
           python -m unexpected_runtime.cli status
