@@ -95,6 +95,7 @@
           "id": "verification-limit-stated",
           "type": "contains_any",
           "values": [
+            "cannot be verified",
             "cannot verify",
             "can't verify",
             "not able to verify",
