@@ -1,7 +1,7 @@
 from __future__ import annotations
 import http.client, json, tempfile, threading, unittest
 from unittest.mock import patch
-from unexpected_runtime.providers import AIStudioGatewayProvider, OpenAICompatibleProvider, ProviderError, provider_from_env, _NoRedirect
+from unexpected_runtime.providers import (AIStudioGatewayProvider, DeterministicMockProvider, OpenAICompatibleProvider, ProviderError, provider_from_env, reviewer_provider_from_env, _NoRedirect)
 from unexpected_runtime.http_api import create_server
 from unexpected_runtime.coordinator import Coordinator
 
@@ -16,11 +16,16 @@ class Opener:
 
 class ProviderTests(unittest.TestCase):
     def test_live_gateway_response_and_bearer_auth(self):
-        opener=Opener({"ok":True,"results":{"openai":{"status":"LIVE · verified response","text":"real answer","model":"gpt-4.1"}}})
+        opener=Opener({"ok":True,"results":{"openai":{"status":"LIVE · verified response","label":"OpenAI","text":"real answer","model":"gpt-4.1"}}})
         p=AIStudioGatewayProvider("https://unexpected-ai-studio.onrender.com/orchestrate","g"*48,mode="openai")
         with patch("unexpected_runtime.providers.urllib.request.build_opener",return_value=opener):
             out=p.generate(system_prompt="S",user_prompt="U",agent_id="orchestrator",task_id="t",timeout=12)
-        self.assertIn("real answer",out); self.assertEqual(opener.request.get_header("Authorization"),"Bearer "+"g"*48)
+        self.assertEqual(out, "real answer")
+        self.assertEqual(out.provider_metadata, {
+            "provider": "openai", "label": "OpenAI", "model": "gpt-4.1",
+            "status": "LIVE · verified response",
+        })
+        self.assertEqual(opener.request.get_header("Authorization"),"Bearer "+"g"*48)
     def test_dual_mode_prefers_live_synthesis(self):
         p=AIStudioGatewayProvider("https://gateway.example/orchestrate","g"*48,mode="both")
         op=Opener({"ok":True,"results":{"synthesis":{"status":"LIVE · verified response","text":"combined"}}})
@@ -71,6 +76,30 @@ class ProviderTests(unittest.TestCase):
         self.assertTrue(any(isinstance(item, _NoRedirect) for item in build.call_args.args))
         self.assertEqual(opener.request.get_header("Authorization"), "Bearer " + "k" * 48)
 
+    def test_gateway_reviewer_factory_accepts_non_gateway_primary(self):
+        env = {
+            "UNEXPECTED_REVIEW_PROVIDER": "ai_studio_gateway",
+            "UNEXPECTED_REVIEW_GATEWAY_URL": "https://review.example/orchestrate",
+            "UNEXPECTED_REVIEW_GATEWAY_TOKEN": "r" * 48,
+            "UNEXPECTED_REVIEW_GATEWAY_MODE": "claude",
+        }
+        with patch.dict("os.environ", env, clear=True):
+            reviewer = reviewer_provider_from_env(DeterministicMockProvider())
+        self.assertIsInstance(reviewer, AIStudioGatewayProvider)
+        self.assertEqual(reviewer.mode, "claude")
+
+    def test_gateway_reviewer_rejects_both_mode_on_same_endpoint(self):
+        env = {
+            "UNEXPECTED_REVIEW_PROVIDER": "ai_studio_gateway",
+            "UNEXPECTED_REVIEW_GATEWAY_URL": "https://gateway.example/orchestrate",
+            "UNEXPECTED_REVIEW_GATEWAY_TOKEN": "r" * 48,
+            "UNEXPECTED_REVIEW_GATEWAY_MODE": "both",
+        }
+        primary = AIStudioGatewayProvider(env["UNEXPECTED_REVIEW_GATEWAY_URL"], "p" * 48, mode="openai")
+        with patch.dict("os.environ", env, clear=True):
+            with self.assertRaisesRegex(ProviderError, "different live model provider"):
+                reviewer_provider_from_env(primary)
+
     def test_factory_uses_gateway_config(self):
         env={"UNEXPECTED_PROVIDER":"ai_studio_gateway","UNEXPECTED_GATEWAY_URL":"https://gateway.example","UNEXPECTED_GATEWAY_TOKEN":"g"*48}
         with patch.dict("os.environ",env,clear=True):
@@ -97,7 +126,11 @@ class APITests(unittest.TestCase):
         self.assertEqual(code,200); self.assertNotIn("api_token",data); self.assertNotIn("state_db",data)
     def test_auth_and_status(self):
         self.assertEqual(self.request("GET","/v1/status",token="")[0],401)
-        self.assertEqual(self.request("GET","/v1/status")[0],200)
+        code, status = self.request("GET","/v1/status")
+        self.assertEqual(code,200)
+        self.assertEqual(status["evidence_checkers"], ["artifact"])
+        self.assertEqual(status["test_backend"], "not configured")
+        self.assertEqual(status["source_backend"], "not configured")
 
     def test_non_ascii_bearer_header_is_rejected_without_server_error(self):
         conn=http.client.HTTPConnection(self.host,self.port,timeout=8)

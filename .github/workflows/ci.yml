@@ -17,8 +17,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install pinned runtime dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
       - name: Compile runtime
-        run: python -m compileall -q unexpected_runtime
+        run: python -m compileall -q unexpected_runtime tests
       - name: Build package integrity fixture
         run: |
           python - <<'PY'
@@ -41,6 +43,26 @@ jobs:
           echo "UNEXPECTED_PACKAGE_ZIP=$RUNNER_TEMP/uneXpected_v7.3.1_governed_runtime.zip" >> "$GITHUB_ENV"
       - name: Run regression suite
         run: python -m unittest discover -s tests -v
+      - name: Prepare immutable Docker test image
+        run: |
+          docker pull --platform linux/amd64 python:3.12-slim-bookworm
+          image_ref="$(docker image inspect --format='{{index .RepoDigests 0}}' python:3.12-slim-bookworm)"
+          case "$image_ref" in
+            *@sha256:*) ;;
+            *) echo "Docker did not return an immutable image digest"; exit 1 ;;
+          esac
+          echo "UNEXPECTED_TEST_DOCKER_IMAGE=$image_ref" >> "$GITHUB_ENV"
+      - name: Run real-source and isolated-sandbox lifecycle
+        env:
+          UNEXPECTED_RUN_LIVE_EVIDENCE_INTEGRATION: "1"
+          UNEXPECTED_TEST_EXECUTOR: docker
+          UNEXPECTED_TEST_WORKSPACE_ROOT: ${{ github.workspace }}
+          UNEXPECTED_TEST_TIMEOUT_SECONDS: "180"
+          UNEXPECTED_SOURCE_ALLOWED_DOMAINS: docs.python.org
+          UNEXPECTED_SOURCE_TIMEOUT_SECONDS: "10"
+          UNEXPECTED_SOURCE_MAX_BYTES: "524288"
+          UNEXPECTED_SOURCE_MAX_COUNT: "1"
+        run: python -m unittest tests.test_evidence_live_lifecycle -v
       - name: CLI smoke tests
         run: |
           python -m unexpected_runtime.cli status

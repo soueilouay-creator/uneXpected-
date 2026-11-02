@@ -15,7 +15,7 @@ Set in the Python service secret manager:
 
 Use openai or claude for a single primary provider. both makes two parallel primary requests and a synthesis request, so it can cost more. The AI Studio gateway may try its configured OpenRouter fallback if paid providers fail. It must label fallback output; the Python adapter rejects MOCK or failed responses as real provider output.
 
-The adapter requires HTTPS, rejects embedded URL credentials/query/fragment, does not follow redirects with its bearer token, caps prompts at 15,000 UTF-16 code units and responses at 1 MB, and bounds request timeouts. Provider POST failures are not retried by default because an upstream request may have been accepted before a timeout; retries require an explicitly retry-safe provider contract.
+The adapter requires HTTPS, rejects embedded URL credentials/query/fragment, does not follow redirects with its bearer token, caps prompts at 15,000 UTF-16 code units and responses at 1 MB, and bounds request timeouts. It returns the model's text unchanged and records live provider, label, model and status separately in `provider_metadata`; lifecycle prompts therefore remain valid JSON/verdict text. Provider POST failures are not retried by default because an upstream request may have been accepted before a timeout; retries require an explicitly retry-safe provider contract.
 
 ## Runtime HTTP API
 
@@ -45,6 +45,6 @@ Create a separate Python service from soueilouay-creator/uneXpected-, branch int
 3. Generate a different random value for UNEXPECTED_RUNTIME_API_TOKEN.
 4. Set the provider mode and gateway URL, then restart the Python service.
 5. Confirm /health reports provider_configured=true and /v1/status reports version 7.3.1 and 38 agents.
-6. Send a low-cost POST /v1/invoke or /v1/lifecycle using a harmless test objective, with Authorization: Bearer and the API token. Require a completed result and an explicitly LIVE model/provider label. /health alone never proves a live provider call.
+6. Send a low-cost POST /v1/invoke or /v1/lifecycle using a harmless test objective, with Authorization: Bearer and the API token. Require a completed result and inspect the separate `provider_metadata` object for a LIVE status, provider and model. `/health` alone never proves a live provider call.
 
 Never put either bearer token in chat, Git, PR comments, screenshots or workflow logs.

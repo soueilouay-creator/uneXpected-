@@ -4,6 +4,17 @@ from urllib.parse import urlsplit
 from typing import Protocol
 
 class ProviderError(RuntimeError): pass
+
+
+class ProviderText(str):
+    """Plain model text with separate, non-prompt provider metadata."""
+
+    def __new__(cls, value: str, provider_metadata: dict[str, str]):
+        instance = super().__new__(cls, value)
+        instance.provider_metadata = dict(provider_metadata)
+        return instance
+
+
 class Provider(Protocol):
     name: str
     def generate(self, *, system_prompt: str, user_prompt: str, agent_id: str, task_id: str, timeout: float) -> str: ...
@@ -53,6 +64,7 @@ class AIStudioGatewayProvider:
     name = "unexpected-ai-studio-gateway"
     configured = False
     MODES = {"openai","claude","both"}
+    MAX_TASK_CODE_UNITS = 15000
     def __init__(self, endpoint: str, token: str, *, mode: str = "openai", default_timeout: float = 200.0):
         p = urlsplit(str(endpoint or "").strip())
         if p.scheme != "https" or not p.hostname or p.username or p.password or p.query or p.fragment:
@@ -66,10 +78,20 @@ class AIStudioGatewayProvider:
         self.default_timeout = float(default_timeout)
         if self.default_timeout <= 0: raise ProviderError("Gateway timeout must be positive.")
         self.configured = bool(self._token)
+    @staticmethod
+    def _task_prefix(system_prompt: str, agent_id: str, task_id: str) -> str:
+        return f"uneXpected runtime agent: {agent_id}; task: {task_id}\n\nSYSTEM:\n{system_prompt}\n\nTASK AND CONTEXT:\n"
+
+    def user_prompt_budget(self, *, system_prompt: str, agent_id: str, task_id: str) -> int:
+        """Return the exact remaining user-prompt budget under the gateway limit."""
+        prefix = self._task_prefix(system_prompt, agent_id, task_id)
+        return max(0, self.MAX_TASK_CODE_UNITS - (len(prefix.encode("utf-16-le")) // 2))
+
     def generate(self, *, system_prompt: str, user_prompt: str, agent_id: str, task_id: str, timeout: float) -> str:
         if not self._token: raise ProviderError("AI Studio gateway token is not configured in the runtime host.")
-        task = f"uneXpected runtime agent: {agent_id}; task: {task_id}\n\nSYSTEM:\n{system_prompt}\n\nTASK AND CONTEXT:\n{user_prompt}"
-        if len(task.encode("utf-16-le")) // 2 > 15000: raise ProviderError("Gateway task exceeds the 15,000 UTF-16-code-unit limit.")
+        task = self._task_prefix(system_prompt, agent_id, task_id) + user_prompt
+        if len(task.encode("utf-16-le")) // 2 > self.MAX_TASK_CODE_UNITS:
+            raise ProviderError("Gateway task exceeds the 15,000 UTF-16-code-unit limit.")
         req = urllib.request.Request(self.endpoint, data=json.dumps({"task":task,"mode":self.mode},ensure_ascii=False).encode(),
             headers={"Content-Type":"application/json","Accept":"application/json","Authorization":"Bearer "+self._token},method="POST")
         try:
@@ -88,8 +110,57 @@ class AIStudioGatewayProvider:
             status = str(item.get("status", "")).strip().upper() if isinstance(item, dict) else ""
             is_live = status.startswith("LIVE") and not any(marker in status for marker in ("MOCK", "FALLBACK", "DELIVERED", "NOT LIVE"))
             if isinstance(item,dict) and isinstance(item.get("text"),str) and item["text"].strip() and is_live:
-                return f"[Live AI result: {item.get('label') or key}; model={item.get('model') or 'provider model'}]\n{item['text'].strip()}"
+                return ProviderText(
+                    item["text"].strip(),
+                    {
+                        "provider": key,
+                        "label": str(item.get("label") or key),
+                        "model": str(item.get("model") or "provider model"),
+                        "status": str(item.get("status") or status),
+                    },
+                )
         raise ProviderError("Gateway returned no live provider response; simulated or failed output was rejected.")
+
+def reviewer_provider_from_env(primary_provider):
+    """Build a reviewer on a distinct model route; never silently reuse the worker provider."""
+    requested = os.getenv("UNEXPECTED_REVIEW_PROVIDER", "").strip().lower()
+    if not requested:
+        return None
+    if requested in ("ai_studio_gateway", "unexpected_gateway", "unexpected-ai-studio"):
+        endpoint = os.getenv("UNEXPECTED_REVIEW_GATEWAY_URL", os.getenv(
+            "UNEXPECTED_GATEWAY_URL", "https://unexpected-ai-studio.onrender.com/orchestrate"))
+        token = os.getenv("UNEXPECTED_REVIEW_GATEWAY_TOKEN") or os.getenv("UNEXPECTED_GATEWAY_TOKEN", "")
+        mode = os.getenv("UNEXPECTED_REVIEW_GATEWAY_MODE", "claude").strip().lower()
+        reviewer = AIStudioGatewayProvider(
+            endpoint, token, mode=mode,
+            default_timeout=float(os.getenv("UNEXPECTED_REVIEW_GATEWAY_TIMEOUT_SECONDS", "200")),
+        )
+        if not reviewer.configured:
+            raise ProviderError("Independent reviewer gateway token is not configured in the runtime host.")
+        same_gateway = (
+            isinstance(primary_provider, AIStudioGatewayProvider)
+            and primary_provider.endpoint == reviewer.endpoint
+        )
+        if same_gateway and (
+            "both" in (primary_provider.mode, reviewer.mode)
+            or primary_provider.mode == reviewer.mode
+        ):
+            raise ProviderError("Reviewer route must use a different live model provider than the primary route.")
+        reviewer.independence_label = f"{reviewer.name}/{reviewer.mode}"
+        return reviewer
+    if requested in ("openai_compatible", "openai-compatible"):
+        reviewer = OpenAICompatibleProvider(
+            os.getenv("UNEXPECTED_REVIEW_BASE_URL", ""),
+            os.getenv("UNEXPECTED_REVIEW_MODEL", ""),
+            os.getenv("UNEXPECTED_REVIEW_API_KEY", ""),
+            float(os.getenv("UNEXPECTED_REVIEW_TIMEOUT_SECONDS", "60")),
+        )
+        if isinstance(primary_provider, OpenAICompatibleProvider) and primary_provider.base_url == reviewer.base_url and primary_provider.model == reviewer.model:
+            raise ProviderError("Reviewer route must not use the primary provider endpoint and model.")
+        reviewer.independence_label = f"{reviewer.name}/{reviewer.model}"
+        return reviewer
+    raise ProviderError("UNEXPECTED_REVIEW_PROVIDER must be ai_studio_gateway or openai_compatible.")
+
 
 def provider_from_env():
     mode=os.getenv("UNEXPECTED_PROVIDER","mock").strip().lower()
