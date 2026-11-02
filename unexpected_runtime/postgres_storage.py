@@ -356,7 +356,7 @@ class PostgresStateStore(PostgresIdempotencyMixin):
 
     def ensure_base_version(self, agent_id: str, version: str, instruction: str):
         with self._session() as connection:
-            connection.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (agent_id,))
+            connection.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (agent_id,))
             row = connection.execute(
                 "SELECT version FROM agent_versions WHERE agent_id=%s AND active=1 FOR UPDATE",
                 (agent_id,),
