@@ -25,6 +25,7 @@ class TaskRequest:
     idempotency_key: str | None = None
     source_refs: tuple[str, ...] = ()
     provider_route: str | None = None
+    requested_skill_ids: tuple[str, ...] = ()
     created_at: float = field(default_factory=time.time)
 
     @classmethod

@@ -113,6 +113,7 @@ class PostgresStateStore(PostgresIdempotencyMixin):
             "deadline_seconds": request.deadline_seconds, "max_steps": request.max_steps,
             "idempotency_key": request.idempotency_key, "source_refs": list(request.source_refs),
             "provider_route": getattr(request, "provider_route", None),
+            "requested_skill_ids": list(getattr(request, "requested_skill_ids", ())),
             "created_at": request.created_at,
         }
         now = time.time()
@@ -476,6 +477,7 @@ class PostgresStateStore(PostgresIdempotencyMixin):
             item["inputs"] = payload.get("inputs", {})
             item["source_refs"] = payload.get("source_refs", [])
             item["provider_route"] = payload.get("provider_route")
+            item["requested_skill_ids"] = payload.get("requested_skill_ids", [])
             item["result"] = json.loads(item.pop("result_json")) if item.get("result_json") else None
             items.append(item)
         return items
