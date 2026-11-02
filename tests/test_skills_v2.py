@@ -121,6 +121,7 @@ class AdvancedSkillBundleTests(unittest.TestCase):
             root = Path(temp)
             entry = self._write_skill(
                 root, "bundle-skill", "# Main\n",
+                invocation_mode="user_invocable",
                 resources=[("reference", "references/ref.md", "# Original\n")],
             )
             registry = SkillRegistry.load(self._manifest(root, [entry]), root)
@@ -339,7 +340,7 @@ class SkillAPITests(unittest.TestCase):
             max_retries=0,
         )
         self.token = "skills-api-test-token-" + "x" * 32
-        self.server = create_server(self.coordinator, self.token, host="127.0.0.1", port=0)
+        self.server = create_server(coordinator=self.coordinator, api_token=self.token, host="127.0.0.1", port=0)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         self.host, self.port = self.server.server_address
