@@ -9,7 +9,7 @@ Task 2: complete_for_mock_route; live_model_credentials_pending
 - Per-task route selection remains immutable across concurrent requests and full lifecycle stages.
 - Bounded live provider-test endpoint and provider provenance audit events implemented.
 - Provider route, concurrent routing, coordinator, lifecycle and HTTP tests pass.
-- Production service still uses deterministic mock. OpenOx connection requires the owner to add OPENOX_API_KEY privately in Render; no key is present or live-tested.
+- Render v8 is configured with OPENOX_BASE_URL=https://api.openoxai.com/v1, OPENOX_MODEL=gpt-6-astra and UNEXPECTED_DEFAULT_PROVIDER=openox. Live /health reports provider=openox and provider_configured=true; no credential value was read or logged. The authenticated OpenOx Test connection has not yet been run, so the route remains unverified and full lifecycle is still gated.
 
 Task 3: adapter_and_manual_branch_recovery_verified; scheduled_backup_pending
 - PostgreSQL StateStore adapter, PostgreSQL idempotency mixin, and PostgreSQL one-use approval ledger implemented.
