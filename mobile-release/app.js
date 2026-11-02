@@ -1231,7 +1231,7 @@ async function boot() {
   $('#todayLabel').textContent = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).format(new Date());
   syncSidebarForViewport();
   bindEvents();
-  setSelectedModel('openai');
+  setSelectedModel('unexpected');
   updateProfileChip();
   if (window.speechSynthesis) window.speechSynthesis.onvoiceschanged = renderVoiceChoices;
   renderVoiceChoices();
