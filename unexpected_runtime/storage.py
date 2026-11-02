@@ -28,6 +28,8 @@ class StateStore:
             CREATE TABLE IF NOT EXISTS agent_memory(agent_id TEXT NOT NULL, key TEXT NOT NULL, value_json TEXT NOT NULL, updated_at REAL NOT NULL, PRIMARY KEY(agent_id,key));
             CREATE TABLE IF NOT EXISTS shared_knowledge(knowledge_id TEXT PRIMARY KEY, source TEXT NOT NULL, content TEXT NOT NULL, trust_status TEXT NOT NULL, reviewed_by TEXT, created_at REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS idempotency(idempotency_key TEXT PRIMARY KEY, request_hash TEXT NOT NULL, result_json TEXT NOT NULL, created_at REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS idempotency_claims(idempotency_key TEXT PRIMARY KEY, request_hash TEXT NOT NULL, task_id TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('running','completed','failed')), result_json TEXT, created_at REAL NOT NULL, updated_at REAL NOT NULL);
+            CREATE INDEX IF NOT EXISTS idx_idempotency_claims_state_updated ON idempotency_claims(state,updated_at);
             CREATE TABLE IF NOT EXISTS outcomes(outcome_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, task_id TEXT, success INTEGER NOT NULL, feedback TEXT NOT NULL, provenance_json TEXT NOT NULL, created_at REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS proposals(proposal_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, base_version TEXT NOT NULL, candidate_version TEXT NOT NULL, candidate_instruction TEXT NOT NULL, changes TEXT NOT NULL, protected_change INTEGER NOT NULL, benchmark_id TEXT NOT NULL, status TEXT NOT NULL, evaluation_json TEXT, created_at REAL NOT NULL, protected_fields_json TEXT NOT NULL DEFAULT '[]', evaluation_context_json TEXT NOT NULL DEFAULT '{}');
             CREATE TABLE IF NOT EXISTS agent_versions(agent_id TEXT NOT NULL, version TEXT NOT NULL, instruction TEXT NOT NULL, change_log TEXT NOT NULL, active INTEGER NOT NULL, created_at REAL NOT NULL, PRIMARY KEY(agent_id,version));
@@ -50,7 +52,7 @@ class StateStore:
         with self._session() as c: rows=c.execute('SELECT * FROM events ORDER BY event_id DESC LIMIT ?',(max(1,min(limit,1000)),)).fetchall()
         return [dict(r) for r in rows]
     def enqueue(self,request):
-        payload={'task_id':request.task_id,'agent_id':request.agent_id,'objective':request.objective,'inputs':request.inputs,'required_permissions':list(request.required_permissions),'deadline_seconds':request.deadline_seconds,'max_steps':request.max_steps,'idempotency_key':request.idempotency_key,'source_refs':list(request.source_refs),'created_at':request.created_at}
+        payload={'task_id':request.task_id,'agent_id':request.agent_id,'objective':request.objective,'inputs':request.inputs,'required_permissions':list(request.required_permissions),'deadline_seconds':request.deadline_seconds,'max_steps':request.max_steps,'idempotency_key':request.idempotency_key,'source_refs':list(request.source_refs),'provider_route':request.provider_route,'created_at':request.created_at}
         now=time.time()
         with self._session() as c: c.execute('INSERT INTO tasks(task_id,agent_id,status,payload_json,created_at,updated_at) VALUES(?,?,?,?,?,?)',(request.task_id,request.agent_id,'queued',json.dumps(payload,ensure_ascii=False),now,now))
         self.log_event('task_queued',request.task_id,request.agent_id,{'objective':request.objective[:160]})
@@ -62,6 +64,11 @@ class StateStore:
             cur=c.execute("UPDATE tasks SET status=?,result_json=?,updated_at=? WHERE task_id=? AND status NOT IN ('completed','failed','cancelled','timeout')",
                           (status,json.dumps(result,ensure_ascii=False) if result is not None else None,time.time(),task_id))
         return cur.rowcount == 1
+    def mark_task_timeout(self,task_id:str,result:dict[str,Any])->bool:
+        with self._session() as c:
+            cur=c.execute("UPDATE tasks SET status='timeout',result_json=?,updated_at=? WHERE task_id=? AND status!='completed'",
+                          (json.dumps(result,ensure_ascii=False),time.time(),task_id))
+        return cur.rowcount==1
     def claim_next(self):
         with self._session() as c:
             c.execute('BEGIN IMMEDIATE')
@@ -83,6 +90,30 @@ class StateStore:
         return json.loads(row['result_json'])
     def set_idempotent(self,key:str,request_hash:str,result:dict[str,Any]):
         with self._session() as c: c.execute('INSERT OR IGNORE INTO idempotency(idempotency_key,request_hash,result_json,created_at) VALUES(?,?,?,?)',(key,request_hash,json.dumps(result,ensure_ascii=False),time.time()))
+    def claim_idempotency(self,key:str,request_hash:str,task_id:str,lease_seconds:float=660.0):
+        now=time.time()
+        with self._session() as c:
+            cur=c.execute("INSERT OR IGNORE INTO idempotency_claims(idempotency_key,request_hash,task_id,state,result_json,created_at,updated_at) VALUES(?,?,?,'running',NULL,?,?)",(key,request_hash,task_id,now,now))
+            if cur.rowcount==1: return {'state':'claimed','task_id':task_id}
+            row=c.execute('SELECT request_hash,task_id,state,result_json,updated_at FROM idempotency_claims WHERE idempotency_key=?',(key,)).fetchone()
+            if not row: raise RuntimeError('Idempotency claim disappeared during acquisition.')
+            if row['request_hash']!=request_hash: raise ValueError('Idempotency key reused with a different request payload.')
+            if row['state']=='running' and now-float(row['updated_at'])>lease_seconds:
+                c.execute("UPDATE idempotency_claims SET task_id=?,state='running',result_json=NULL,updated_at=? WHERE idempotency_key=? AND state='running' AND updated_at=?",(task_id,now,key,row['updated_at']))
+                check=c.execute('SELECT task_id,state,result_json FROM idempotency_claims WHERE idempotency_key=?',(key,)).fetchone()
+                if check['task_id']==task_id: return {'state':'claimed','task_id':task_id}
+                return {'state':'running','task_id':check['task_id']}
+            return {'state':row['state'],'task_id':row['task_id'],'result':json.loads(row['result_json']) if row['result_json'] else None}
+
+    def complete_idempotency(self,key:str,task_id:str,result:dict[str,Any])->bool:
+        with self._session() as c:
+            cur=c.execute("UPDATE idempotency_claims SET state='completed',result_json=?,updated_at=? WHERE idempotency_key=? AND task_id=? AND state='running'",(json.dumps(result,ensure_ascii=False),time.time(),key,task_id))
+        return cur.rowcount==1
+
+    def fail_idempotency(self,key:str,task_id:str,result:dict[str,Any])->bool:
+        with self._session() as c:
+            cur=c.execute("UPDATE idempotency_claims SET state='failed',result_json=?,updated_at=? WHERE idempotency_key=? AND task_id=? AND state='running'",(json.dumps(result,ensure_ascii=False),time.time(),key,task_id))
+        return cur.rowcount==1
     def add_knowledge(self,source:str,content:str):
         kid=str(uuid.uuid4())
         with self._session() as c: c.execute('INSERT INTO shared_knowledge(knowledge_id,source,content,trust_status,created_at) VALUES(?,?,?,?,?)',(kid,source,content,'pending',time.time()))
@@ -169,3 +200,32 @@ class StateStore:
             cur=c.execute('UPDATE capabilities SET status=?,record_json=?,updated_at=? WHERE capability_id=? AND status=?',
                           (record['status'],json.dumps(record,ensure_ascii=False,sort_keys=True),time.time(),record['capability_id'],expected_status))
         return cur.rowcount==1
+    def list_tasks(self,limit:int=100):
+        bounded=max(1,min(int(limit),200))
+        with self._session() as c:
+            rows=c.execute('SELECT task_id,agent_id,status,payload_json,result_json,created_at,updated_at FROM tasks ORDER BY created_at DESC LIMIT ?',(bounded,)).fetchall()
+        items=[]
+        for row in rows:
+            item=dict(row)
+            payload=json.loads(item.pop('payload_json') or '{}')
+            item['objective']=payload.get('objective','')
+            item['inputs']=payload.get('inputs',{})
+            item['source_refs']=payload.get('source_refs',[])
+            item['provider_route']=payload.get('provider_route')
+            item['result']=json.loads(item.pop('result_json')) if item.get('result_json') else None
+            items.append(item)
+        return items
+
+    def list_proposals(self,limit:int=100):
+        bounded=max(1,min(int(limit),200))
+        with self._session() as c:
+            rows=c.execute('SELECT proposal_id,agent_id,base_version,candidate_version,changes,protected_change,benchmark_id,status,evaluation_json,created_at,protected_fields_json,evaluation_context_json FROM proposals ORDER BY created_at DESC LIMIT ?',(bounded,)).fetchall()
+        items=[]
+        for row in rows:
+            item=dict(row)
+            item['protected_change']=bool(item['protected_change'])
+            item['evaluation']=json.loads(item.pop('evaluation_json')) if item.get('evaluation_json') else None
+            item['protected_fields']=json.loads(item.pop('protected_fields_json') or '[]')
+            item['evaluation_context']=json.loads(item.pop('evaluation_context_json') or '{}')
+            items.append(item)
+        return items

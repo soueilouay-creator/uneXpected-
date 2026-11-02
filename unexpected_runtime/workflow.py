@@ -18,6 +18,7 @@ class WorkflowResult:
     verification_history: list[dict[str, Any]] = field(default_factory=list)
     error: str | None = None
     learning_error: str | None = None
+    workflow_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -25,7 +26,7 @@ class WorkflowResult:
             'plan': self.plan, 'execution': self.execution, 'verified_output': self.verified_output,
             'delivery': self.delivery, 'corrections': self.corrections,
             'improvements': self.improvements, 'verification_history': list(self.verification_history), 'error': self.error,
-            'learning_error': self.learning_error,
+            'learning_error': self.learning_error, 'workflow_id': self.workflow_id,
         }
 
 
@@ -46,10 +47,10 @@ class WorkflowRunner:
         self.max_corrections = max_corrections
         self.max_improvements = max_improvements
 
-    def run(self, request: dict[str, Any]) -> WorkflowResult:
+    def run(self, request: dict[str, Any], *, workflow_id: str | None = None) -> WorkflowResult:
         if not isinstance(request, dict):
             raise TypeError('request must be a dictionary.')
-        result = WorkflowResult(status='running', delivered=False, request=dict(request))
+        result = WorkflowResult(status='running', delivered=False, request=dict(request), workflow_id=workflow_id)
         feedback = None
         try:
             while True:
@@ -122,4 +123,6 @@ class WorkflowRunner:
                 self.learn_stage(record)
             except Exception as exc:
                 result.learning_error = f'{type(exc).__name__}: learning stage failed'
+                result.status = 'blocked_learning'
+                result.delivered = False
         return result
