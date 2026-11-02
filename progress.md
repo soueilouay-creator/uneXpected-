@@ -11,14 +11,13 @@ Task 2: completed
 - Provider route, concurrent routing, coordinator, lifecycle and HTTP tests pass.
 - Real provider credentials have not been migrated or tested on the preview service.
 
-Task 3: in_progress
+Task 3: completed_in_CI; hosted_recovery_pending
 - PostgreSQL StateStore adapter, PostgreSQL idempotency mixin, and PostgreSQL one-use approval ledger implemented.
-- SQLite and mocked-Postgres contract tests cover concurrent claim/consume, replay, digest mismatch, failure and schema gating.
-- Neon project tiny-glade-03545028 was inspected read-only on its parent branch (schema v1; runtime tables empty except schema_migrations).
-- Isolated Neon branch v8-migration-test (br-young-resonance-b9unjqzy) created. Migration 002 was applied and verified there.
-- SQL-level tests confirmed one idempotency claim winner, one approval consumption winner, and duplicate/altered-digest attempts do not overwrite the original record. Test rows were cleaned.
-- Parent branch remains at schema v1. No production schema was changed.
-- Remaining: exercise the Python psycopg adapter from a hosted preview, verify backup/export and restore, and inspect real runtime persistence.
+- Fresh-database migration 001 and additive migration 002 applied to a real ephemeral PostgreSQL 16 service in CI.
+- GitHub Actions run 41442114119 passed **184 tests, 1 optional skip**; actual psycopg integration tests covered tasks, events, memory, knowledge, outcomes, baselines, versions, proposals, capabilities, atomic idempotency claims/replay and one-use approvals.
+- The isolated Neon branch v8-migration-test (br-young-resonance-b9unjqzy) also has migration 002 applied and verified with database-level duplicate/replay tests.
+- Original Neon parent branch remains at schema version 1; no production schema was changed.
+- Remaining: hosted preview connection, data export/restore, approval-consumption recovery and restore rehearsal.
 
 Task 4: in_progress
 - Task submission, task detail, task/event history, provider status/selection/testing, capabilities, governance visibility, and improvement proposal controls are connected to the same Coordinator/API.
@@ -27,11 +26,11 @@ Task 4: in_progress
 
 Task 5: in_progress
 - Single-process Python Dockerfile and one free Render preview Blueprint added.
-- GitHub Actions run 41441245951 passed: 179 tests, 1 optional skip; Docker image build and CLI smoke tests passed.
+- GitHub Actions run 41442114119 passed: 184 tests, 1 optional skip; Docker image build and CLI smoke tests passed.
 - Draft PR #11 is open from feat/unified-v8-foundation to main.
 - A hosted preview was not created. The cross-connector transfer of the Neon connection string/API token into Render was blocked by safety checks; no secret was exposed and no Render service was changed.
 - Existing Render services (AI Studio, v7.3.1 runtime test, and earlier v8 unified test) remain untouched.
-- Remaining: configure the Blueprint directly in Render using its generated API token and the Neon test-branch connection string, deploy, authenticate, test the Python Postgres adapter and rehearse rollback.
+- Remaining: configure the Blueprint or repurpose the existing v8 test service directly in Render, deploy, authenticate, test the hosted adapter and rehearse rollback.
 
 Execution boundary:
 - Work remains on feat/unified-v8-foundation; PR #11 remains a draft and is not merged.
