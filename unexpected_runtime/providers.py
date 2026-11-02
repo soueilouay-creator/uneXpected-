@@ -55,8 +55,11 @@ class AIStudioGatewayProvider:
     MODES = {"openai","claude","both"}
     def __init__(self, endpoint: str, token: str, *, mode: str = "openai", default_timeout: float = 200.0):
         p = urlsplit(str(endpoint or "").strip())
-        if p.scheme != "https" or not p.hostname or p.username or p.password or p.query or p.fragment:
-            raise ProviderError("AI Studio gateway URL must be HTTPS without embedded credentials, query or fragment.")
+        loopback_hosts = {"127.0.0.1", "localhost", "::1"}
+        internal_http = p.scheme == "http" and p.hostname in loopback_hosts
+        if ((p.scheme != "https" and not internal_http) or not p.hostname
+                or p.username or p.password or p.query or p.fragment):
+            raise ProviderError("AI Studio gateway URL must use HTTPS, except HTTP on loopback, without embedded credentials, query or fragment.")
         path = p.path.rstrip("/") or "/orchestrate"
         if path == "/": path = "/orchestrate"
         self.endpoint = p._replace(path=path).geturl()

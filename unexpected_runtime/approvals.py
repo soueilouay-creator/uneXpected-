@@ -53,6 +53,7 @@ class GitHubPullRequestApprovalVerifier:
                  trusted_reviewers: tuple[str, ...] | list[str],
                  base_branch: str = 'main', max_age_seconds: int = 3600,
                  ledger_path: str | Path = 'state/approval-ledger.sqlite3',
+                 ledger_database_url: str | None = None,
                  timeout_seconds: float = 8.0,
                  transport: Callable[[str], Any] | None = None):
         if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository or ''):
@@ -73,6 +74,7 @@ class GitHubPullRequestApprovalVerifier:
         self.base_branch = base_branch
         self.max_age_seconds = max_age_seconds
         self.ledger_path = Path(ledger_path)
+        self.ledger_database_url = str(ledger_database_url or '').strip()
         self.timeout_seconds = float(timeout_seconds)
         self.transport = transport
 
@@ -134,6 +136,25 @@ class GitHubPullRequestApprovalVerifier:
         return data
 
     def _consume_once(self, approval_id: str, action_digest: str) -> bool:
+        if self.ledger_database_url:
+            try:
+                import psycopg
+            except ImportError as exc:
+                raise RuntimeError('PostgreSQL approval replay storage requires psycopg.') from exc
+            # INSERT ... ON CONFLICT is atomic across application instances.
+            with psycopg.connect(self.ledger_database_url, connect_timeout=8) as connection:
+                connection.execute('''CREATE TABLE IF NOT EXISTS consumed_approvals (
+                    approval_id TEXT PRIMARY KEY,
+                    action_digest TEXT NOT NULL,
+                    consumed_at DOUBLE PRECISION NOT NULL
+                )''')
+                cursor = connection.execute(
+                    'INSERT INTO consumed_approvals(approval_id, action_digest, consumed_at) '
+                    'VALUES (%s, %s, %s) ON CONFLICT(approval_id) DO NOTHING RETURNING approval_id',
+                    (approval_id, action_digest, time.time()),
+                )
+                return cursor.fetchone() is not None
+
         self.ledger_path.parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(self.ledger_path, timeout=5.0, isolation_level=None) as connection:
             connection.execute('PRAGMA busy_timeout=5000')
@@ -270,6 +291,7 @@ def approval_verifier_from_env(state_dir: str | Path | None = None) -> GitHubPul
         timeout = float(os.getenv('UNEXPECTED_GITHUB_APPROVAL_TIMEOUT_SECONDS', '8'))
         ledger_override = os.getenv('UNEXPECTED_APPROVAL_LEDGER_PATH', '').strip()
         ledger_path = ledger_override or str(Path(state_dir or 'state') / 'approval-ledger.sqlite3')
+        ledger_database_url = os.getenv('UNEXPECTED_DATABASE_URL', '').strip() or None
         return GitHubPullRequestApprovalVerifier(
             repository=repository,
             token=token,
@@ -278,6 +300,7 @@ def approval_verifier_from_env(state_dir: str | Path | None = None) -> GitHubPul
             max_age_seconds=max_age,
             timeout_seconds=timeout,
             ledger_path=ledger_path,
+            ledger_database_url=ledger_database_url,
         )
     except (TypeError, ValueError):
         return None

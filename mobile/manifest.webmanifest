@@ -1,0 +1,13 @@
+{
+  "id": "/mobile/",
+  "name": "uneXpected Phone",
+  "short_name": "uneXpected",
+  "description": "Your personal uneXpected assistant with voice, memory, projects and safe improvement planning.",
+  "start_url": "/mobile/",
+  "scope": "/mobile/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b1019",
+  "theme_color": "#101522",
+  "icons": [{ "src": "/mobile/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

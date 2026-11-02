@@ -1,0 +1,82 @@
+name: uneXpected Phone Integration
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server.js'
+      - 'Dockerfile'
+      - 'mobile-release/**'
+      - 'mobile-assets.mjs'
+      - 'mobile-assets.parts/**'
+      - 'source.tar.gz.b64'
+      - 'test/mobile*.test.mjs'
+      - 'test/openrouter-ui.test.mjs'
+      - 'test/orchestrator.test.mjs'
+      - 'test/provider-fetch-stub.mjs'
+      - 'test/phone-workspace-ui.test.mjs'
+      - 'test/mobile-provider-results.test.mjs'
+      - 'openrouter-ui.js'
+      - 'README.md'
+      - 'render.yaml'
+      - '.github/workflows/mobile-integration.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'server.js'
+      - 'Dockerfile'
+      - 'mobile-release/**'
+      - 'mobile-assets.mjs'
+      - 'mobile-assets.parts/**'
+      - 'source.tar.gz.b64'
+      - 'test/mobile*.test.mjs'
+      - 'test/orchestrator.test.mjs'
+      - 'test/provider-fetch-stub.mjs'
+      - 'test/phone-workspace-ui.test.mjs'
+      - 'test/mobile-provider-results.test.mjs'
+      - '.github/workflows/mobile-integration.yml'
+jobs:
+  mobile-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Restore the original static site and mobile app assets
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/ue-source /tmp/ue-extracted
+          base64 -d source.tar.gz.b64 > /tmp/ue-source/source.tar.gz
+          tar -xzf /tmp/ue-source/source.tar.gz -C /tmp/ue-extracted
+          cp -R /tmp/ue-extracted/uneXpected-ai-studio-v1.0.1/public ./public
+          cp app.js public/app.js
+          cat mobile-assets.parts/part-*.b64 > /tmp/mobile-assets.tar.gz.b64
+          printf '%s  %s\n' 'd9316477b654ea04bc842a2f7ae158b2fffe3eab85f057d7bc3aa7a749f9f55e' /tmp/mobile-assets.tar.gz.b64 | sha256sum -c -
+          base64 -d /tmp/mobile-assets.tar.gz.b64 | tar -xz -C .
+          rm -f /tmp/mobile-assets.tar.gz.b64
+          mkdir -p mobile
+          cp -R mobile-release/. mobile/
+          mkdir -p public
+          rm -rf public/mobile
+          cp -R mobile public/mobile
+          test -f public/index.html
+          test -f public/mobile/index.html
+      - name: Syntax checks
+        run: |
+          node --check server.js
+          node --check app.js
+          node --check openrouter-ui.js
+          node --check test/openrouter-ui.test.mjs
+          node --check test/orchestrator.test.mjs
+          node --check test/provider-fetch-stub.mjs
+          node --check mobile-assets.mjs
+          node --check mobile-release/app.js
+          node --check mobile-release/providers.js
+          node --check runtime-supervisor.mjs
+          node --check test/unified-api-proxy.test.mjs
+          node --check test/mobile-provider-results.test.mjs test/unified-runtime-supervisor.test.mjs test/unified-api-proxy.test.mjs
+          node --check test/phone-workspace-ui.test.mjs
+      - name: Mobile and authenticated gateway HTTP tests
+        run: node --test test/mobile-assets.test.mjs test/mobile-pwa.test.mjs test/mobile-route-smoke.test.mjs test/openrouter-ui.test.mjs test/orchestrator.test.mjs test/phone-workspace-ui.test.mjs test/mobile-provider-results.test.mjs
+      - name: Build the production Docker image
+        run: docker build --tag unexpected-ai-studio:openrouter-test .

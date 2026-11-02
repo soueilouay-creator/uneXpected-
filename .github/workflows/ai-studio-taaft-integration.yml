@@ -1,0 +1,33 @@
+name: TAAFT integration checks
+
+on:
+  push:
+    branches:
+      - feature/taaft-readonly-mcp
+    paths:
+      - 'server.js'
+      - 'taaft-integration.mjs'
+      - 'test/taaft-integration.test.mjs'
+      - '.github/workflows/taaft-integration.yml'
+  pull_request:
+    paths:
+      - 'server.js'
+      - 'taaft-integration.mjs'
+      - 'test/taaft-integration.test.mjs'
+      - '.github/workflows/taaft-integration.yml'
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check JavaScript syntax
+        run: |
+          node --check server.js
+          node --check taaft-integration.mjs
+          node --check test/taaft-integration.test.mjs
+      - name: Run TAAFT integration tests
+        run: node --test test/taaft-integration.test.mjs
