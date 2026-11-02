@@ -81,6 +81,7 @@ class SevenStageWorkflowProofTests(unittest.TestCase):
             payload = json.loads(event.get("payload_json") or "{}")
             if payload.get("workflow_id") == workflow_id:
                 decoded.append((event["event_type"], payload))
+        decoded.reverse()  # storage event APIs return newest-first; assert lifecycle order
 
         stage_results = [
             payload for event_type, payload in decoded
