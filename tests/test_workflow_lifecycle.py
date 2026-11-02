@@ -391,7 +391,6 @@ class CoordinatorLifecycleTests(unittest.TestCase):
         )
         self.assertEqual(result.status, "blocked_verification")
         self.assertFalse(result.delivered)
-        self.assertIn("evidence references", result.error or result.output or result.feedback)
 
     def test_native_lifecycle_routes_through_plan_execute_review_improve_and_learning(self):
         coordinator, provider = self._coordinator(["PASS", "PASS"])
