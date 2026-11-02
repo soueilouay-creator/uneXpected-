@@ -32,7 +32,11 @@
     $("task-agent").innerHTML=state.agents.map(a=>'<option value="'+esc(a.id)+'">'+esc(a.name)+" · "+esc(a.id)+'</option>').join("");
   }
   function renderProviders(items) {
-    $("provider-grid").innerHTML=items.length?items.map(p=>'<article><h4>'+esc(p.name)+'</h4><p>'+esc(p.model||"Model not disclosed")+'</p>'+readiness("Credential",p.configured?"Configured":"Not configured",p.configured)+readiness("Live verification",p.verified?"Verified":"Not verified",p.verified)+'</article>').join(""):'<div class="empty">No provider adapters are available.</div>';
+    const selector=$("task-provider");
+    const previous=selector.value;
+    selector.innerHTML='<option value="">Default configured route</option>'+items.map(p=>'<option value="'+esc(p.id)+'" '+(!p.configured?'disabled':'')+'>'+esc(p.id)+(p.default?' · default':'')+'</option>').join("");
+    if(items.some(p=>p.id===previous&&p.configured))selector.value=previous;
+    $("provider-grid").innerHTML=items.length?items.map(p=>'<article><h4>'+esc(p.name)+'</h4><p>'+esc(p.model||"Model not disclosed")+'</p>'+readiness("Credential",p.configured?"Configured":"Not configured",p.configured)+readiness("Live verification",p.verified?"Verified":"Not verified",p.verified)+(p.live&&p.configured?'<button class="button secondary provider-test" data-test-provider="'+esc(p.id)+'" type="button">Test connection</button>':'<small>Mock mode · not a live provider</small>')+'</article>').join(""):'<div class="empty">No provider adapters are available.</div>';
   }
   async function refresh() {
     $("refresh").disabled=true;
@@ -85,11 +89,23 @@
   }
   document.querySelectorAll("[data-view]").forEach(link=>link.addEventListener("click",e=>{e.preventDefault();const name=link.dataset.view;showView(name);history.replaceState(null,"","#"+name);}));
   $("refresh").addEventListener("click",refresh);
+  $("provider-grid").addEventListener("click",async e=>{
+    const button=e.target.closest("[data-test-provider]");
+    if(!button)return;
+    button.disabled=true;button.textContent="Testing…";
+    try {
+      const result=await api("/v1/providers/test",{method:"POST",body:JSON.stringify({provider_route:button.dataset.testProvider})});
+      toast(result.provider+" verified in "+result.latency_ms+" ms");
+      await refresh();
+    } catch(error) { toast(error.message); }
+    finally { button.disabled=false;button.textContent="Test connection"; }
+  });
   $("agent-search").addEventListener("input",e=>{const q=e.target.value.toLowerCase();document.querySelectorAll("#agent-grid article").forEach(card=>card.hidden=!card.textContent.toLowerCase().includes(q));});
   $("auth-form").addEventListener("submit",async e=>{e.preventDefault();state.token=$("auth-token").value.trim();$("auth-error").textContent="";await refresh();if(state.status)$("auth-overlay").classList.add("hidden");});
   $("task-form").addEventListener("submit",async e=>{
     e.preventDefault();const button=$("task-submit");button.disabled=true;$("task-result").textContent="Submitting task to the governed coordinator…";
     const payload={agent_id:$("task-agent").value,objective:$("task-objective").value.trim()};
+    if($("task-provider").value)payload.provider_route=$("task-provider").value;
     try {
       const route=$("task-mode").value==="lifecycle"?"/v1/lifecycle":"/v1/invoke";
       const response=await api(route,{method:"POST",body:JSON.stringify(payload)});
