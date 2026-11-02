@@ -98,3 +98,13 @@ test('phone chat exposes and uses the unified seven-stage runtime route', async 
   assert.match(app, /workflow\.delivered === true/);
   assert.match(providers, /unexpected: 'uneXpected Workflow'/);
 });
+
+
+test('phone settings report unified runtime status instead of treating gateway reachability as full readiness', async () => {
+  const app = await read('mobile/app.js');
+  assert.match(app, /data\.runtime \|\| \{\}/);
+  assert.match(app, /runtime\.storage === 'postgresql'/);
+  assert.match(app, /registeredAgents/);
+  assert.match(app, /deterministic mock/);
+  assert.match(app, /\/v1\/status/);
+});
