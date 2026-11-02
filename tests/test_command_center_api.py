@@ -207,7 +207,7 @@ class CommandCenterAPITests(unittest.TestCase):
         self.assertEqual(status, 409, body)
         self.assertIn("requires a configured live AI provider", body.get("error", ""))
 
-        tasks_status, tasks = self.request("/v1/tasks", token=self.token)
+        tasks_status, tasks = self.request("GET", "/v1/tasks", token=self.token)
         self.assertEqual(tasks_status, 200)
         self.assertEqual(tasks.get("count"), 0)
 
@@ -224,7 +224,7 @@ class CommandCenterAPITests(unittest.TestCase):
             '<option value="lifecycle" disabled>Full verified lifecycle (requires a live AI provider)</option>',
             html,
         )
-        self.assertIn("lifecycleOption.disabled = !hasConfiguredLiveProvider;", js)
+        self.assertIn("lifecycleOption.disabled=!hasConfiguredLiveProvider;", js)
         self.assertIn("body?.result?.status", js)
 
 
