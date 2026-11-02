@@ -131,6 +131,7 @@ class DockerTestExecutorTests(unittest.TestCase):
             executor = DockerTestExecutor(root, image_digest=image)
             result = executor("candidate", {"profile": "evidence-engine"}, {})
         self.assertTrue(result["passed"])
+        self.assertEqual(result["actual"]["scope"], "repository_profile")
         self.assertEqual(result["actual"]["tests_run"], 1)
         argv = run.call_args_list[0].args[0]
         self.assertIn("--network=none", argv)
@@ -227,6 +228,7 @@ class RenderSandboxTestExecutorTests(unittest.TestCase):
         result = executor("candidate", {"profile": "evidence-engine"}, {})
 
         self.assertTrue(result["passed"])
+        self.assertEqual(result["actual"]["scope"], "repository_profile")
         self.assertEqual(result["actual"]["sandbox_id"], "sbx-test-123")
         create = next(call for call in sandbox_api.calls if call[0] == "create")
         self.assertEqual(create[1]["network_policy"], "deny-all")
@@ -282,6 +284,7 @@ class TestExecutorFactoryTests(unittest.TestCase):
             def __init__(self):
                 self.actual = {
                     "profile": "evidence-engine",
+                    "scope": "repository_profile",
                     "executor": "docker",
                     "test_profile_manifest": manifest,
                     "test_profile_manifest_sha256": manifest_digest,
@@ -311,6 +314,13 @@ class TestExecutorFactoryTests(unittest.TestCase):
         self.assertTrue(result["passed"])
         self.assertEqual(result["actual"]["test_profile_manifest"], manifest)
         self.assertEqual(result["actual"]["test_profile_manifest_sha256"], manifest_digest)
+        self.assertIn("does not represent execution of the candidate deliverable", result["details"])
+
+        # A provider cannot relabel the fixed test profile as candidate execution.
+        executor.actual["scope"] = "candidate_execution"
+        wrong_scope_result = checker("candidate", criterion, {"source_refs": []})
+        self.assertFalse(wrong_scope_result["passed"])
+        executor.actual["scope"] = "repository_profile"
 
         executor.actual["test_profile_manifest"]["unexpected_runtime/evidence.py"] = "0" * 64
         tampered = checker("candidate", criterion, {"source_refs": []})
