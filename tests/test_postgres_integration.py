@@ -204,6 +204,108 @@ class PostgresRuntimeIntegrationTests(unittest.TestCase):
                 thread.join(timeout=5)
                 coordinator.close()
 
+    def test_postgres_full_seven_stage_lifecycle_persists_all_stage_outcomes(self):
+        from unexpected_runtime.providers import DeterministicMockProvider, ProviderRouter
+
+        class VerifiedLifecycleProvider:
+            name = "openrouter"
+            model = "ci-verified-lifecycle-model"
+            configured = True
+            verified = True
+            retry_safe = False
+
+            def __init__(self):
+                self.calls = []
+
+            def generate(self, *, system_prompt, user_prompt, agent_id, task_id, timeout):
+                self.calls.append({"agent_id": agent_id, "task_id": task_id})
+                payload = json.loads(user_prompt)
+                if agent_id == "project-manager":
+                    return "Plan: prepare the bounded report, review it, refine it and return it."
+                if agent_id == "code-reviewer":
+                    return "VERDICT: PASS\\nThe candidate meets the stated scope and acceptance criteria."
+                if "review_feedback" in payload:
+                    return "Improved report: requested scope is covered, assumptions are explicit, and the conclusion is clear."
+                return "Initial report: requested scope and conclusion are addressed."
+
+        with tempfile.TemporaryDirectory() as state_dir, patch.dict(os.environ, {
+            "UNEXPECTED_STORAGE_BACKEND": "postgres",
+            "DATABASE_URL": DSN,
+            "UNEXPECTED_STATE_DIR": state_dir,
+            "UNEXPECTED_APPROVAL_LEDGER_BACKEND": "sqlite",
+        }):
+            live = VerifiedLifecycleProvider()
+            mock = DeterministicMockProvider()
+            router = ProviderRouter(
+                {"mock": mock, "openrouter": live},
+                default_route="openrouter",
+            )
+            coordinator = Coordinator(state_dir=state_dir, provider=router, max_workers=3, max_retries=0)
+            try:
+                result = coordinator.run_lifecycle(
+                    "research-scout",
+                    "Prepare a bounded report with scope, assumptions, and a clear conclusion.",
+                    {"scope": self.prefix, "source": "ephemeral-postgres-ci"},
+                    max_corrections=0,
+                    max_improvements=1,
+                    deadline_seconds=10,
+                )
+                self.assertEqual(result.status, "delivered", result.to_dict())
+                self.assertTrue(result.delivered)
+                self.assertTrue(result.workflow_id)
+                self.assertEqual(mock.calls, 0)
+                self.assertEqual(len(live.calls), 5)
+
+                task_rows = coordinator.store.list_tasks(200)
+                workflow_tasks = [
+                    row for row in task_rows
+                    if "workflow:" + result.workflow_id in row.get("source_refs", [])
+                ]
+                self.assertEqual(len(workflow_tasks), 5)
+                workflow_task_ids = {row["task_id"] for row in workflow_tasks}
+                self.assertEqual({row["provider_route"] for row in workflow_tasks}, {"openrouter"})
+
+                events = coordinator.store.events(500)
+                workflow_events = []
+                provider_events = []
+                for event in events:
+                    payload = json.loads(event.get("payload_json") or "{}")
+                    if payload.get("workflow_id") == result.workflow_id:
+                        workflow_events.append((event["event_type"], payload))
+                    if event["event_type"] == "provider_used" and event.get("task_id") in workflow_task_ids:
+                        provider_events.append(payload)
+
+                workflow_events.reverse()
+                stage_outcomes = [
+                    payload for event_type, payload in workflow_events
+                    if event_type == "workflow_stage_outcome"
+                ]
+                self.assertEqual(
+                    [item["stage"] for item in stage_outcomes],
+                    ["request", "plan", "execute", "verify", "improve", "verify", "deliver", "learn"],
+                )
+                self.assertEqual(
+                    [item["status"] for item in stage_outcomes],
+                    ["accepted", "completed", "completed", "passed", "completed", "passed", "delivered", "recorded"],
+                )
+                self.assertEqual(len(provider_events), 5)
+                self.assertEqual({item["route"] for item in provider_events}, {"openrouter"})
+                self.assertTrue(all(item["mock"] is False for item in provider_events))
+
+                learned = [
+                    payload for event_type, payload in workflow_events
+                    if event_type == "workflow_cycle_learned"
+                ]
+                self.assertEqual(len(learned), 1)
+                self.assertEqual(learned[0]["stage_count"], 7)
+                self.assertEqual(learned[0]["stages_completed"], [
+                    "request", "plan", "execute", "verify", "improve", "deliver", "learn"
+                ])
+                self.assertTrue(learned[0]["delivered"])
+                self.assertTrue(coordinator.store.check_health())
+            finally:
+                coordinator.close()
+
     def test_postgres_approval_ledger_consumes_one_use_approval_atomically(self):
         ledger = PostgresApprovalLedger(DSN)
         approval_id = self.prefix + "-approval"
