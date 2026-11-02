@@ -8,7 +8,7 @@ from .registry import AgentRegistry
 from .providers import provider_from_env
 from .permissions import PermissionPolicy
 from .approvals import ApprovalVerifier, approval_verifier_from_env
-from .storage import StateStore
+from .storage import StateStore, PostgresStateStore
 from .skills import SkillRegistry, SkillRegistryError
 
 class Coordinator:
@@ -18,7 +18,8 @@ class Coordinator:
         retries=max(0,min(int(max_retries if max_retries is not None else os.getenv('UNEXPECTED_MAX_RETRIES','1')),2))
         root=Path(state_dir or os.getenv('UNEXPECTED_STATE_DIR',Path(__file__).resolve().parent.parent/'state'))
         root.mkdir(parents=True,exist_ok=True)
-        self.store=StateStore(root/'uneXpected.sqlite3')
+        database_url=os.getenv('UNEXPECTED_DATABASE_URL','').strip()
+        self.store=PostgresStateStore(database_url) if database_url else StateStore(root/'uneXpected.sqlite3')
         self.provider=provider or provider_from_env()
         self.skills=SkillRegistry.load(skill_manifest_path)
         self.approval_verifier = approval_verifier if approval_verifier is not None else approval_verifier_from_env(state_dir=root)
