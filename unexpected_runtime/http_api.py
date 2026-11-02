@@ -155,6 +155,9 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                     "governance":{"privileged_actions":"disabled","approval_authority":"not verified","replay_protection":"not verified"},
                     "approval_verifier_configured":bool(getattr(active,"approval_verifier",None))
                 })
+            if path=="/v1/skills":
+                items=[skill.public_dict() for skill in active.skills.list()]
+                return self.send_json(200,{"count":len(items),"items":items})
             if path=="/v1/agents":
                 items=active.list_agents()
                 return self.send_json(200,{"count":len(items),"items":items})
@@ -180,6 +183,7 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                 except (TypeError,ValueError): result=None
                 item.update({"objective":payload.get("objective",""),"inputs":payload.get("inputs",{}),
                              "source_refs":payload.get("source_refs",[]),"provider_route":payload.get("provider_route"),
+                             "requested_skill_ids":payload.get("requested_skill_ids",[]),
                              "result":result})
                 return self.send_json(200,{"task":item})
             if path=="/v1/resources":
@@ -317,7 +321,7 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                     return self.send_json(502,{"ok":False,"error":diagnostic})
             allowed=({"agent_id","objective","inputs","deadline_seconds","max_corrections","max_improvements","provider_route"}
                      if is_lifecycle else
-                     {"agent_id","objective","inputs","deadline_seconds","max_steps","idempotency_key","source_refs","provider_route"})
+                     {"agent_id","objective","inputs","deadline_seconds","max_steps","idempotency_key","source_refs","provider_route","skill_ids"})
             if set(body)-allowed: return self.send_json(400,{"error":"Unsupported fields; privileged actions are not exposed."})
             provider_route=body.get("provider_route")
             if provider_route is not None and not isinstance(provider_route,str): return self.send_json(400,{"error":"provider_route must be a string."})
@@ -328,6 +332,7 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             deadline=body.get("deadline_seconds",60.0 if is_lifecycle else 195.0)
             steps=body.get("max_steps",6)
             idem=body.get("idempotency_key"); refs=body.get("source_refs",[])
+            skill_ids=body.get("skill_ids",[])
             corrections=body.get("max_corrections",1)
             improvements=body.get("max_improvements",3)
             if not isinstance(agent,str) or not agent.strip() or not isinstance(objective,str) or not objective.strip():
@@ -352,6 +357,10 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                     return self.send_json(400,{"error":"max_steps must be between 1 and 12."})
                 if idem is not None and (not isinstance(idem,str) or len(idem)>128): return self.send_json(400,{"error":"Invalid idempotency key."})
                 if not isinstance(refs,list) or len(refs)>32 or any(not isinstance(x,str) or not x or len(x)>MAX_SOURCE_REF_CHARS for x in refs): return self.send_json(400,{"error":"Invalid source_refs."})
+                if (not isinstance(skill_ids,list) or len(skill_ids)>4
+                        or any(not isinstance(x,str) or not x or len(x)>128 for x in skill_ids)
+                        or len(set(skill_ids))!=len(skill_ids)):
+                    return self.send_json(400,{"error":"skill_ids must be a list of at most 4 unique non-empty skill IDs."})
             try:
                 if is_lifecycle:
                     provider_router = getattr(active, "provider", None)
@@ -388,7 +397,8 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                 else:
                     result=active.invoke(agent.strip(),objective,inputs,deadline_seconds=float(deadline),
                                          max_steps=steps,idempotency_key=idem,source_refs=tuple(refs),
-                                         provider_route=provider_route).to_dict()
+                                         provider_route=provider_route,
+                                         requested_skill_ids=tuple(skill_ids)).to_dict()
                     success=result.get("status")=="completed"
                 return self.send_json(200 if success else 502,{"result":result})
             except Exception as exc: return self.send_json(400,{"error":f"Task rejected or failed ({type(exc).__name__})."})
