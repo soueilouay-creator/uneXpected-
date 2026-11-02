@@ -12,7 +12,7 @@ class DeploymentContractTests(unittest.TestCase):
     def test_dockerfile_runs_only_one_python_application(self):
         dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8").lower()
         self.assertIn("from python:", dockerfile)
-        self.assertIn("python -m unexpected_runtime.http_api", dockerfile)
+        self.assertIn('cmd ["python", "-m", "unexpected_runtime.http_api"]', dockerfile)
         self.assertIn("copy unexpected_runtime", dockerfile)
         self.assertIn("copy web", dockerfile)
         self.assertIn("copy agent_manifest.json", dockerfile)
