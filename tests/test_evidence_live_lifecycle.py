@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from unexpected_runtime.coordinator import Coordinator
+from unexpected_runtime.source_retrieval import SourceRetrievalError, source_retriever_from_env
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -164,6 +165,13 @@ class LiveEvidenceLifecycleTests(unittest.TestCase):
             "UNEXPECTED_SOURCE_MAX_COUNT": "1",
         }
         with patch.dict(os.environ, env, clear=False):
+            retriever = source_retriever_from_env()
+            self.assertIsNotNone(retriever)
+            try:
+                retriever.retrieve("https://docs.python.org/3/library/unittest.html")
+            except SourceRetrievalError as exc:
+                self.fail(f"Direct official-source preflight failed: {exc}")
+
             coordinator = Coordinator(
                 manifest_path=ROOT / "agent_manifest.json",
                 state_dir=temp.name,
