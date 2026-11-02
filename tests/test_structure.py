@@ -104,10 +104,10 @@ class StructureTests(unittest.TestCase):
   for agent in manifest['agents']:
    self.assertIn('`'+agent['id']+'`',index)
    self.assertIn('agents/'+agent['id']+'.md',index)
- def test_v7_package_integrity(self):
-  package=Path(__import__('os').environ.get('UNEXPECTED_PACKAGE_ZIP',ROOT.parent/'uneXpected_v7.3.1_governed_runtime.zip'))
+ def test_v8_package_integrity(self):
+  package=Path(__import__('os').environ.get('UNEXPECTED_PACKAGE_ZIP',ROOT.parent/'uneXpected_v8_command_center.zip'))
   self.assertTrue(package.is_file(),str(package))
   with zipfile.ZipFile(package) as z:
    self.assertIsNone(z.testzip()); names=z.namelist(); self.assertGreater(len(names),70)
-   self.assertIn('uneXpected_v7/agent_manifest.json',names); self.assertIn('uneXpected_v7/unexpected_runtime/coordinator.py',names)
+   self.assertIn('uneXpected_v8/agent_manifest.json',names); self.assertIn('uneXpected_v8/unexpected_runtime/coordinator.py',names)
 if __name__=='__main__': unittest.main(verbosity=2)
