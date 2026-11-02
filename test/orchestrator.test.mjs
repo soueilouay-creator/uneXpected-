@@ -20,7 +20,7 @@ async function freePort() {
 
 async function startStudio(t, scenario, openrouterKey = 'test-openrouter-secret') {
   const port = await freePort();
-  const token = 'test-only-studio-access-token';
+  const token = 'test-only-studio-access-token-0123456789';
   const child = spawn(process.execPath, [
     '--import', resolve(root, 'test/provider-fetch-stub.mjs'),
     'server.js'
