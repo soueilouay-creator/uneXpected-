@@ -113,7 +113,10 @@ class Coordinator:
         except FutureTimeout:
             token.cancel(); future.cancel()
             result=TaskResult(req.task_id,req.agent_id,'timeout',error='Task deadline exceeded; cancellation is cooperative.',attempts=0,started_at=None,finished_at=time.time())
-            self.store.mark_task(req.task_id,'timeout',result.to_dict()); self.store.log_event('task_timeout',req.task_id,req.agent_id,{'deadline_seconds':req.deadline_seconds})
+            mark_timeout=getattr(self.store,'mark_task_timeout',None)
+            if callable(mark_timeout): mark_timeout(req.task_id,result.to_dict())
+            else: self.store.mark_task(req.task_id,'timeout',result.to_dict())
+            self.store.log_event('task_timeout',req.task_id,req.agent_id,{'deadline_seconds':req.deadline_seconds})
         finally: self._tokens.pop(req.task_id,None)
         return result
     def _execute(self,req:TaskRequest,token:CancellationToken)->TaskResult:
