@@ -155,6 +155,8 @@ class QualityEvaluationRunner:
             "model": getattr(provider, "model", None) if provider is not None else None,
             "quality_method": "deterministic-output-contracts-v1",
             "cases": [],
+            "scenario_ids": [],
+            "baseline_comparison": {"available": False, "reason": "no matching prior passing evaluation"},
             "scenario_count": 0,
             "passed_cases": 0,
             "failed_cases": 0,
@@ -172,6 +174,68 @@ class QualityEvaluationRunner:
             ],
         }
 
+    def _find_comparable_baseline(self, report: dict[str, Any]) -> dict[str, Any] | None:
+        expected_ids = report.get("scenario_ids", [])
+        try:
+            events = self.coordinator.store.events(1000)
+        except Exception:
+            return None
+        for event in events:
+            if event.get("event_type") != "quality_evaluation_report":
+                continue
+            try:
+                previous = json.loads(event.get("payload_json") or "{}")
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(previous, dict) or previous.get("status") != "passed":
+                continue
+            if any(previous.get(key) != report.get(key) for key in (
+                "scenario_set_id", "scenario_revision", "provider_route",
+                "provider_name", "model", "execution_mode", "quality_method"
+            )):
+                continue
+            prior_ids = [case.get("case_id") for case in previous.get("cases", []) if isinstance(case, dict)]
+            if prior_ids == expected_ids:
+                return previous
+        return None
+
+    def _compare_with_baseline(self, report: dict[str, Any]) -> None:
+        baseline = self._find_comparable_baseline(report)
+        if baseline is None:
+            report["baseline_comparison"] = {
+                "available": False,
+                "reason": "no matching prior passing evaluation",
+            }
+            return
+        previous_cases = {
+            case["case_id"]: case
+            for case in baseline.get("cases", [])
+            if isinstance(case, dict) and isinstance(case.get("case_id"), str)
+        }
+        regressions = []
+        for case in report["cases"]:
+            previous = previous_cases.get(case["case_id"])
+            if previous and previous.get("status") == "passed" and case.get("status") != "passed":
+                prior_failure = case.get("failure_class")
+                if prior_failure:
+                    case["underlying_failure_class"] = prior_failure
+                case["failure_class"] = "regression"
+                regressions.append({
+                    "case_id": case["case_id"],
+                    "previous_status": "passed",
+                    "current_status": case.get("status"),
+                })
+        report["baseline_comparison"] = {
+            "available": True,
+            "baseline_evaluation_id": baseline.get("evaluation_id"),
+            "baseline_created_at": baseline.get("created_at"),
+            "compared_case_count": len(previous_cases),
+            "regressions": regressions,
+            "regression_count": len(regressions),
+        }
+        if regressions:
+            report["failure_classes"] = sorted(set(report.get("failure_classes", []) + ["regression"]))
+
     def _persist_report(self, report: dict[str, Any]) -> None:
         self.coordinator.store.log_event("quality_evaluation_report", payload=report)
 
@@ -181,6 +245,8 @@ class QualityEvaluationRunner:
             failure_class="provider_unavailable_or_unverified",
         )
         report["failure_reason"] = reason
+        report["failure_classes"] = sorted(set(failure_classes))
+        self._compare_with_baseline(report)
         report["finished_at"] = _utc_now()
         self.coordinator.store.log_event("quality_evaluation_blocked", payload={
             "evaluation_id": report["evaluation_id"],
@@ -248,6 +314,7 @@ class QualityEvaluationRunner:
         execution_mode = "fixture/offline" if self.fixture_mode else "live"
         report = self._base_report(evaluation_id, route, "running", provider=provider)
         report["execution_mode"] = execution_mode
+        report["scenario_ids"] = [item["id"] for item in selected]
         self.coordinator.store.log_event("quality_evaluation_started", payload={
             "evaluation_id": evaluation_id,
             "scenario_set_id": report["scenario_set_id"],
@@ -364,7 +431,6 @@ class QualityEvaluationRunner:
         report["noncritical_rate"] = round(
             noncritical_passed / noncritical_total, 4
         ) if noncritical_total else 1.0
-        report["failure_classes"] = sorted(set(failure_classes))
         if blocked_cases:
             report["status"] = "blocked"
         elif report["critical_pass"] and report["noncritical_rate"] >= 0.90:
