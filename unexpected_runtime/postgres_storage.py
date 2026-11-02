@@ -140,6 +140,13 @@ class PostgresStateStore(PostgresIdempotencyMixin):
                 (status, self._dump(result) if result is not None else None, time.time(), task_id),
             )
         return cursor.rowcount == 1
+    def mark_task_timeout(self, task_id: str, result: dict[str, Any]) -> bool:
+        with self._session() as connection:
+            cursor = connection.execute(
+                "UPDATE tasks SET status='timeout',result_json=%s,updated_at=%s WHERE task_id=%s AND status!='completed'",
+                (self._dump(result), time.time(), task_id),
+            )
+        return cursor.rowcount == 1
 
     def claim_next(self):
         with self._session() as connection:
