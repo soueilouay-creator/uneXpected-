@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import json
 import unittest
+import tempfile
+import http.client
+import threading
 from unittest.mock import patch
 
+from unexpected_runtime.coordinator import Coordinator
+from unexpected_runtime.http_api import create_server
 from unexpected_runtime.providers import (
     AnthropicProvider,
     DeterministicMockProvider,
@@ -139,6 +144,87 @@ class ProviderRouterTests(unittest.TestCase):
         self.assertIsInstance(provider, OpenAICompatibleProvider)
         self.assertIn("openrouter.ai", provider.base_url)
         self.assertEqual(provider.model, "openrouter/free")
+
+
+class CoordinatorProviderRoutingTests(unittest.TestCase):
+    class TaggedProvider:
+        def __init__(self, name):
+            self.name = name
+            self.model = name + "-test-model"
+            self.configured = True
+            self.verified = False
+            self.retry_safe = False
+            self.calls = 0
+        def generate(self, **kwargs):
+            self.calls += 1
+            return self.name + " route response"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.openai = self.TaggedProvider("openai")
+        self.anthropic = self.TaggedProvider("anthropic")
+        self.router = ProviderRouter(
+            {"mock": DeterministicMockProvider(), "openai": self.openai, "anthropic": self.anthropic},
+            default_route="openai",
+        )
+        self.coordinator = Coordinator(state_dir=self.tmp.name, provider=self.router, max_workers=2, max_retries=0)
+
+    def tearDown(self):
+        self.coordinator.close()
+        self.tmp.cleanup()
+
+    def test_invocation_uses_selected_route_without_mutating_default(self):
+        result = self.coordinator.invoke("orchestrator", "route this task", provider_route="anthropic")
+        self.assertEqual(result.status, "completed")
+        self.assertIn("anthropic route response", result.output)
+        self.assertEqual(self.openai.calls, 0)
+        self.assertEqual(self.anthropic.calls, 1)
+        self.assertEqual(self.router.resolve(None).name, "openai")
+        task = self.coordinator.store.list_tasks(1)[0]
+        self.assertEqual(task["provider_route"], "anthropic")
+
+    def test_unknown_route_rejects_before_task_is_persisted(self):
+        with self.assertRaises(ProviderError):
+            self.coordinator.invoke("orchestrator", "invalid route", provider_route="not-installed")
+        self.assertEqual(self.coordinator.store.list_tasks(10), [])
+
+    def test_authenticated_provider_status_and_live_test_endpoint(self):
+        token = "provider-router-test-token-" + "z" * 32
+        server = create_server(coordinator=self.coordinator, api_token=token, host="127.0.0.1", port=0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=8)
+            conn.request("GET", "/v1/providers")
+            response = conn.getresponse()
+            self.assertEqual(response.status, 401)
+            response.read()
+            conn.close()
+
+            conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=8)
+            conn.request("GET", "/v1/providers", headers={"Authorization": "Bearer " + token})
+            response = conn.getresponse()
+            payload = json.loads(response.read())
+            self.assertEqual(response.status, 200)
+            self.assertEqual({item["id"] for item in payload["providers"]}, {"mock", "openai", "anthropic"})
+            conn.close()
+
+            conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=8)
+            body = json.dumps({"provider_route": "anthropic"})
+            conn.request("POST", "/v1/providers/test", body, {
+                "Authorization": "Bearer " + token,
+                "Content-Type": "application/json",
+            })
+            response = conn.getresponse()
+            tested = json.loads(response.read())
+            self.assertEqual(response.status, 200, tested)
+            self.assertTrue(tested["verified"])
+            self.assertTrue(self.anthropic.verified)
+            conn.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
 
 
 if __name__ == "__main__":
