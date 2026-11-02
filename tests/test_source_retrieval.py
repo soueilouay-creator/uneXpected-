@@ -215,7 +215,6 @@ class TrustedSourceRetrieverTests(unittest.TestCase):
         import socket
         import threading
         import time
-        from types import SimpleNamespace
         from unexpected_runtime import source_retrieval
 
         client_sock, server_sock = socket.socketpair()
@@ -243,7 +242,7 @@ class TrustedSourceRetrieverTests(unittest.TestCase):
             started = time.monotonic()
             with self.assertRaisesRegex(SourceRetrievalError, "overall deadline"):
                 _read_response_bounded(
-                    SimpleNamespace(sock=active_socket), response,
+                    active_socket, response,
                     deadline=deadline, max_bytes=1024,
                 )
             self.assertLess(time.monotonic() - started, 0.55)
