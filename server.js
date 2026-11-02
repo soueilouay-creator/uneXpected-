@@ -91,7 +91,7 @@ async function runtimeHealth() {
     });
     if (!response.ok) return { ok: false, configured: true, status: response.status };
     const data = await response.json();
-    return { ok: data?.ok === true, configured: true, version: data?.version || null,
+    return { ok: data?.ok === true && data?.storage_durable === true, configured: true, version: data?.version || null,
       provider: data?.provider || null, providerConfigured: data?.provider_configured === true,
       storage: data?.storage_backend || null };
   } catch (error) {
