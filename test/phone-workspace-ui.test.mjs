@@ -84,3 +84,17 @@ test('workspace sync is explicit, owner-authenticated and never overwrites an ex
   assert.doesNotMatch(app, /await store\.put\(remote\.type, remote\.payload\)\s*;\s*else/);
   assert.match(app, /Access token is not included/);
 });
+
+
+test('phone chat exposes and uses the unified seven-stage runtime route', async () => {
+  const html = await read('mobile/index.html');
+  const app = await read('mobile/app.js');
+  const providers = await read('mobile/providers.js');
+  assert.match(html, /data-model="unexpected"/);
+  assert.match(html, /7-stage workflow/);
+  assert.match(app, /setSelectedModel\('unexpected'\)/);
+  assert.match(app, /location\.origin\}\/v1\/lifecycle/);
+  assert.match(app, /agent_id: role\.id/);
+  assert.match(app, /workflow\.delivered === true/);
+  assert.match(providers, /unexpected: 'uneXpected Workflow'/);
+});
