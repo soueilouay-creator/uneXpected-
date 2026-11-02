@@ -242,6 +242,24 @@ class AdvancedSkillBundleTests(unittest.TestCase):
 
 
 
+    def test_approval_action_digest_binds_selected_skill_ids(self):
+        base = {
+            "agent_id": "maintenance-engineer",
+            "objective": "Review preventive maintenance",
+            "required_permissions": ("maintenance.write",),
+            "deadline_seconds": 30.0,
+            "max_steps": 4,
+        }
+        first = Coordinator.invoke_action_details(
+            **base, requested_skill_ids=("maintenance-checklist",)
+        )
+        second = Coordinator.invoke_action_details(
+            **base, requested_skill_ids=("spare-parts-checklist",)
+        )
+        self.assertNotEqual(first, second)
+        self.assertEqual(first["requested_skill_ids"], ["maintenance-checklist"])
+
+
 class SkillAPITests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
