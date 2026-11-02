@@ -46,6 +46,14 @@
     const previous=selector.value;
     selector.innerHTML='<option value="">Default configured route</option>'+items.map(p=>'<option value="'+esc(p.id)+'" '+(!p.configured?'disabled':'')+'>'+esc(p.id)+(p.default?' · default':'')+'</option>').join("");
     if(items.some(p=>p.id===previous&&p.configured))selector.value=previous;
+    const qualitySelector=$("quality-provider");
+    if(qualitySelector){
+      const previousQuality=qualitySelector.value;
+      const verified=items.filter(p=>p.live&&p.configured&&p.verified);
+      qualitySelector.innerHTML='<option value="">Select a verified live route</option>'+verified.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.id)+(p.model?' · '+esc(p.model):'')+'</option>').join("");
+      if(verified.some(p=>p.id===previousQuality))qualitySelector.value=previousQuality;
+      $("quality-evaluation-submit").disabled=verified.length===0;
+    }
     $("provider-grid").innerHTML=items.length?items.map(p=>'<article><h4>'+esc(p.name)+'</h4><p>'+esc(p.model||"Model not disclosed")+'</p>'+readiness("Configuration",p.live?(p.configured?"Configured":"Not configured"):"Built-in test mode",!p.live||p.configured)+readiness("Live verification",p.live?(p.verified?"Verified":"Not verified"):"Not applicable",!p.live||p.verified)+(p.live&&p.configured?'<button class="button secondary provider-test" data-test-provider="'+esc(p.id)+'" type="button">Test connection</button>':'<small>Mock mode · not a live provider</small>')+'</article>').join(""):'<div class="empty">No provider adapters are available.</div>';
     syncLifecycleMode();
   }
