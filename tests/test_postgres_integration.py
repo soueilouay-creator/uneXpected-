@@ -20,9 +20,6 @@ class PostgresRuntimeIntegrationTests(unittest.TestCase):
         self.prefix = "ci-" + uuid.uuid4().hex[:12]
         self.agent = "orchestrator"
 
-    def tearDown(self):
-        self.store.close()
-
     def test_state_store_task_memory_knowledge_audit_and_queue(self):
         request = TaskRequest.create(
             self.agent, "PostgreSQL integration task",
