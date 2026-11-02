@@ -181,7 +181,7 @@ class PostgresRuntimeIntegrationTests(unittest.TestCase):
                     events = json.loads(response.read())["items"]
                     provider_events = [event for event in events if event["event_type"] == "provider_used"]
                     self.assertTrue(provider_events)
-                    self.assertTrue(json.loads(provider_events[0]["payload_json"])["mock"])
+                    self.assertTrue(provider_events[0]["payload"]["mock"])
 
                 replay_request = urllib.request.Request(base + "/v1/invoke", data=body, headers=headers, method="POST")
                 with urllib.request.urlopen(replay_request, timeout=10) as response:
