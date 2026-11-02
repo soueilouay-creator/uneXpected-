@@ -383,7 +383,7 @@ class CoordinatorLifecycleTests(unittest.TestCase):
     def test_reviewer_pass_without_required_ids_and_evidence_refs_blocks_delivery(self):
         coordinator, provider = self._coordinator(["PASS", "PASS"])
         coordinator.reviewer_provider.generate = (
-            lambda **kwargs: "VERDICT: PASS\\nReview evidence is generally sufficient."
+            lambda **kwargs: "VERDICT: PASS\nReview evidence is generally sufficient."
         )
         result = coordinator.run_lifecycle(
             "research-scout", "Research a sample topic", {"scope": "public sources"},
