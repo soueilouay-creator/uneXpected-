@@ -50,17 +50,15 @@ Execution boundary:
 - Consequential actions remain disabled until durable approval, replay, backup and restore gates pass and the owner separately approves activation.
 
 
-## Resource Intelligence and AI Quality Evaluation
+## Resource Intelligence and AI Quality Evaluation — completed
 
 Plan: docs/plans/2026-11-02-resource-intelligence-ai-quality-evaluation.md
 Specification: docs/specs/2026-11-02-resource-intelligence-ai-quality-evaluation-design.md
 
-Task 1 — Resource Intelligence: implementation present; focused registry tests passed in GitHub Actions run 41501399827. Catalog is read-only and Awesome-linked candidates remain discovered/unverified. CLI and authenticated GET API added.
+- Resource Intelligence: read-only Awesome source index and six reference candidates; per-project license, maintenance and security states remain unverified; discovery does not install or authorize. CLI and authenticated command-center API/view are connected.
+- AI Quality Evaluation: versioned six-category scenario suite, bounded Coordinator runner, deterministic checks, failure taxonomy, secret-minimized reports and comparable passing-baseline regression detection are implemented. Live runs require an explicit configured/verified non-mock provider before task creation.
+- Quality history and resource catalog are exposed through the existing single command-center UI; no separate interface/service/role was added.
+- GitHub Actions run #467 (ID 41503472451) passed on code/inventory commit 46750b3fe0498e2c08159946d110231046465b50: 218 tests passed, 1 optional v6 fixture skip. PostgreSQL 16 migrations, SHA-256 integrity, Docker build, actual-container health/auth/38-role/task smoke, and CLI quality mock-rejection checks passed.
+- CI used deterministic test fixtures. No live model-quality run has been executed. No new dependency or migration was added.
 
-Task 2 — AI Quality Evaluation: implementation present; fixture-backed Coordinator tests passed in GitHub Actions run 41501399827. Runner requires an explicit configured/verified non-mock provider for live use; fixture mode is restricted to internal tests. Reports store checks and output digests, not raw output.
-
-Task 3 — API and command center: authenticated resource and quality history APIs, bounded quality POST, and the existing single-app Intelligence view are implemented. API/UI regression tests passed in run 41501399827. Live provider evaluation has not been run.
-
-Task 4 — Current verification: GitHub Actions run 41501399827 (commit a83216de80fa8f028871adc55482013ed8625b55) reached the regression suite. All tests passed except the expected optional v6 fixture skip; the only reported failure was the SHA-256 inventory mismatch caused by new/changed tracked files. Inventory, CLI smoke, latest-head CI and final read-back remain to complete.
-
-Safety: no external candidate project installed; no paid package or service; no new role; no new database migration; no Render deployment; no PR merge; no old service retirement; consequential execution remains fail-closed.
+Execution boundary remains unchanged: PR #11 is open and draft; no merge, Render deploy, old-service retirement, external project installation, paid resource or consequential-action activation. Approval/replay, backup/restore and recovery release gates remain in force.
