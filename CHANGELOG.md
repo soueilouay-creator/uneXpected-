@@ -1,3 +1,17 @@
+# Changelog
+
+## v8.0.0-preview — Single Command Center (2026-11-02)
+
+- Consolidates the governed Python runtime and desktop command center into one Python application and one public API.
+- Excludes the previous phone/PWA app and separate Node.js AI Studio gateway from the v8 target.
+- Adds authenticated command-center views and APIs for the 38-role registry, tasks, lifecycle events, providers, capabilities, governance, audit and improvement proposals.
+- Adds native Anthropic, OpenAI and OpenRouter provider routes with immutable per-task selection and bounded provider connectivity tests.
+- Adds atomic single-flight idempotency claims and a PostgreSQL state-store adapter.
+- Adds a PostgreSQL one-use approval ledger and additive migration 002; consequential execution remains disabled pending full backup/restore and activation verification.
+- Adds one Python Docker image and a free Render preview Blueprint; existing services remain untouched.
+
+**Preview only:** no production cutover, old-service retirement, paid resource, provider secret migration or consequential execution activation is included.
+
 # uneXpected v7.3.1 Changelog
 
 ## 7.0.0 — Unified local runtime scaffold
