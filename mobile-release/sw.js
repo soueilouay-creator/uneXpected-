@@ -1,4 +1,4 @@
-const CACHE_NAME = 'unexpected-mobile-v0.4.0';
+const CACHE_NAME = 'unexpected-mobile-v0.4.1';
 const SHELL = [
   '/mobile/',
   '/mobile/index.html',
