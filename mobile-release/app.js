@@ -941,10 +941,33 @@ async function checkGateway() {
       const provider = data.providers?.[key];
       return `${label}: ${provider?.configured ? 'configured' : 'not configured'} · ${provider?.verified ? 'verified' : 'not yet verified'} · ${provider?.model || 'model not reported'}`;
     });
-    box.textContent = `HTTP ${response.status} · ${data.service || 'uneXpected gateway'}\nAuthentication: ${data.authConfigured ? 'configured' : 'not configured'}\n\n${lines.join('\n')}\n\nConfigured does not mean verified. Use the real test for a provider check.`;
-    $('#gatewayStatus').textContent = 'Reachable';
-    $('#providerHealthList').innerHTML = lines.map(line => `<span>${escapeHtml(line)}</span>`).join('');
-    setConnection('Gateway reachable', 'online');
+    const runtime = data.runtime || {};
+    const runtimeLine = runtime.ok && runtime.storage === 'postgresql'
+      ? `Runtime: ready · ${runtime.registeredAgents ?? 'unknown'} roles · PostgreSQL · ${runtime.version || 'version unreported'}`
+      : `Runtime: not ready · ${runtime.error || 'durable storage or runtime health not verified'}`;
+    let ownerLine = 'Owner session: token not entered; protected controls are locked.';
+    if (sessionToken) {
+      try {
+        const statusResponse = await fetch(`${location.origin}/v1/status`, {
+          headers: { authorization: 'Bearer ' + sessionToken },
+          cache: 'no-store'
+        });
+        const status = await statusResponse.json().catch(() => ({}));
+        ownerLine = statusResponse.ok
+          ? `Owner session: authenticated · ${status.registered_agents} registered roles · provider ${status.provider || 'unreported'}`
+          : `Owner session: token rejected (HTTP ${statusResponse.status}).`;
+      } catch {
+        ownerLine = 'Owner session: runtime status could not be reached.';
+      }
+    }
+    const mockLine = runtime.provider === 'deterministic-mock'
+      ? 'Execution mode: deterministic mock · plumbing tests only · no live AI response.'
+      : `Execution mode: ${runtime.provider || 'not configured'}.`;
+    const allLines = [...lines, runtimeLine, ownerLine, mockLine];
+    box.textContent = `HTTP ${response.status} · ${data.service || 'uneXpected unified app'}\nAuthentication: ${data.authConfigured ? 'configured' : 'not configured'}\n\n${allLines.join('\n')}\n\nConfigured does not mean verified. Use the real provider test for a provider check.`;
+    $('#gatewayStatus').textContent = runtime.ok && runtime.storage === 'postgresql' ? 'Unified runtime ready' : 'Gateway reachable · runtime check needed';
+    $('#providerHealthList').innerHTML = allLines.map(line => `<span>${escapeHtml(line)}</span>`).join('');
+    setConnection(runtime.ok && runtime.storage === 'postgresql' ? 'Unified runtime ready' : 'Gateway reachable', runtime.ok ? 'online' : 'local');
   } catch (error) {
     box.textContent = `Gateway check failed: ${error.message}\nLocal projects, conversations and memory remain available.`;
     $('#gatewayStatus').textContent = 'Unavailable';
