@@ -70,7 +70,7 @@ test('gateway serves the Phone 0.4.2 PWA without weakening existing authorizatio
  const skills=await (await fetch(base+'/mobile/skills.json')).json();
  assert.equal(skills.skills.length,2);
  const worker=await (await fetch(base+'/mobile/sw.js')).text();
-  assert.match(worker,/unexpected-mobile-v0\\.4\\.2/);
+  assert.match(worker,/unexpected-mobile-v0\.4\.2/);
  assert.doesNotMatch(worker,/\/orchestrate|\/test-provider|\/health/);
 
  const noSlash=await fetch(base+'/mobile');
