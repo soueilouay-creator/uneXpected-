@@ -83,6 +83,25 @@ class EvidenceEngineTests(unittest.TestCase):
 
         self.assertEqual(normalized[0]["profile"], "evidence-engine")
 
+    def test_sandbox_test_criteria_require_the_fixed_evidence_engine_profile(self):
+        criterion = {
+            "id": "TEST-01",
+            "description": "Run the isolated evidence-engine tests",
+            "kind": "test",
+            "target": "0 failures",
+            "required": True,
+        }
+        with self.assertRaisesRegex(EvidenceContractError, "requires profile 'evidence-engine'"):
+            EvidenceEngine.validate_criteria([criterion], require_test_profile=True)
+
+        wrong_profile = {**criterion, "profile": "arbitrary-command"}
+        with self.assertRaisesRegex(EvidenceContractError, "requires profile 'evidence-engine'"):
+            EvidenceEngine.validate_criteria([wrong_profile], require_test_profile=True)
+
+        valid = {**criterion, "profile": "evidence-engine"}
+        normalized = EvidenceEngine.validate_criteria([valid], require_test_profile=True)
+        self.assertEqual(normalized[0]["profile"], "evidence-engine")
+
     def test_duplicate_or_invalid_criteria_are_rejected(self):
         engine = EvidenceEngine()
         duplicate = [
