@@ -44,6 +44,7 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
     token=(os.getenv("UNEXPECTED_RUNTIME_API_TOKEN","") if api_token is None else str(api_token or "")).strip()
     limiter=_RateLimiter()
     lifecycle_limiter=_RateLimiter(limit=3)
+    quality_limiter=_RateLimiter(limit=3)
     # Reserve one task-pool worker for ordinary /v1/invoke requests.
     lifecycle_slots=threading.BoundedSemaphore(max(1, active.max_workers - 1))
     class Handler(BaseHTTPRequestHandler):
@@ -181,6 +182,27 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                              "source_refs":payload.get("source_refs",[]),"provider_route":payload.get("provider_route"),
                              "result":result})
                 return self.send_json(200,{"task":item})
+            if path=="/v1/resources":
+                from .resource_intelligence import ResourceRegistry
+                registry=ResourceRegistry()
+                items=registry.list_resources(
+                    category=(query.get("category") or [None])[0],
+                    status=(query.get("status") or [None])[0],
+                )
+                summary=registry.summary()
+                return self.send_json(200,{"count":len(items[:limit]),"summary":summary,"items":items[:limit]})
+            if path=="/v1/quality-evaluations":
+                reports=[]
+                for row in active.store.events(1000):
+                    if row.get("event_type")!="quality_evaluation_report":
+                        continue
+                    try:
+                        payload=json.loads(row.get("payload_json") or "{}")
+                    except (TypeError,ValueError):
+                        continue
+                    if isinstance(payload,dict) and payload.get("evaluation_id"):
+                        reports.append(payload)
+                return self.send_json(200,{"count":len(reports[:limit]),"items":reports[:limit]})
             if path=="/v1/capabilities":
                 items=active.store.list_capabilities()
                 return self.send_json(200,{"count":len(items),"items":items})
@@ -211,16 +233,39 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             return self.send_json(404,{"error":"Not found."})
         def do_POST(self):
             route=urlsplit(self.path).path
-            if route not in {"/v1/invoke", "/v1/lifecycle", "/v1/providers/test", "/v1/improvements/propose"}: return self.send_json(404,{"error":"Not found."})
+            if route not in {"/v1/invoke", "/v1/lifecycle", "/v1/providers/test", "/v1/improvements/propose", "/v1/quality-evaluations"}: return self.send_json(404,{"error":"Not found."})
             is_lifecycle=route=="/v1/lifecycle"
             is_provider_test=route=="/v1/providers/test"
             is_improvement_propose=route=="/v1/improvements/propose"
+            is_quality_evaluation=route=="/v1/quality-evaluations"
             if not self.authorize(): return
             identity=self.client_address[0] if self.client_address else "unknown"
-            active_limiter=lifecycle_limiter if is_lifecycle else limiter
+            active_limiter=lifecycle_limiter if is_lifecycle else (quality_limiter if is_quality_evaluation else limiter)
             if not active_limiter.allow(identity): return self.send_json(429,{"error":"Request rate limit exceeded."})
             body=self.read_body()
             if body is None: return
+            if is_quality_evaluation:
+                allowed_quality={"provider_route","scenario_ids"}
+                if set(body)-allowed_quality:
+                    return self.send_json(400,{"error":"Unsupported quality evaluation fields."})
+                provider_route=body.get("provider_route")
+                scenario_ids=body.get("scenario_ids")
+                if not isinstance(provider_route,str) or not provider_route.strip():
+                    return self.send_json(400,{"error":"An explicit provider_route is required."})
+                if scenario_ids is not None and (
+                    not isinstance(scenario_ids,list) or len(scenario_ids)>8
+                    or any(not isinstance(item,str) or not item for item in scenario_ids)
+                ):
+                    return self.send_json(400,{"error":"scenario_ids must be a list of at most 8 non-empty IDs."})
+                try:
+                    from .quality_evaluation import QualityEvaluationRunner, QualityEvaluationError
+                    report=QualityEvaluationRunner(active).run(provider_route=provider_route.strip(),scenario_ids=scenario_ids)
+                    status_code=409 if report.get("status")=="blocked" else 200
+                    return self.send_json(status_code,{"report":report})
+                except QualityEvaluationError as exc:
+                    return self.send_json(400,{"error":str(exc)})
+                except Exception as exc:
+                    return self.send_json(500,{"error":f"Quality evaluation failed ({type(exc).__name__})."})
             if is_improvement_propose:
                 allowed_proposal={"agent_id","candidate_instruction","changes","benchmark_id","protected_fields"}
                 if set(body)-allowed_proposal: return self.send_json(400,{"error":"Unsupported proposal fields."})
