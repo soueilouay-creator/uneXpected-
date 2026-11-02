@@ -306,6 +306,13 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                                 "invocation for a runtime test or configure and verify a live provider."
                             )
                         })
+                    if not bool(getattr(selected_provider, "verified", False)):
+                        return self.send_json(409, {
+                            "error": (
+                                "Full verified lifecycle requires the selected live AI provider to pass "
+                                "the Test connection check before lifecycle execution."
+                            )
+                        })
                     if active.max_workers < 2 or not lifecycle_slots.acquire(blocking=False):
                         return self.send_json(503,{"error":"Lifecycle capacity exhausted."})
                     try:
