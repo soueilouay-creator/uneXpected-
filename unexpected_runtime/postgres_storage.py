@@ -477,6 +477,7 @@ class PostgresStateStore(PostgresIdempotencyMixin):
             item["inputs"] = payload.get("inputs", {})
             item["source_refs"] = payload.get("source_refs", [])
             item["provider_route"] = payload.get("provider_route")
+            item["requested_skill_ids"] = payload.get("requested_skill_ids", [])
             item["result"] = json.loads(item.pop("result_json")) if item.get("result_json") else None
             items.append(item)
         return items
