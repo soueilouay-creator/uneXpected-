@@ -17,7 +17,7 @@ The checked-in `render.yaml` is a preview Blueprint with `plan: free` and `autoD
 1. Run the full test suite and inspect the source-integrity manifest.
 2. Confirm the selected Neon project is on a $0 plan and within its current compute, storage and transfer limits.
 3. Create an isolated Neon branch from the intended source branch.
-4. Apply and verify the checked-in migrations in order. v8 requires schema version 2 and `idempotency_claims`.
+4. For a fresh database, apply `migrations/001_initial.sql` then `migrations/002_idempotency_claims.sql`. For an existing schema-v1 database, verify it matches migration 001 and apply only migration 002. v8 requires schema version 2 and `idempotency_claims`.
 5. Verify the Postgres state adapter, idempotency claims, approval one-use ledger, and a backup/restore path.
 6. Do not use the original Neon parent branch for migration experiments.
 
