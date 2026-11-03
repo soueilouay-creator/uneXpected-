@@ -371,7 +371,7 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             if not isinstance(agent,str) or not agent.strip() or not isinstance(objective,str) or not objective.strip():
                 return self.send_json(400,{"error":"agent_id and objective are required."})
             if len(objective)>MAX_OBJECTIVE_CHARS: return self.send_json(413,{"error":"Objective too large."})
-            if "__uneXpected_prompt" in inputs if isinstance(inputs,dict) else False:
+            if isinstance(inputs,dict) and "__uneXpected_prompt" in inputs:
                 return self.send_json(400,{"error":"Reserved prompt metadata cannot be supplied by the caller."})
             if prompt_id is not None:
                 if not isinstance(prompt_id,str) or not prompt_id.strip() or len(prompt_id)>160:
@@ -391,7 +391,9 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                     "agent_id":selected_prompt.agent_id,
                     "source_url":selected_prompt.source_url
                 }
-                objective=objective.rstrip()+"\\n\\n"+prompt_instructions
+                if len(objective)+2+len(prompt_instructions)>MAX_OBJECTIVE_CHARS:
+                    return self.send_json(413,{"error":"Objective and selected prompt instructions are too large."})
+                objective=objective.rstrip()+"\n\n"+prompt_instructions
                 inputs=dict(inputs)
                 inputs["__uneXpected_prompt"]=prompt_metadata
             if (not isinstance(inputs,dict) or isinstance(deadline,bool) or not isinstance(deadline,(int,float))
