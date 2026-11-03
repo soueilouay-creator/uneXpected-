@@ -12,6 +12,7 @@ from .storage import StateStore
 from .skills import SkillRegistry, SkillRegistryError
 from .capabilities import CapabilityRegistry
 from .mcp_gateway import MCPToolGateway
+from .subagents import SubagentRunner
 
 class Coordinator:
     def __init__(self, manifest_path=None, state_dir=None, provider=None, max_workers=None, max_retries=None, skill_manifest_path=None, skill_package_root=None, approval_verifier:ApprovalVerifier|None=None):
@@ -37,6 +38,7 @@ class Coordinator:
         self.capabilities=CapabilityRegistry(self.store)
         self.mcp_gateway=MCPToolGateway(store=self.store,capabilities=self.capabilities,
                                         permissions=self.permissions,agent_registry=self.registry)
+        self.subagents=SubagentRunner(self)
         self.max_workers=workers; self.max_retries=retries
         self.task_pool=ThreadPoolExecutor(max_workers=workers,thread_name_prefix='unexpected-task')
         self.provider_pool=ThreadPoolExecutor(max_workers=workers,thread_name_prefix='unexpected-provider')
@@ -65,18 +67,20 @@ class Coordinator:
         self.store.enqueue(request); return request.task_id
     @staticmethod
     def invoke_action_details(agent_id:str, objective:str, inputs:dict[str,Any]|None=None, *, required_permissions=(),
-                              deadline_seconds:float=30.0, max_steps:int=6, source_refs=(), requested_skill_ids=()):
+                              deadline_seconds:float=30.0, max_steps:int=6, source_refs=(), requested_skill_ids=(),
+                              parent_task_id:str|None=None):
         encode=lambda value: hashlib.sha256(json.dumps(value,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
         return {'action':'agent.invoke','agent_id':agent_id,'objective_sha256':encode(objective),
                 'inputs_sha256':encode(inputs or {}),'source_refs_sha256':encode(list(source_refs)),
                 'required_permissions':sorted(set(required_permissions)),
                 'requested_skill_ids':list(requested_skill_ids),
+                'parent_task_id':parent_task_id,
                 'deadline_seconds':float(deadline_seconds),'max_steps':int(max_steps)}
     @staticmethod
     def shared_knowledge_action_details(knowledge_id:str):
         return {'action':'shared_knowledge.approve','knowledge_id':knowledge_id,'required_permissions':['approve_knowledge']}
     def invoke(self, agent_id:str, objective:str, inputs:dict[str,Any]|None=None, *, required_permissions=(), deadline_seconds=30.0,
-               max_steps=6,idempotency_key=None,source_refs=(),provider_route:str|None=None,token:CancellationToken|None=None,approval:ApprovalContext|None=None,requested_skill_ids=()):
+               max_steps=6,idempotency_key=None,source_refs=(),provider_route:str|None=None,token:CancellationToken|None=None,approval:ApprovalContext|None=None,requested_skill_ids=(),parent_task_id:str|None=None):
         spec=self.registry.get(agent_id)
         requested_skill_ids=self.skills.validate_requested(agent_id, requested_skill_ids)
         if provider_route is not None:
@@ -86,12 +90,12 @@ class Coordinator:
         if not math.isfinite(float(deadline_seconds)) or deadline_seconds<=0 or deadline_seconds>600: raise ValueError('deadline_seconds must be >0 and <=600.')
         action_details=self.invoke_action_details(agent_id,objective,inputs,required_permissions=required_permissions,
                                                   deadline_seconds=deadline_seconds,max_steps=max_steps,source_refs=source_refs,
-                                                  requested_skill_ids=requested_skill_ids)
+                                                  requested_skill_ids=requested_skill_ids,parent_task_id=parent_task_id)
         if len(set(required_permissions)) > 1:
             raise PermissionDenied('A single action may request only one privileged permission scope; split and approve separate actions.')
         for scope in required_permissions: self.permissions.authorize(spec,scope,approval,action_details=action_details)
-        request_hash=hashlib.sha256(json.dumps({'agent_id':agent_id,'objective':objective,'inputs':inputs or {},'required_permissions':list(required_permissions),'source_refs':list(source_refs),'provider_route':provider_route,'requested_skill_ids':list(requested_skill_ids)},sort_keys=True,ensure_ascii=False).encode()).hexdigest()
-        req=TaskRequest.create(agent_id,objective,inputs=inputs or {},required_permissions=tuple(required_permissions),deadline_seconds=deadline_seconds,max_steps=max_steps,idempotency_key=idempotency_key,source_refs=tuple(source_refs),provider_route=provider_route,requested_skill_ids=requested_skill_ids)
+        request_hash=hashlib.sha256(json.dumps({'agent_id':agent_id,'objective':objective,'inputs':inputs or {},'required_permissions':list(required_permissions),'source_refs':list(source_refs),'provider_route':provider_route,'requested_skill_ids':list(requested_skill_ids),'parent_task_id':parent_task_id},sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+        req=TaskRequest.create(agent_id,objective,inputs=inputs or {},required_permissions=tuple(required_permissions),deadline_seconds=deadline_seconds,max_steps=max_steps,idempotency_key=idempotency_key,source_refs=tuple(source_refs),provider_route=provider_route,requested_skill_ids=requested_skill_ids,parent_task_id=parent_task_id)
         if idempotency_key:
             claim=self.store.claim_idempotency(idempotency_key,request_hash,req.task_id)
             if claim['state'] in ('completed','failed') and claim.get('result'):
@@ -219,13 +223,17 @@ class Coordinator:
         for _ in range(max_tasks):
             row=self.store.claim_next()
             if not row: break
-            d=json.loads(row['payload_json']); req=TaskRequest(task_id=d['task_id'],agent_id=d['agent_id'],objective=d['objective'],inputs=d.get('inputs',{}),required_permissions=tuple(d.get('required_permissions',[])),deadline_seconds=d.get('deadline_seconds',30),max_steps=d.get('max_steps',6),idempotency_key=d.get('idempotency_key'),source_refs=tuple(d.get('source_refs',[])),provider_route=d.get('provider_route'),created_at=d.get('created_at',time.time()))
+            d=json.loads(row['payload_json']); req=TaskRequest(task_id=d['task_id'],agent_id=d['agent_id'],objective=d['objective'],inputs=d.get('inputs',{}),required_permissions=tuple(d.get('required_permissions',[])),deadline_seconds=d.get('deadline_seconds',30),max_steps=d.get('max_steps',6),idempotency_key=d.get('idempotency_key'),source_refs=tuple(d.get('source_refs',[])),provider_route=d.get('provider_route'),requested_skill_ids=tuple(d.get('requested_skill_ids',[])),parent_task_id=d.get('parent_task_id'),created_at=d.get('created_at',time.time()))
             results.append(self._execute_with_deadline(req,CancellationToken()))
         return results
     def cancel(self,task_id:str)->bool:
         token=self._tokens.get(task_id)
         if not token: return False
         token.cancel(); self.store.log_event('task_cancel_requested',task_id,payload={}); return True
+    def run_subagents(self, *, parent_task_id:str, parent_agent_id:str, children:list[dict[str,Any]], max_depth:int=2):
+        return self.subagents.run(parent_task_id=parent_task_id,parent_agent_id=parent_agent_id,
+                                  children=children,max_depth=max_depth)
+
     def run_chain(self, agent_ids:list[str], objective:str, inputs:dict[str,Any]|None=None, *, max_handoffs:int=4, deadline_seconds:float=30.0):
         if not agent_ids: raise ValueError('At least one agent is required.')
         if max_handoffs<0 or max_handoffs>8: raise BudgetExceeded('max_handoffs must be between 0 and 8.')
