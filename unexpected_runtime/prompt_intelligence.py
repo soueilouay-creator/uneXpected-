@@ -150,6 +150,7 @@ class PromptIntelligence:
         record = self.store.get_prompt_source(source_id)
         if not record:
             raise PromptIntelligenceError("Unknown prompt source.")
+        expected_status = record.get("status", "staged")
         if record.get("status") in {"suspended", "archived", "active"}:
             raise PromptIntelligenceError("This prompt source is not editable in its current state.")
         if rights_status not in self.RIGHTS_STATUSES:
@@ -178,7 +179,7 @@ class PromptIntelligence:
             "reviewed_by": reviewer,
             "reviewed_at": self._utc_epoch(),
         })
-        if not self.store.update_prompt_source(record, expected_status=record.get("status_before_review", "staged")):
+        if not self.store.update_prompt_source(record, expected_status=expected_status):
             # Storage implementations return false on concurrent updates; a reviewed source can
             # also be reviewed again after fetching its current pre-update status.
             raise PromptIntelligenceError("Prompt source changed during review; reload and retry.")
@@ -417,6 +418,34 @@ class PromptIntelligence:
         if not item:
             raise PromptIntelligenceError("Unknown or inactive prompt.")
         return item
+
+    def task_binding(self, prompt_id: str) -> dict[str, Any]:
+        item = self.store.get_active_prompt(prompt_id)
+        if not item:
+            raise PromptIntelligenceError("Unknown or inactive prompt.")
+        metadata = {
+            "prompt_id": item["prompt_id"],
+            "source_id": item["source_id"],
+            "external_id": item["external_id"],
+            "active_version": int(item["active_version"]),
+            "title": item["title"],
+            "category": item["category"],
+            "category_id": item["category_id"],
+            "mapped_agent_id": item["mapped_agent_id"],
+            "content_sha256": item["content_sha256"],
+            "rights_status": item["rights_status"],
+            "retention_policy": item["retention_policy"],
+            "source_url": item["source_url"],
+            "attribution": item.get("attribution"),
+        }
+        body = item.get("body")
+        if body is not None:
+            if (item["rights_status"] not in {"open_license", "permission_granted", "user_supplied"}
+                    or item["retention_policy"] not in {"source_text", "user_text"}):
+                raise PromptIntelligenceError("Active prompt body no longer satisfies its retention policy.")
+            metadata["source_text"] = body
+            metadata["source_text_trust"] = "untrusted_user_data"
+        return metadata
 
     def search_active(self, query: str = "", category: str | None = None,
                       limit: int = 50, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
