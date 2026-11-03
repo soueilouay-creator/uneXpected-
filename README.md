@@ -108,6 +108,7 @@ The Coordinator exposes a bounded subagent workflow through POST /v1/subagents/r
 - Its own task ID and role-specific memory namespace.
 - Only the explicitly supplied JSON inputs; parent conversation and private context are not copied automatically.
 - A maximum of four steps, a bounded deadline and a role handoff check.
+- A deterministic parent-scoped idempotency key prevents duplicate child invocations when the same delegation is retried.
 - A persisted parent_task_id and a concise result summary returned to the parent.
 
 The maximum configured delegation depth is three. Cycles, unauthorized handoffs, oversized inputs and budget overflow fail closed. Parent approval never grants a child broader permissions. This release does not run child tasks in parallel or retry failed child runs automatically.
