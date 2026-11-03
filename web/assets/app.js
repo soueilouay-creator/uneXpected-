@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const state = { token: "", agents: [], providers: [], status: null };
+  const state = { token: "", agents: [], providers: [], status: null, prompts: { items: [], categories: [], total: 0, offset: 0, loaded: false }, selectedPromptId: null };
   const $ = (id) => document.getElementById(id);
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const time = (v) => { if (!v) return "—"; const n=Number(v); const d=new Date(n>1e12?n:n*1000); return Number.isNaN(d.getTime())?String(v):d.toLocaleString(); };
@@ -70,6 +70,37 @@
       : "Full verified lifecycle (requires a live AI provider)";
     if(!hasConfiguredLiveProvider&&$("task-mode").value==="lifecycle")$("task-mode").value="invoke";
   }
+  async function loadPrompts({append=false}={}) {
+    const query=$("prompt-search").value.trim();
+    const category=$("prompt-category").value;
+    const offset=append?state.prompts.offset:0;
+    const params=new URLSearchParams({q:query,limit:"100",offset:String(offset)});
+    if(category)params.set("category",category);
+    $("prompt-search-button").disabled=true;
+    try {
+      const response=await api("/v1/prompts?"+params.toString());
+      const previousCategory=category;
+      state.prompts.categories=response.categories||state.prompts.categories;
+      if(!state.prompts.loaded||$("prompt-category").options.length<=1){
+        $("prompt-category").innerHTML='<option value="">All categories</option>'+state.prompts.categories.map(c=>'<option value="'+esc(c.id)+'">'+esc(c.name)+' · '+esc(c.count)+'</option>').join("");
+        $("prompt-category").value=previousCategory;
+      }
+      state.prompts.items=append?state.prompts.items.concat(response.items||[]):(response.items||[]);
+      state.prompts.total=response.total||0;
+      state.prompts.offset=offset+(response.items||[]).length;
+      state.prompts.loaded=true;
+      $("prompt-nav-count").textContent=response.source?.advertised_prompt_count||"1,178";
+      $("prompt-source-note").textContent=(response.source?.name||"AI Money Move Prompt Directory")+" · "+(response.source?.license_status||"licence not confirmed")+" · Titles/categories and attribution only; original prompt bodies are not reproduced.";
+      $("prompt-results-count").textContent="Showing "+state.prompts.items.length+" of "+state.prompts.total+" matching titles";
+      $("prompt-grid").innerHTML=state.prompts.items.length?state.prompts.items.map(item=>
+        '<article class="prompt-card"><div class="prompt-card-meta"><span>'+esc(item.category)+'</span><span>'+esc(item.agent_id)+'</span></div><h4>'+esc(item.title)+'</h4><button class="button secondary prompt-use" type="button" data-prompt-id="'+esc(item.id)+'">Use in task →</button></article>'
+      ).join(""):'<div class="empty">No matching prompt titles. Try another search or category.</div>';
+      $("prompt-more-button").hidden=state.prompts.offset>=state.prompts.total||!response.items?.length;
+    } catch(error) {
+      $("prompt-grid").innerHTML='<div class="empty">Prompt catalogue unavailable: '+esc(error.message)+'</div>';
+      toast(error.message);
+    } finally { $("prompt-search-button").disabled=false; }
+  }
   async function refresh() {
     $("refresh").disabled=true;
     try {
@@ -121,12 +152,43 @@
   function showView(name) {
     document.querySelectorAll(".view").forEach(v=>v.classList.toggle("active",v.id==="view-"+name));
     document.querySelectorAll(".nav").forEach(v=>v.classList.toggle("active",v.dataset.view===name));
-    const titles={overview:"System overview",agents:"Agent registry",tasks:"Tasks & workflows",providers:"AI providers",capabilities:"Capabilities",intelligence:"Resource & AI quality",governance:"Governance",audit:"Audit & learning"};
+    const titles={overview:"System overview",agents:"Agent registry",tasks:"Tasks & workflows",prompts:"Prompt Library",providers:"AI providers",capabilities:"Capabilities",intelligence:"Resource & AI quality",governance:"Governance",audit:"Audit & learning"};
     $("page-title").textContent=titles[name]||"System overview";
+    if (name==="prompts"&&!state.prompts.loaded) loadPrompts();
     if (name==="tasks"||name==="audit"||name==="governance"||name==="intelligence") refresh();
   }
   document.querySelectorAll("[data-view]").forEach(link=>link.addEventListener("click",e=>{e.preventDefault();const name=link.dataset.view;showView(name);history.replaceState(null,"","#"+name);}));
   $("refresh").addEventListener("click",refresh);
+  $("prompt-search-button").addEventListener("click",()=>loadPrompts());
+  $("prompt-search").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();loadPrompts();}});
+  $("prompt-category").addEventListener("change",()=>loadPrompts());
+  $("prompt-more-button").addEventListener("click",()=>loadPrompts({append:true}));
+  $("prompt-grid").addEventListener("click",async e=>{
+    const button=e.target.closest("[data-prompt-id]");
+    if(!button)return;
+    const promptId=button.dataset.promptId;
+    button.disabled=true;button.textContent="Preparing…";
+    try {
+      const response=await api("/v1/prompts/"+encodeURIComponent(promptId));
+      const item=response.item||{};
+      state.selectedPromptId=item.id||null;
+      $("task-agent").value=item.agent_id||"orchestrator";
+      $("task-objective").value="Apply the selected uneXpected workflow: "+item.title+". Produce the requested deliverable for the context below. State assumptions and limitations.\n\nContext and requirements:\n";
+      $("task-result").textContent="Selected: "+item.title+" · "+item.category+". Review and complete the task context before running.";
+      showView("tasks");
+      history.replaceState(null,"","#tasks");
+      toast("Prompt selected. Review the task before running it.");
+      $("task-objective").focus();
+    } catch(error) {toast("Prompt could not be selected: "+error.message);}
+    finally {button.disabled=false;button.textContent="Use in task →";}
+  });
+  $("task-agent").addEventListener("change",()=>{
+    if(state.selectedPromptId){
+      state.selectedPromptId=null;
+      toast("Prompt selection cleared because the specialist role changed.");
+    }
+  });
+
   $("provider-grid").addEventListener("click",async e=>{
     const button=e.target.closest("[data-test-provider]");
     if(!button)return;
@@ -177,12 +239,14 @@
   $("task-form").addEventListener("submit",async e=>{
     e.preventDefault();const button=$("task-submit");button.disabled=true;$("task-result").textContent="Submitting task to the governed coordinator…";
     const payload={agent_id:$("task-agent").value,objective:$("task-objective").value.trim()};
+    if(state.selectedPromptId)payload.prompt_id=state.selectedPromptId;
     if($("task-provider").value)payload.provider_route=$("task-provider").value;
     try {
       const route=$("task-mode").value==="lifecycle"?"/v1/lifecycle":"/v1/invoke";
       const response=await api(route,{method:"POST",body:JSON.stringify(payload)});
       const result=response.result||{};
       $("task-result").innerHTML="<h3>"+esc(result.status||"Task returned")+"</h3><p>"+esc(result.verified_output||result.output||result.error||JSON.stringify(result))+"</p><p>Task ID: "+esc(result.task_id||"—")+"</p>";
+      state.selectedPromptId=null;
       toast("Task response received");await refresh();
     } catch(error) {$("task-result").textContent="Task not completed: "+error.message;toast(error.message);}
     finally {button.disabled=false;}
