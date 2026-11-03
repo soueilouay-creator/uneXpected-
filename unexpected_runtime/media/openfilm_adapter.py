@@ -50,13 +50,13 @@ class OpenFilmAdapter:
                 description="Validate and enqueue one local OpenFilm render request.",
                 **common,
             ),
-            ToolDescriptor(
+            MCPToolDescriptor(
                 tool_id=TOOL_STATUS,
                 name="Inspect OpenFilm render",
                 description="Return bounded state, QA summary and artifact hashes for one job.",
                 **common,
             ),
-            ToolDescriptor(
+            MCPToolDescriptor(
                 tool_id=TOOL_CANCEL,
                 name="Cancel OpenFilm render",
                 description="Request cancellation of a queued or running media job.",
