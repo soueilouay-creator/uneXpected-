@@ -1,4 +1,5 @@
 import hashlib
+import importlib.util
 import json
 import tempfile
 import time
@@ -10,10 +11,15 @@ from unexpected_runtime.models import CancellationToken, PermissionDenied
 from unexpected_runtime.permissions import PermissionPolicy
 from unexpected_runtime.registry import AgentRegistry
 from unexpected_runtime.storage import StateStore
-from unexpected_runtime.mcp import (
-    MCPToolBoundary, MCPToolError, MCPToolPermissionError, MCPToolTimeout,
-    ToolCallContext, ToolDescriptor,
-)
+try:
+    from unexpected_runtime.mcp import (
+        MCPToolBoundary, MCPToolError, MCPToolPermissionError, MCPToolTimeout,
+        ToolCallContext, ToolDescriptor,
+    )
+except ModuleNotFoundError:
+    MCPToolBoundary = None
+    MCPToolError = MCPToolPermissionError = MCPToolTimeout = RuntimeError
+    ToolCallContext = ToolDescriptor = None
 
 
 class FakeAdapter:
@@ -31,6 +37,11 @@ class FakeAdapter:
 
 
 class MCPBoundaryTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        if MCPToolBoundary is None:
+            raise AssertionError("Missing required behavior: unexpected_runtime.mcp adapter boundary is not implemented.")
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.store = StateStore(Path(self.temp.name) / "state.sqlite3")
