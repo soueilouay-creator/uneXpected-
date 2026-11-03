@@ -371,7 +371,9 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             if not isinstance(agent,str) or not agent.strip() or not isinstance(objective,str) or not objective.strip():
                 return self.send_json(400,{"error":"agent_id and objective are required."})
             if len(objective)>MAX_OBJECTIVE_CHARS: return self.send_json(413,{"error":"Objective too large."})
-            if isinstance(inputs,dict) and "__uneXpected_prompt" in inputs:
+            if not isinstance(inputs,dict):
+                return self.send_json(400,{"error":"inputs must be a JSON object."})
+            if "__uneXpected_prompt" in inputs:
                 return self.send_json(400,{"error":"Reserved prompt metadata cannot be supplied by the caller."})
             if prompt_id is not None:
                 if not isinstance(prompt_id,str) or not prompt_id.strip() or len(prompt_id)>160:
@@ -396,7 +398,7 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                 objective=objective.rstrip()+"\n\n"+prompt_instructions
                 inputs=dict(inputs)
                 inputs["__uneXpected_prompt"]=prompt_metadata
-            if (not isinstance(inputs,dict) or isinstance(deadline,bool) or not isinstance(deadline,(int,float))
+            if (isinstance(deadline,bool) or not isinstance(deadline,(int,float))
                     or (not is_lifecycle and (isinstance(steps,bool) or not isinstance(steps,int)))
                     or (is_lifecycle and (isinstance(corrections,bool) or not isinstance(corrections,int)
                                        or isinstance(improvements,bool) or not isinstance(improvements,int)))):
