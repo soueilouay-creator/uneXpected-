@@ -11,6 +11,7 @@ import time
 from .isolation import WorkerResourceLimits
 from .paths import MediaPathError, MediaPathPolicy
 from .jobs import MediaJobService
+from .manifest import MediaManifest
 
 
 class MediaWorkerError(RuntimeError):
@@ -285,6 +286,7 @@ class MediaWorker:
                 output_path=output_path,
                 profile=profile,
                 max_output_bytes=self.config.max_output_bytes,
+                caption_tracks=request.get("caption_tracks", []),
             )
             if not isinstance(qa_report, dict) or qa_report.get("passed") is not True:
                 failure = qa_report.get("failure_category", "technical_qa_failed") if isinstance(qa_report, dict) else "technical_qa_invalid"
@@ -294,10 +296,15 @@ class MediaWorker:
                     result={"failure_category": failure, "qa_report": qa_report if isinstance(qa_report, dict) else {}},
                 )
                 return {"job_id": job["job_id"], "status": "qa_blocked", "failure_category": failure}
+            manifest = MediaManifest.build(
+                job=job, snapshot=snapshot, output_path=output_path,
+                qa_report=qa_report, runner_result=runner_result,
+            )
             final_result = {
                 **transition_result,
                 "qa_status": "passed",
                 "qa_report": qa_report,
+                "manifest": manifest,
                 "artifact_path": str(output_path),
                 "artifact_hashes": qa_report.get("artifact_hashes", {}),
             }
@@ -309,6 +316,7 @@ class MediaWorker:
                 "artifact_path": str(output_path),
                 "artifact_hash": transition_result["output_sha256"],
                 "qa_report": qa_report,
+                "manifest": manifest,
             }
         except MediaPathError as exc:
             return self._finish_failure(job, state, "project_path_rejected", str(exc))

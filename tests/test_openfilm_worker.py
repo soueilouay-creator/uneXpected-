@@ -53,7 +53,7 @@ class FakeQA:
         self.passed = passed
         self.calls = 0
 
-    def run(self, *, snapshot, output_path, profile, max_output_bytes):
+    def run(self, *, snapshot, output_path, profile, max_output_bytes, caption_tracks=None):
         self.calls += 1
         output = Path(output_path)
         return {
@@ -139,6 +139,8 @@ class OpenFilmWorkerTests(unittest.TestCase):
         self.assertEqual(isolation.calls, 1)
         self.assertEqual(qa.calls, 1)
         self.assertTrue(Path(result["artifact_path"]).is_file())
+        self.assertEqual(result["manifest"]["qa"]["status"], "passed")
+        self.assertEqual(result["manifest"]["campaign_id"], "MAINTENANCE_TRACKER_GROWTH")
         self.assertNotEqual(result["status"], "published")
 
     def test_automated_qa_failure_blocks_the_artifact(self):
