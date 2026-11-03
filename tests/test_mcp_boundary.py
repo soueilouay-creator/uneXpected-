@@ -121,7 +121,6 @@ class MCPBoundaryTests(unittest.TestCase):
 
     def tearDown(self):
         self.boundary.close()
-        self.store.close()
         self.temp.cleanup()
 
     def test_enabled_verified_adapter_executes_and_audits_only_fingerprints(self):
