@@ -1,5 +1,16 @@
 # Changelog
 
+## v8.1.0-preview — AI Money Move prompt library (2026-11-03)
+
+- Indexed all 1,178 prompt titles and 15 category labels from the public AI Money Move directory with stable IDs, source attribution and routing to 13 existing canonical roles.
+- Added an authenticated, bounded `/v1/prompts` search API and prompt-detail route; metadata is exposed only after normal bearer-token authorization.
+- Added optional `prompt_id` binding to governed invocation and lifecycle requests. The selected prompt must match the existing specialist role and is included in the objective and persisted input metadata for idempotency binding.
+- Added a searchable, filterable Prompt Library view to the single command center; selecting a prompt prepares a draft task and never starts it automatically.
+- The source page did not expose an explicit reuse licence in the reviewed snapshot. Stored data is limited to titles/category labels/IDs/role mapping/source attribution; original prompt bodies are not copied. uneXpected generates its own safe task instructions.
+- No additional agents, third-party tools, external actions, deployment or production activation are included.
+
+# Changelog
+
 ## v8.1.0-preview — Verified Skill bundles (2026-11-02)
 
 - Extends the existing local SHA-256-pinned Skill registry with backward-compatible manifest v2 bundle metadata.
