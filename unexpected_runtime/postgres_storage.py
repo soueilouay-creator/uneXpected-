@@ -35,8 +35,8 @@ class PostgresStateStore(PostgresIdempotencyMixin):
                     row = connection.execute(
                         "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1"
                     ).fetchone()
-                    if not row or int(row["version"]) < 2:
-                        raise PostgresStorageError("PostgreSQL v8 migrations are not initialized; migration 002 is required.")
+                    if not row or int(row["version"]) < 3:
+                        raise PostgresStorageError("PostgreSQL v8 migrations are not initialized; migration 003 is required.")
             except PostgresStorageError:
                 raise
             except Exception as exc:
@@ -477,6 +477,308 @@ class PostgresStateStore(PostgresIdempotencyMixin):
                 (record["status"], self._dump(record), time.time(), record["capability_id"], expected_status),
             )
         return cursor.rowcount == 1
+
+
+    # Prompt Intelligence methods mirror the SQLite StateStore contract.
+    def create_prompt_source(self, record: dict[str, Any]) -> dict[str, Any]:
+        now = time.time()
+        with self._session() as connection:
+            connection.execute(
+                "INSERT INTO prompt_sources(source_id,status,record_json,created_at,updated_at) VALUES(%s,%s,%s,%s,%s)",
+                (record["source_id"], record["status"], self._dump(record), now, now),
+            )
+        return dict(record)
+
+    def get_prompt_source(self, source_id: str):
+        with self._session() as connection:
+            row = connection.execute(
+                "SELECT record_json FROM prompt_sources WHERE source_id=%s", (source_id,)
+            ).fetchone()
+        return json.loads(row["record_json"]) if row else None
+
+    def list_prompt_sources(self, limit: int = 50):
+        with self._session() as connection:
+            rows = connection.execute(
+                "SELECT record_json FROM prompt_sources ORDER BY created_at DESC,source_id LIMIT %s",
+                (self._bounded(limit, 200),),
+            ).fetchall()
+        return [json.loads(row["record_json"]) for row in rows]
+
+    def update_prompt_source(self, record: dict[str, Any], expected_status: str) -> bool:
+        with self._session() as connection:
+            cursor = connection.execute(
+                "UPDATE prompt_sources SET status=%s,record_json=%s,updated_at=%s WHERE source_id=%s AND status=%s",
+                (record["status"], self._dump(record), time.time(), record["source_id"], expected_status),
+            )
+        return cursor.rowcount == 1
+
+    def stage_prompt_versions(self, records: list[tuple[dict[str, Any], dict[str, Any]]]):
+        created = 0
+        duplicates = 0
+        results = []
+        with self._session() as connection:
+            for prompt_record, version_record in records:
+                source = connection.execute(
+                    "SELECT source_id FROM prompt_sources WHERE source_id=%s",
+                    (prompt_record["source_id"],),
+                ).fetchone()
+                if not source:
+                    raise ValueError("Prompt source does not exist.")
+                existing = connection.execute(
+                    "SELECT * FROM prompts WHERE source_id=%s AND external_id=%s FOR UPDATE",
+                    (prompt_record["source_id"], prompt_record["external_id"]),
+                ).fetchone()
+                if existing:
+                    same = connection.execute(
+                        "SELECT version FROM prompt_versions WHERE prompt_id=%s AND content_sha256=%s ORDER BY version DESC LIMIT 1",
+                        (existing["prompt_id"], version_record["content_sha256"]),
+                    ).fetchone()
+                    if same:
+                        duplicates += 1
+                        result = dict(existing)
+                        result["version"] = int(same["version"])
+                        result["created"] = False
+                        results.append(result)
+                        continue
+                    next_row = connection.execute(
+                        "SELECT COALESCE(MAX(version),0)+1 AS next_version FROM prompt_versions WHERE prompt_id=%s",
+                        (existing["prompt_id"],),
+                    ).fetchone()
+                    version = int(next_row["next_version"])
+                    prompt_id = existing["prompt_id"]
+                    prompt_status = "active" if existing["active_version"] is not None else "staged"
+                    connection.execute(
+                        "UPDATE prompts SET title=%s,category=%s,category_id=%s,status=%s,candidate_version=%s,updated_at=%s WHERE prompt_id=%s",
+                        (prompt_record["title"], prompt_record["category"], prompt_record["category_id"],
+                         prompt_status, version, time.time(), prompt_id),
+                    )
+                else:
+                    prompt_id = prompt_record["prompt_id"]
+                    version = 1
+                    now = time.time()
+                    connection.execute(
+                        "INSERT INTO prompts(prompt_id,source_id,external_id,title,category,category_id,status,active_version,candidate_version,created_at,updated_at) VALUES(%s,%s,%s,%s,%s,%s,%s,NULL,%s,%s,%s)",
+                        (prompt_id, prompt_record["source_id"], prompt_record["external_id"],
+                         prompt_record["title"], prompt_record["category"], prompt_record["category_id"],
+                         "staged", version, now, now),
+                    )
+                payload = dict(version_record)
+                payload["prompt_id"] = prompt_id
+                payload["version"] = version
+                payload["status"] = "staged"
+                connection.execute(
+                    "INSERT INTO prompt_versions(prompt_id,version,status,content_sha256,body,record_json,created_at,reviewed_at) VALUES(%s,%s,%s,%s,%s,%s,%s,NULL)",
+                    (prompt_id, version, "staged", payload["content_sha256"], payload.get("body"),
+                     self._dump(payload), time.time()),
+                )
+                row = connection.execute(
+                    "SELECT * FROM prompts WHERE prompt_id=%s", (prompt_id,)
+                ).fetchone()
+                result = dict(row)
+                result["version"] = version
+                result["created"] = True
+                results.append(result)
+                created += 1
+        return {"created": created, "duplicates": duplicates, "items": results}
+
+    def get_prompt(self, prompt_id: str):
+        with self._session() as connection:
+            row = connection.execute("SELECT * FROM prompts WHERE prompt_id=%s", (prompt_id,)).fetchone()
+        return dict(row) if row else None
+
+    def get_prompt_version(self, prompt_id: str, version: int):
+        with self._session() as connection:
+            row = connection.execute(
+                "SELECT * FROM prompt_versions WHERE prompt_id=%s AND version=%s",
+                (prompt_id, version),
+            ).fetchone()
+        if not row:
+            return None
+        payload = json.loads(row["record_json"])
+        payload.update({
+            "prompt_id": row["prompt_id"], "version": int(row["version"]),
+            "status": row["status"], "content_sha256": row["content_sha256"],
+            "body": row["body"],
+        })
+        return payload
+
+    def update_prompt_version(self, record: dict[str, Any], expected_status: str) -> bool:
+        reviewed_at = record.get("review", {}).get("reviewed_at")
+        with self._session() as connection:
+            cursor = connection.execute(
+                "UPDATE prompt_versions SET status=%s,record_json=%s,reviewed_at=%s WHERE prompt_id=%s AND version=%s AND status=%s",
+                (record["status"], self._dump(record), reviewed_at, record["prompt_id"],
+                 int(record["version"]), expected_status),
+            )
+            if cursor.rowcount != 1:
+                return False
+            connection.execute(
+                "UPDATE prompts SET candidate_version=%s,status=CASE WHEN active_version IS NULL THEN 'staged' ELSE 'active' END,updated_at=%s WHERE prompt_id=%s",
+                (int(record["version"]), time.time(), record["prompt_id"]),
+            )
+        return True
+
+    def activate_prompt_version(self, prompt_id: str, version: int, expected_candidate_version: int):
+        now = time.time()
+        with self._session() as connection:
+            prompt = connection.execute(
+                "SELECT * FROM prompts WHERE prompt_id=%s FOR UPDATE", (prompt_id,)
+            ).fetchone()
+            if not prompt or prompt["candidate_version"] != expected_candidate_version:
+                return None
+            version_row = connection.execute(
+                "SELECT * FROM prompt_versions WHERE prompt_id=%s AND version=%s FOR UPDATE",
+                (prompt_id, version),
+            ).fetchone()
+            if not version_row or version_row["status"] != "ready_for_activation":
+                return None
+            previous = prompt["active_version"]
+            if previous is not None and int(previous) != int(version):
+                old = connection.execute(
+                    "SELECT record_json FROM prompt_versions WHERE prompt_id=%s AND version=%s",
+                    (prompt_id, int(previous)),
+                ).fetchone()
+                if old:
+                    old_payload = json.loads(old["record_json"])
+                    old_payload["status"] = "superseded"
+                    connection.execute(
+                        "UPDATE prompt_versions SET status='superseded',record_json=%s WHERE prompt_id=%s AND version=%s",
+                        (self._dump(old_payload), prompt_id, int(previous)),
+                    )
+            payload = json.loads(version_row["record_json"])
+            payload["status"] = "active"
+            payload["activated_at"] = now
+            connection.execute(
+                "UPDATE prompt_versions SET status='active',record_json=%s WHERE prompt_id=%s AND version=%s AND status='ready_for_activation'",
+                (self._dump(payload), prompt_id, int(version)),
+            )
+            cursor = connection.execute(
+                "UPDATE prompts SET status='active',active_version=%s,candidate_version=NULL,title=%s,category=%s,category_id=%s,updated_at=%s WHERE prompt_id=%s AND candidate_version=%s",
+                (int(version), payload["title"], payload["category"], payload["category_id"],
+                 now, prompt_id, expected_candidate_version),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("Prompt candidate changed during activation.")
+            result = dict(connection.execute(
+                "SELECT * FROM prompts WHERE prompt_id=%s", (prompt_id,)
+            ).fetchone())
+        return result
+
+    def get_active_prompt(self, prompt_id: str):
+        with self._session() as connection:
+            row = connection.execute(
+                "SELECT p.*,v.record_json,v.body,v.content_sha256 FROM prompts p "
+                "JOIN prompt_versions v ON v.prompt_id=p.prompt_id AND v.version=p.active_version "
+                "WHERE p.prompt_id=%s AND p.status='active' AND v.status='active'",
+                (prompt_id,),
+            ).fetchone()
+        if not row:
+            return None
+        payload = json.loads(row["record_json"])
+        payload.update({
+            "prompt_id": row["prompt_id"], "source_id": row["source_id"],
+            "external_id": row["external_id"], "active_version": int(row["active_version"]),
+            "title": row["title"], "category": row["category"], "category_id": row["category_id"],
+            "body": row["body"], "content_sha256": row["content_sha256"], "status": "active",
+        })
+        return payload
+
+    def list_active_prompts(self, query: str = "", category_id: str | None = None,
+                            limit: int = 50, offset: int = 0):
+        bounded = self._bounded(limit, 200)
+        skip = max(0, min(int(offset), 100000))
+        needle = str(query or "").strip().lower()
+        clauses = ["p.status='active'", "v.status='active'"]
+        params: list[Any] = []
+        if category_id:
+            clauses.append("p.category_id=%s")
+            params.append(category_id)
+        if needle:
+            clauses.append("(LOWER(p.title) LIKE %s OR LOWER(p.category) LIKE %s)")
+            params.extend([f"%{needle}%", f"%{needle}%"])
+        where = " AND ".join(clauses)
+        with self._session() as connection:
+            count = connection.execute(
+                "SELECT COUNT(*) AS n FROM prompts p JOIN prompt_versions v ON v.prompt_id=p.prompt_id AND v.version=p.active_version WHERE " + where,
+                tuple(params),
+            ).fetchone()["n"]
+            rows = connection.execute(
+                "SELECT p.*,v.record_json,v.content_sha256 FROM prompts p "
+                "JOIN prompt_versions v ON v.prompt_id=p.prompt_id AND v.version=p.active_version "
+                "WHERE " + where + " ORDER BY p.category_id,p.prompt_id LIMIT %s OFFSET %s",
+                tuple(params + [bounded, skip]),
+            ).fetchall()
+        items = []
+        for row in rows:
+            payload = json.loads(row["record_json"])
+            payload.update({
+                "prompt_id": row["prompt_id"], "source_id": row["source_id"],
+                "external_id": row["external_id"], "active_version": int(row["active_version"]),
+                "title": row["title"], "category": row["category"], "category_id": row["category_id"],
+                "content_sha256": row["content_sha256"], "status": "active",
+            })
+            payload.pop("body", None)
+            items.append(payload)
+        return items, int(count)
+
+    def list_active_prompt_categories(self):
+        with self._session() as connection:
+            rows = connection.execute(
+                "SELECT p.category_id,p.category,COUNT(*) AS count FROM prompts p "
+                "JOIN prompt_versions v ON v.prompt_id=p.prompt_id AND v.version=p.active_version "
+                "WHERE p.status='active' AND v.status='active' "
+                "GROUP BY p.category_id,p.category ORDER BY p.category"
+            ).fetchall()
+        return [{"id": row["category_id"], "name": row["category"], "count": int(row["count"])} for row in rows]
+
+    def list_prompt_versions(self, statuses: tuple[str, ...] = ("staged",), limit: int = 100):
+        bounded = self._bounded(limit, 200)
+        values = tuple(statuses)
+        if not values:
+            return []
+        marks = ",".join(["%s"] * len(values))
+        with self._session() as connection:
+            rows = connection.execute(
+                "SELECT v.record_json FROM prompt_versions v WHERE v.status IN (" + marks + ") "
+                "ORDER BY v.created_at DESC,v.prompt_id LIMIT %s",
+                values + (bounded,),
+            ).fetchall()
+        return [json.loads(row["record_json"]) for row in rows]
+
+    def seed_prompt_catalog(self, source: dict[str, Any], rows: list[dict[str, Any]]) -> int:
+        inserted = 0
+        now = time.time()
+        with self._session() as connection:
+            connection.execute(
+                "INSERT INTO prompt_sources(source_id,status,record_json,created_at,updated_at) VALUES(%s,%s,%s,%s,%s) ON CONFLICT(source_id) DO NOTHING",
+                (source["source_id"], source["status"], self._dump(source), now, now),
+            )
+            for record in rows:
+                existing = connection.execute(
+                    "SELECT prompt_id FROM prompts WHERE prompt_id=%s", (record["prompt_id"],)
+                ).fetchone()
+                if existing:
+                    same = connection.execute(
+                        "SELECT content_sha256 FROM prompt_versions WHERE prompt_id=%s AND version=1",
+                        (record["prompt_id"],),
+                    ).fetchone()
+                    if not same or same["content_sha256"] != record["content_sha256"]:
+                        raise ValueError("Seed prompt ID already exists with different version content.")
+                    continue
+                connection.execute(
+                    "INSERT INTO prompts(prompt_id,source_id,external_id,title,category,category_id,status,active_version,candidate_version,created_at,updated_at) VALUES(%s,%s,%s,%s,%s,%s,%s,1,NULL,%s,%s)",
+                    (record["prompt_id"], source["source_id"], record["external_id"],
+                     record["title"], record["category"], record["category_id"],
+                     "active", now, now),
+                )
+                payload = dict(record)
+                payload.update({"version": 1, "status": "active"})
+                connection.execute(
+                    "INSERT INTO prompt_versions(prompt_id,version,status,content_sha256,body,record_json,created_at,reviewed_at) VALUES(%s,1,'active',%s,NULL,%s,%s,%s)",
+                    (record["prompt_id"], record["content_sha256"], self._dump(payload), now, now),
+                )
+                inserted += 1
+        return inserted
 
     def list_tasks(self, limit: int = 100):
         with self._session() as connection:
