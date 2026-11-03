@@ -61,7 +61,7 @@ class MediaPathPolicy:
         if not isinstance(value, str) or not value.strip() or "\x00" in value or "\\" in value:
             raise MediaPathError(f"{name} must be a non-empty POSIX relative path.")
         candidate = PurePosixPath(value)
-        if candidate.is_absolute() or any(part in {"", ".", ".."} or part.startswith(".") for part in candidate.parts):
+        if not candidate.parts or candidate.is_absolute() or any(part in {"", ".", ".."} or part.startswith(".") for part in candidate.parts):
             raise MediaPathError(f"{name} must not contain absolute, traversal or hidden components.")
         return candidate
 
