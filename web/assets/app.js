@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const state = { token: "", agents: [], providers: [], status: null, traceTaskId: null, traceCursor: 0 };
+  const state = { token: "", agents: [], providers: [], status: null, traceTaskId: null, traceCursor: 0, promptSources: [], promptQueue: [], promptActivation: null };
   const $ = (id) => document.getElementById(id);
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const time = (v) => { if (!v) return "—"; const n=Number(v); const d=new Date(n>1e12?n:n*1000); return Number.isNaN(d.getTime())?String(v):d.toLocaleString(); };
@@ -136,6 +136,7 @@
       $("recovery-state").textContent=status.storage?.recovery||"Not verified";
       $("updated").textContent="Updated "+new Date().toLocaleTimeString();
       renderAgents(); renderProviders(providers.providers||[]); setConnected(true);
+      if ($("view-prompts").classList.contains("active")) await loadPromptIntelligence();
     } catch(error) {
       setConnected(false);
       if (error.message==="Unauthorized."||error.message==="Unauthorized") {
@@ -144,15 +145,192 @@
       } else toast(error.message);
     } finally { $("refresh").disabled=false; }
   }
+  function promptSourceOptions(selectId, predicate, placeholder) {
+    const select=$(selectId);
+    if(!select)return;
+    const previous=select.value;
+    const items=state.promptSources.filter(predicate);
+    select.innerHTML='<option value="">'+esc(placeholder)+'</option>'+items.map(s=>'<option value="'+esc(s.source_id)+'">'+esc(s.name)+' · '+esc(s.status)+'</option>').join("");
+    if(items.some(s=>s.source_id===previous))select.value=previous;
+  }
+  function renderPromptSources() {
+    const items=state.promptSources||[];
+    $("prompt-source-list").innerHTML=items.length?items.map(s=>row(s.name,s.source_id+" · "+s.canonical_url+" · "+s.rights_status+" / "+s.retention_policy,s.status)).join(""):'<div class="empty">No prompt sources registered yet.</div>';
+    promptSourceOptions("prompt-source-review-id",s=>!["active","suspended","archived"].includes(s.status),"Select a source to review");
+    promptSourceOptions("prompt-import-source",s=>["reviewed","active"].includes(s.status),"Select a reviewed source");
+  }
+  function renderPromptQueue() {
+    const items=state.promptQueue||[];
+    if(!items.length){$("prompt-review-queue").innerHTML='<div class="empty">No staged prompt versions are waiting for review.</div>';return;}
+    $("prompt-review-queue").innerHTML=items.map(item=>{
+      const roles=state.agents.map(a=>'<option value="'+esc(a.id)+'" '+((item.mapped_agent_id||item.suggested_agent_id)===a.id?'selected':'')+'>'+esc(a.name)+" · "+esc(a.id)+'</option>').join("");
+      const canReview=item.status==="staged";
+      const canActivate=item.status==="ready_for_activation";
+      return '<article class="prompt-queue-card" data-prompt-card data-prompt-id="'+esc(item.prompt_id)+'" data-version="'+esc(item.version)+'"><div><h4>'+esc(item.title||item.prompt_id)+'</h4><p>'+esc(item.category||"Uncategorised")+' · source '+esc(item.source_id||"unknown")+'</p><small>'+esc(item.prompt_id)+' · version '+esc(item.version)+' · '+esc(item.status)+' · '+esc(item.content_sha256||"hash unavailable")+'</small></div><div class="prompt-queue-actions"><label>Canonical specialist role</label><select data-prompt-role>'+roles+'</select>'+(canReview?'<button class="button primary" data-prompt-review type="button">Review & evaluate</button>':'')+(canActivate?'<button class="button secondary" data-prompt-activation-details type="button">Prepare activation approval</button>':'')+'</div></article>';
+    }).join("");
+  }
+  async function loadPromptIntelligence() {
+    try {
+      const [sources,queue,active]=await Promise.all([
+        api("/v1/prompt-intelligence/sources?limit=200"),
+        api("/v1/prompt-intelligence/review-queue?limit=200"),
+        api("/v1/prompts?limit=20")
+      ]);
+      state.promptSources=sources.items||[];
+      state.promptQueue=queue.items||[];
+      $("prompt-source-count").textContent=String(sources.count??state.promptSources.length);
+      $("prompt-queue-count").textContent=String(queue.count??state.promptQueue.length);
+      $("prompt-active-count").textContent=String(active.total??0);
+      const configured=state.status?.approval_verifier_configured===true;
+      $("prompt-approval-status").textContent=configured?"Configured":"Not configured";
+      $("prompt-approval-note").textContent=configured?"Host verifier will check each one-use approval":"Fail-closed until host verifier and trusted reviewers are configured";
+      $("prompt-activation-note").textContent=configured
+        ?"Entered approval fields are untrusted; the host independently checks the exact GitHub PR review, digest, expiry and replay ledger."
+        :"Activation is disabled because no host approval verifier is configured. Do not bypass this gate.";
+      $("prompt-activate-submit").disabled=!configured;
+      renderPromptSources();
+      renderPromptQueue();
+      renderActivePromptResults(active.items||[]);
+    } catch(error) {
+      $("prompt-source-list").innerHTML='<div class="empty">Prompt sources unavailable: '+esc(error.message)+'</div>';
+      $("prompt-review-queue").innerHTML='<div class="empty">Prompt review queue unavailable: '+esc(error.message)+'</div>';
+      $("prompt-active-results").innerHTML='<div class="empty">Active prompts unavailable: '+esc(error.message)+'</div>';
+      toast(error.message);
+    }
+  }
+  function renderActivePromptResults(items) {
+    $("prompt-active-results").innerHTML=items.length?items.map(item=>row(item.title,item.category+" · "+item.agent_id+" · "+item.source_id,item.prompt_id)).join(""):'<div class="empty">No active prompts match this search.</div>';
+  }
+  async function searchActivePrompts() {
+    const q=$("prompt-active-query").value.trim();
+    const params=new URLSearchParams({limit:"20"});
+    if(q)params.set("q",q);
+    $("prompt-active-results").textContent="Searching active prompt versions…";
+    try {
+      const response=await api("/v1/prompts?"+params.toString());
+      $("prompt-active-count").textContent=String(response.total??0);
+      renderActivePromptResults(response.items||[]);
+    } catch(error) {$("prompt-active-results").textContent="Search failed: "+error.message;}
+  }
+  async function showPromptActivationDetails(card) {
+    const promptId=card.dataset.promptId;
+    const version=Number(card.dataset.version);
+    const item=state.promptQueue.find(x=>x.prompt_id===promptId&&Number(x.version)===version)||{};
+    try {
+      const response=await api("/v1/prompt-intelligence/prompts/"+encodeURIComponent(promptId)+"/activation-details?version="+encodeURIComponent(version));
+      const slug=String(promptId).toLowerCase().replace(/[^a-z0-9._-]+/g,"-").replace(/^-+|-+$/g,"").slice(0,28)||"prompt";
+      const proposalId=("prompt-"+slug+"-v"+version+"-"+Date.now().toString(36)).slice(0,64);
+      const summary=("Activate reviewed prompt '"+(item.title||promptId)+"' version "+version+" mapped to "+(item.mapped_agent_id||item.suggested_agent_id||"reviewed specialist")+".").slice(0,1000);
+      const bundle={proposal_id:proposalId,permission:"modify_policy",action_digest:response.action_digest,action_details_json:JSON.stringify(response.action_details),summary};
+      state.promptActivation={promptId,version,proposalId,actionDigest:response.action_digest,actionDetails:response.action_details};
+      $("prompt-activation-id").value=promptId;
+      $("prompt-activation-version").value=String(version);
+      $("prompt-activation-proposal-id").value=proposalId;
+      $("prompt-activation-label").textContent=(item.title||promptId)+" · v"+version+" · "+(item.mapped_agent_id||item.suggested_agent_id||"role mapped");
+      $("prompt-approval-digest").value=response.action_digest;
+      $("prompt-approval-bundle").value=JSON.stringify(bundle,null,2);
+      $("prompt-activation-result").textContent="";
+      $("prompt-activation-panel").hidden=false;
+      $("prompt-activation-panel").scrollIntoView({behavior:"smooth",block:"start"});
+    } catch(error) {toast("Activation details unavailable: "+error.message);}
+  }
   function showView(name) {
     document.querySelectorAll(".view").forEach(v=>v.classList.toggle("active",v.id==="view-"+name));
     document.querySelectorAll(".nav").forEach(v=>v.classList.toggle("active",v.dataset.view===name));
-    const titles={overview:"System overview",agents:"Agent registry",tasks:"Tasks & workflows",providers:"AI providers",capabilities:"Capabilities",intelligence:"Resource & AI quality",governance:"Governance",audit:"Audit & learning"};
+    const titles={overview:"System overview",agents:"Agent registry",tasks:"Tasks & workflows",prompts:"Prompt Intelligence",providers:"AI providers",capabilities:"Capabilities",intelligence:"Resource & AI quality",governance:"Governance",audit:"Audit & learning"};
     $("page-title").textContent=titles[name]||"System overview";
     if (name==="tasks"||name==="audit"||name==="governance"||name==="intelligence") refresh();
+    if (name==="prompts") loadPromptIntelligence();
   }
   document.querySelectorAll("[data-view]").forEach(link=>link.addEventListener("click",e=>{e.preventDefault();const name=link.dataset.view;showView(name);history.replaceState(null,"","#"+name);}));
   $("refresh").addEventListener("click",refresh);
+  $("prompt-intelligence-refresh").addEventListener("click",loadPromptIntelligence);
+  $("prompt-source-register-form").addEventListener("submit",async e=>{
+    e.preventDefault();const button=$("prompt-source-register-submit");button.disabled=true;
+    const result=$("prompt-source-register-result");result.textContent="Registering source metadata…";
+    const payload={
+      source_id:$("prompt-source-id").value.trim().toLowerCase(),
+      name:$("prompt-source-name").value.trim(),
+      canonical_url:$("prompt-source-url").value.trim(),
+      publisher:$("prompt-source-publisher").value.trim(),
+      source_type:$("prompt-source-type").value,
+      terms_url:$("prompt-source-terms").value.trim()||null,
+      license_url:$("prompt-source-license").value.trim()||null,
+      attribution:$("prompt-source-attribution").value.trim(),
+      description:$("prompt-source-description").value.trim(),
+      metadata:{}
+    };
+    try{
+      const response=await api("/v1/prompt-intelligence/sources",{method:"POST",body:JSON.stringify(payload)});
+      result.textContent="Source registered in staged state with unknown rights and metadata-only retention: "+response.source.source_id;
+      e.target.reset();await loadPromptIntelligence();toast("Prompt source registered");
+    }catch(error){result.textContent="Source registration rejected: "+error.message;toast(error.message);}
+    finally{button.disabled=false;}
+  });
+  $("prompt-source-review-form").addEventListener("submit",async e=>{
+    e.preventDefault();const button=$("prompt-source-review-submit");button.disabled=true;
+    const result=$("prompt-source-review-result");result.textContent="Saving rights review…";
+    const sourceId=$("prompt-source-review-id").value;
+    const payload={rights_status:$("prompt-rights-status").value,retention_policy:$("prompt-retention-policy").value,evidence_url:$("prompt-rights-evidence").value.trim()||null,attribution:$("prompt-review-attribution").value.trim()};
+    try{
+      const response=await api("/v1/prompt-intelligence/sources/"+encodeURIComponent(sourceId)+"/review",{method:"POST",body:JSON.stringify(payload)});
+      result.textContent="Rights review saved: "+response.source.rights_status+" / "+response.source.retention_policy;
+      await loadPromptIntelligence();toast("Source rights reviewed");
+    }catch(error){result.textContent="Source review rejected: "+error.message;toast(error.message);}
+    finally{button.disabled=false;}
+  });
+  $("prompt-import-form").addEventListener("submit",async e=>{
+    e.preventDefault();const button=$("prompt-import-submit");button.disabled=true;
+    const result=$("prompt-import-result");result.textContent="Validating and staging import batch…";
+    let records;
+    try{records=JSON.parse($("prompt-import-json").value);}catch(error){result.textContent="Invalid JSON: "+error.message;button.disabled=false;return;}
+    try{
+      const response=await api("/v1/prompt-intelligence/import",{method:"POST",body:JSON.stringify({source_id:$("prompt-import-source").value,records})});
+      result.textContent="Batch staged: "+(response.staged_count??response.count??"records")+" · no prompt was activated.";
+      e.target.reset();await loadPromptIntelligence();toast("Prompt batch staged");
+    }catch(error){result.textContent="Import rejected: "+error.message;toast(error.message);}
+    finally{button.disabled=false;}
+  });
+  $("prompt-review-queue").addEventListener("click",async e=>{
+    const card=e.target.closest("[data-prompt-card]");if(!card)return;
+    if(e.target.closest("[data-prompt-review]")){
+      const button=e.target.closest("[data-prompt-review]");button.disabled=true;
+      const role=card.querySelector("[data-prompt-role]").value;
+      try{
+        const response=await api("/v1/prompt-intelligence/prompts/"+encodeURIComponent(card.dataset.promptId)+"/review",{method:"POST",body:JSON.stringify({version:Number(card.dataset.version),mapped_agent_id:role})});
+        toast("Prompt reviewed: "+(response.review.status||"evaluation complete"));await loadPromptIntelligence();
+      }catch(error){toast("Prompt review failed: "+error.message);button.disabled=false;}
+    }else if(e.target.closest("[data-prompt-activation-details]")){
+      await showPromptActivationDetails(card);
+    }
+  });
+  $("prompt-copy-approval-bundle").addEventListener("click",async()=>{
+    const value=$("prompt-approval-bundle").value;
+    try{await navigator.clipboard.writeText(value);toast("Approval request fields copied");}
+    catch(error){$("prompt-approval-bundle").focus();$("prompt-approval-bundle").select();toast("Select and copy the approval request fields");}
+  });
+  $("prompt-activation-form").addEventListener("submit",async e=>{
+    e.preventDefault();const button=$("prompt-activate-submit");button.disabled=true;
+    const result=$("prompt-activation-result");result.textContent="Submitting to the host approval verifier…";
+    const activation=state.promptActivation;
+    if(!activation){result.textContent="Prepare activation details first.";button.disabled=!state.status?.approval_verifier_configured;return;}
+    const payload={
+      version:activation.version,
+      approval_id:$("prompt-approval-id").value.trim(),
+      approver:$("prompt-approval-approver").value.trim(),
+      approved_permissions:["modify_policy"],
+      rationale:$("prompt-approval-rationale").value.trim(),
+      action_digest:activation.actionDigest
+    };
+    try{
+      const response=await api("/v1/prompt-intelligence/prompts/"+encodeURIComponent(activation.promptId)+"/activate",{method:"POST",body:JSON.stringify(payload)});
+      result.textContent=response.activated?"Prompt version activated after host approval verification.":"Activation not confirmed.";
+      toast("Prompt activation verified");$("prompt-activation-panel").hidden=true;state.promptActivation=null;await loadPromptIntelligence();
+    }catch(error){result.textContent="Activation blocked: "+error.message;toast(error.message);}
+    finally{button.disabled=!state.status?.approval_verifier_configured;}
+  });
+  $("prompt-active-search-button").addEventListener("click",searchActivePrompts);
+  $("prompt-active-query").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();searchActivePrompts();}});
   $("task-list").addEventListener("click",e=>{
     const button=e.target.closest("[data-trace-task]");
     if(!button)return;

@@ -11,6 +11,7 @@ uneXpected v8 is one governed Python application with one desktop web command ce
 - The canonical 38 specialist roles and a hash-pinned Skill bundle registry with backward-compatible v1/v2 manifests.
 - The governed coordinator and seven-stage workflow: Request → Plan → Execute → Verify → Improve → Deliver → Learn.
 - Resource Intelligence: permanent Awesome research index with provenance, independent license/security status and discovery-only adoption states.
+- Prompt Intelligence: source-agnostic prompt registry with provenance, rights-aware ingestion, immutable versions, canonical role mapping, deterministic safety evaluation, a Command Center review workspace and action-bound approval-gated activation.
 - AI Quality Evaluation: bounded deterministic output checks for instruction following, prompt injection, grounding, safety, structured output and regressions.
 - Native server-side provider adapters for OpenAI, Anthropic, and OpenRouter, plus explicit deterministic mock mode.
 - SQLite for local development and PostgreSQL for hosted shared state.
@@ -47,6 +48,14 @@ Open `http://127.0.0.1:10000`. The command center asks for the API token; the br
 
 Inspect the curated research catalog with `python -m unexpected_runtime.cli resources --validate`. A live quality evaluation is an explicit operator action and requires a configured, already verified non-mock route, for example `python -m unexpected_runtime.cli quality-eval --provider-route openrouter`. A mock or unverified route is rejected before evaluation tasks are created. The deterministic CI fixture suite tests evaluator contracts only; it is not live semantic model evidence.
 
+## Prompt Intelligence
+
+Prompt Intelligence is part of the same runtime and Command Center—not a separate service, agent registry or database. Sources follow a governed lifecycle: register provenance → review rights and retention → stage an import → map to an existing canonical role → run deterministic safety evaluation → request a one-use host approval → activate an immutable version.
+
+The first bundled source is the AI Money Move metadata index: 1,178 titles across 15 categories mapped to 13 existing roles. Original prompt bodies are not copied because an explicit reuse licence was not established. New sources default to unknown rights and metadata-only retention. Source text is accepted only after evidence and attribution are recorded. Imported prompt content cannot add permissions, tools or roles.
+
+The Command Center's **Prompt Intelligence** workspace manages source registration, rights review, bounded JSON imports, the review queue, role mapping, activation details and approval request preparation. Activation remains fail-closed unless the host GitHub approval verifier and trusted reviewers are configured. No crawler, automatic refresh or automatic activation is enabled.
+
 ## Provider configuration
 
 Provider credentials must be stored in the host's secret manager, never in Git or browser storage.
@@ -65,10 +74,11 @@ Set `UNEXPECTED_STORAGE_BACKEND=postgres` and supply `DATABASE_URL` in the host 
 
 Apply migrations in order from an isolated database branch before configuring the service:
 
-1. Existing schema version 1.
+1. `migrations/001_initial.sql` for a fresh database (or verify the existing schema-v1 baseline).
 2. `migrations/002_idempotency_claims.sql`.
+3. `migrations/003_prompt_intelligence.sql` for the governed Prompt Intelligence source, prompt and immutable-version tables.
 
-For a fresh PostgreSQL database, apply `migrations/001_initial.sql` followed by `migrations/002_idempotency_claims.sql`. For an existing schema-v1 database, first compare it against migration 001, then apply only migration 002. The v8 adapter refuses to start before schema version 2. The included Render Blueprint creates one free web service only; it does not create a database.
+For a fresh PostgreSQL database, apply migrations 001, 002 and 003 in order. For an existing schema-v1 database, compare it against migration 001, then apply migrations 002 and 003. Do not expose Prompt Intelligence endpoints against a database until migration 003 has been applied. The included Render Blueprint creates one free web service only; it does not create a database.
 
 The current Neon Free plan has no scheduled backup snapshots. Verify the current limits, backup/export destination, and restore process before relying on it for durable production records.
 

@@ -1,7 +1,7 @@
 import csv, json, re, unittest, zipfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-REQUIRED=['skill_manifest.json','workflow_profiles/creative-media-studio.md','workflow_profiles/skill-engineering.md','skills/creative-media/WORKFLOW.md','skills/skill-engineering/SKILL.md','unexpected_runtime/skills.py','unexpected_runtime/capabilities.py','unexpected_runtime/approvals.py','tests/test_skills.py','tests/test_capabilities.py','tests/test_approvals.py','agent_manifest.json','AGENT_CATALOG.md','AGENT_CATALOG.csv','AGENT_CATALOG.json','ALL_AGENTS.md','MIGRATION_CROSSWALK_V6_TO_V7.md','MIGRATION_CROSSWALK_V6_TO_V7.csv','MIGRATION_CROSSWALK_V6_TO_V7.json','CORE_ROUTER.md','EXISTING_37_CROSSWALK.md','CAPABILITY_MATRIX.md','SOURCE_MANIFEST.md','GLOBAL_CUSTOM_INSTRUCTION_V7.md','PROJECT_INSTRUCTIONS_V7.md','ARCHITECTURE.md','THREAT_MODEL.md','INSTALL.md','DEPLOY.md','UPGRADE_MIGRATION.md','ROLLBACK_UNINSTALL.md','EVALS.md','TEST_RESULTS.md','PACKAGE_STATUS.md','INSTALL_TESTS_STATUS.md','self_improvement/SKILL.md','self_improvement/EVAL_PROTOCOL.md','tests/scenarios.json','unexpected_runtime/benchmark.py','tests/test_runtime.py','tests/test_structure.py','unexpected_runtime/resource_intelligence.py','unexpected_runtime/data/resource_catalog.json','unexpected_runtime/quality_evaluation.py','unexpected_runtime/data/quality_scenarios.json','tests/test_resource_intelligence.py','tests/test_quality_evaluation.py']
+REQUIRED=['skill_manifest.json','workflow_profiles/creative-media-studio.md','workflow_profiles/skill-engineering.md','skills/creative-media/WORKFLOW.md','skills/skill-engineering/SKILL.md','unexpected_runtime/skills.py','unexpected_runtime/capabilities.py','unexpected_runtime/approvals.py','tests/test_skills.py','tests/test_capabilities.py','tests/test_approvals.py','agent_manifest.json','AGENT_CATALOG.md','AGENT_CATALOG.csv','AGENT_CATALOG.json','ALL_AGENTS.md','MIGRATION_CROSSWALK_V6_TO_V7.md','MIGRATION_CROSSWALK_V6_TO_V7.csv','MIGRATION_CROSSWALK_V6_TO_V7.json','CORE_ROUTER.md','EXISTING_37_CROSSWALK.md','CAPABILITY_MATRIX.md','SOURCE_MANIFEST.md','GLOBAL_CUSTOM_INSTRUCTION_V7.md','PROJECT_INSTRUCTIONS_V7.md','ARCHITECTURE.md','THREAT_MODEL.md','INSTALL.md','DEPLOY.md','UPGRADE_MIGRATION.md','ROLLBACK_UNINSTALL.md','EVALS.md','TEST_RESULTS.md','PACKAGE_STATUS.md','INSTALL_TESTS_STATUS.md','self_improvement/SKILL.md','self_improvement/EVAL_PROTOCOL.md','tests/scenarios.json','unexpected_runtime/benchmark.py','tests/test_runtime.py','tests/test_structure.py','unexpected_runtime/resource_intelligence.py','unexpected_runtime/data/resource_catalog.json','unexpected_runtime/quality_evaluation.py','unexpected_runtime/data/quality_scenarios.json','tests/test_resource_intelligence.py','tests/test_quality_evaluation.py','docs/specs/2026-11-03-prompt-intelligence-design.md','docs/plans/2026-11-03-prompt-intelligence.md','docs/integrations/aimoneymove-prompt-library.md','unexpected_runtime/data/prompt_catalog.json','unexpected_runtime/prompt_library.py','tests/test_prompt_library.py','tests/test_prompt_library_api.py','tests/test_prompt_intelligence.py','tests/test_prompt_intelligence_api.py','tests/test_postgres_storage.py','unexpected_runtime/prompt_intelligence.py','migrations/003_prompt_intelligence.sql']
 class StructureTests(unittest.TestCase):
  def test_required_files_exist_nonempty(self):
   for rel in REQUIRED:
@@ -117,6 +117,16 @@ class StructureTests(unittest.TestCase):
    self.assertIsNone(z.testzip()); self.assertGreaterEqual(len(z.namelist()),140)
  def test_individual_agent_count_matches_catalog(self):
   self.assertEqual(len(list((ROOT/'agents').glob('*.md'))),38)
+ def test_prompt_intelligence_command_center_workspace_contract(self):
+  html=(ROOT/'web/index.html').read_text()
+  app=(ROOT/'web/assets/app.js').read_text()
+  css=(ROOT/'web/assets/styles.css').read_text()
+  for token in ('data-view="prompts"','id="view-prompts"','id="prompt-source-register-form"','id="prompt-source-review-form"','id="prompt-import-form"','id="prompt-review-queue"','id="prompt-activation-form"','id="prompt-approval-workflow-link"'):
+   self.assertIn(token,html)
+  for token in ('/v1/prompt-intelligence/sources','/v1/prompt-intelligence/import','/v1/prompt-intelligence/review-queue','/v1/prompt-intelligence/prompts/'):
+   self.assertIn(token,app)
+  self.assertIn('host approval verifier',app)
+  self.assertIn('.prompt-queue-card',css)
  def test_file_inventory_sha256(self):
   import hashlib
   inv=ROOT/'FILE_INVENTORY_SHA256.txt'; self.assertTrue(inv.is_file())
