@@ -10,6 +10,20 @@ permissions:
   contents: read
 
 jobs:
+  openfilm-worker-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Verify exact upstream package tarball metadata
+        run: |
+          npm view openfilm@0.2.7 dist --json
+          npm view playwright-core@1.61.1 dist --json
+      - name: Run OpenFilm runner contract tests
+        run: node --test --test-concurrency=1 workers/openfilm/test/*.test.mjs
+
   runtime-tests:
     runs-on: ubuntu-latest
     env:
