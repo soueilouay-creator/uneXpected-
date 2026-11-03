@@ -21,7 +21,7 @@ export class RunnerError extends Error {
 }
 
 function requireString(value, name, maxLength = 1024) {
-  if (typeof value !== "string" || !value.trim() || value.length > maxLength || value.includes("\\0")) {
+  if (typeof value !== "string" || !value.trim() || value.length > maxLength || value.includes("\0")) {
     throw new RunnerError(`${name} must be a non-empty string no longer than ${maxLength} characters.`);
   }
   return value;
@@ -144,7 +144,7 @@ function diagnostics(lines, roots) {
 
 function dimensionsFromLook(lines) {
   for (const line of Array.isArray(lines) ? lines : []) {
-    const match = String(line).match(/(?:film\\s+)?(\\d{2,5})×(\\d{2,5})/);
+    const match = String(line).match(/(?:film\s+)?(\d{2,5})×(\d{2,5})/);
     if (match) return [Number(match[1]), Number(match[2])];
   }
   return null;
@@ -182,7 +182,7 @@ export async function executeJob(value, api = { look: openFilmLook, render: open
       diagnostics: inspectedLines
     };
   }
-  if (request.profile.audio_required && !/\\b[1-9]\\d* sounds?\\b/i.test(inspectedLines[0] ?? "")) {
+  if (request.profile.audio_required && !/\b[1-9]\d* sounds?\b/i.test(inspectedLines[0] ?? "")) {
     return {
       status: "qa_blocked",
       job_id: request.jobId,
