@@ -15,7 +15,16 @@ def main(argv=None):
     resources=sub.add_parser('resources'); resources.add_argument('--category'); resources.add_argument('--status'); resources.add_argument('--validate',action='store_true')
     quality=sub.add_parser('quality-eval'); quality.add_argument('--provider-route'); quality.add_argument('--scenario',action='append',dest='scenario_ids')
     sub.add_parser('eval')
-    media=sub.add_parser('media'); media_sub=media.add_subparsers(dest='media_cmd',required=True); media_sub.add_parser('status')
+    media=sub.add_parser('media'); media_sub=media.add_subparsers(dest='media_cmd',required=True)
+    media_sub.add_parser('status')
+    media_jobs=media_sub.add_parser('jobs'); media_jobs.add_argument('--state'); media_jobs.add_argument('--limit',type=int,default=50)
+    media_enqueue=media_sub.add_parser('enqueue'); media_enqueue.add_argument('--request-json',required=True)
+    media_cancel=media_sub.add_parser('cancel'); media_cancel.add_argument('job_id')
+    media_review=media_sub.add_parser('review'); media_review.add_argument('--reviewer',required=True); media_review.add_argument('--reason',required=True)
+    media_install=media_sub.add_parser('install'); media_install.add_argument('--reason',required=True)
+    media_preflight=media_sub.add_parser('preflight')
+    media_enable=media_sub.add_parser('enable'); media_enable.add_argument('--reason',required=True)
+    media_worker=media_sub.add_parser('worker'); media_worker.add_argument('--once',action='store_true',required=True)
     args=p.parse_args(argv); c=Coordinator(); exit_code=0
     try:
         if args.cmd=='status': out=c.status()
@@ -25,7 +34,45 @@ def main(argv=None):
         elif args.cmd=='quality-eval':
             out=QualityEvaluationRunner(c).run(provider_route=args.provider_route,scenario_ids=args.scenario_ids)
             exit_code=0 if out.get('status')=='passed' else 3
-        elif args.cmd=='media': out={'media':c.media_status()}
+        elif args.cmd=='media':
+            if args.media_cmd=='status':
+                out={'media':c.media_status()}
+            elif args.media_cmd=='jobs':
+                out={'count':len(c.media_list_jobs(limit=args.limit,state=args.state)),'items':c.media_list_jobs(limit=args.limit,state=args.state)}
+            elif args.media_cmd=='enqueue':
+                out=c.media_create_job(json.loads(args.request_json))
+            elif args.media_cmd=='cancel':
+                out=c.media_cancel_job(args.job_id)
+            elif args.media_cmd=='review':
+                out=c.capabilities.transition('media.openfilm.render','reviewed',reviewer=args.reviewer,reason=args.reason).to_dict()
+            elif args.media_cmd=='install':
+                out=c.capabilities.transition('media.openfilm.render','installed',reason=args.reason).to_dict()
+            elif args.media_cmd in {'preflight','enable','worker'}:
+                from .media.worker import MediaWorker, MediaWorkerConfig
+                from .media.isolation import PodmanIsolation, PodmanIsolationConfig
+                from .media.qa import MediaQualityAssurance
+                if c.media_jobs is None:
+                    raise RuntimeError('Media-job storage is unavailable.')
+                worker_config=MediaWorkerConfig.from_env()
+                isolation=PodmanIsolation(PodmanIsolationConfig.from_env())
+                qa=MediaQualityAssurance.from_env()
+                worker=MediaWorker(c.media_jobs,isolation,worker_config,qa=qa)
+                isolation.validate_limits(worker._limits())
+                if args.media_cmd=='preflight':
+                    out={'worker_readiness':isolation.self_test(),'limits':'validated against configured host ceilings'}
+                    exit_code=0 if out['worker_readiness'].get('available') is True else 3
+                elif args.media_cmd=='enable':
+                    readiness=isolation.self_test()
+                    if readiness.get('available') is not True:
+                        raise RuntimeError(readiness.get('reason','Worker host isolation self-test failed.'))
+                    c.media_register_adapter()
+                    out=c.capabilities.transition('media.openfilm.render','enabled',reason=args.reason).to_dict()
+                else:
+                    record=c.capabilities.get('media.openfilm.render')
+                    if record.status!='enabled':
+                        raise RuntimeError('OpenFilm must be enabled after review, installation and a passing worker preflight.')
+                    out=worker.run_once()
+                    exit_code=0 if out.get('status') in {'idle','ready_for_human_review','cancelled'} else 3
         elif args.cmd=='list': out={'count':len(c.registry),'agents':c.list_agents()}
         elif args.cmd=='run': out=c.invoke(args.agent_id,args.objective,json.loads(args.inputs),idempotency_key=args.idempotency_key,deadline_seconds=args.deadline).to_dict()
         elif args.cmd=='lifecycle':

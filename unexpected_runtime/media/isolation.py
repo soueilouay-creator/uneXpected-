@@ -33,15 +33,54 @@ class PodmanIsolationConfig:
     max_stdout_bytes: int = 32 * 1024
     max_stderr_bytes: int = 32 * 1024
 
+
+    @classmethod
+    def from_env(cls) -> "PodmanIsolationConfig":
+        def required(name: str) -> str:
+            value = os.environ.get(name, "").strip()
+            if not value:
+                raise IsolationError(f"Required isolation setting {name} is not configured.")
+            return value
+
+        def integer(name: str) -> int:
+            try:
+                return int(required(name))
+            except ValueError:
+                raise IsolationError(f"Isolation setting {name} must be an integer.") from None
+
+        def number(name: str) -> float:
+            try:
+                return float(required(name))
+            except ValueError:
+                raise IsolationError(f"Isolation setting {name} must be a number.") from None
+
+        runtime_dir = os.environ.get("XDG_RUNTIME_DIR", "").strip()
+        return cls(
+            podman_path=Path(required("UNEXPECTED_OPENFILM_PODMAN_PATH")),
+            image=required("UNEXPECTED_OPENFILM_WORKER_IMAGE"),
+            xdg_runtime_dir=Path(runtime_dir) if runtime_dir else None,
+            max_memory_bytes=integer("UNEXPECTED_OPENFILM_HOST_MAX_MEMORY_BYTES"),
+            max_cpu_limit=number("UNEXPECTED_OPENFILM_HOST_MAX_CPU_LIMIT"),
+            max_pids=integer("UNEXPECTED_OPENFILM_HOST_MAX_PIDS"),
+            tmpfs_bytes=integer("UNEXPECTED_OPENFILM_HOST_TMPFS_BYTES"),
+        )
+
     def __post_init__(self):
         executable = Path(self.podman_path)
         if not executable.is_absolute():
             raise ValueError("podman_path must be absolute.")
-        if not self.image or "@sha256:" not in self.image:
-            raise ValueError("Worker image must be pinned by a sha256 digest.")
-        digest = self.image.rsplit("@sha256:", 1)[-1]
+        if not isinstance(self.image, str) or not self.image.strip():
+            raise ValueError("A pinned worker image reference is required.")
+        if self.image.startswith("sha256:"):
+            digest = self.image[len("sha256:"):]
+        elif "@sha256:" in self.image:
+            digest = self.image.rsplit("@sha256:", 1)[-1]
+        else:
+            raise ValueError("Worker image must be pinned by a local image ID or repository sha256 digest.")
         if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
             raise ValueError("Worker image digest must be a lowercase SHA-256 value.")
+        if self.xdg_runtime_dir is not None and not Path(self.xdg_runtime_dir).is_absolute():
+            raise ValueError("xdg_runtime_dir must be absolute when supplied.")
         for name, value in (
             ("node_path", self.node_path), ("ffmpeg_path", self.ffmpeg_path),
             ("ffprobe_path", self.ffprobe_path), ("runner_path", self.runner_path),
@@ -147,18 +186,24 @@ class PodmanIsolation:
             cgroup_version = str(host.get("cgroupVersion", "")) if isinstance(host, dict) else ""
             if cgroup_version not in {"v2", "2"}:
                 return {"available": False, "reason": "Host cgroup v2 is required to enforce CPU, memory and PID limits."}
-            digest = self.config.image.rsplit("@", 1)[1]
-            inspect = self._run(
-                [str(executable), "image", "inspect", "--format", "{{.Digest}}", self.config.image],
-                env=self._env(),
-            )
-            if inspect.returncode != 0 or inspect.stdout.strip() != digest:
-                return {"available": False, "reason": "Digest-pinned OpenFilm worker image is not present or does not match."}
+            if self.config.image.startswith("sha256:"):
+                inspect_args = ["image", "inspect", "--format", "{{.Id}}", self.config.image]
+                expected_image_id = self.config.image
+            else:
+                expected_image_id = self.config.image.rsplit("@", 1)[1]
+                inspect_args = ["image", "inspect", "--format", "{{.Digest}}", self.config.image]
+            inspect = self._run([str(executable), *inspect_args], env=self._env())
+            if inspect.returncode != 0 or inspect.stdout.strip() != expected_image_id:
+                return {"available": False, "reason": "Pinned OpenFilm worker image is not present or does not match."}
             probe_script = (
-                "const {spawnSync}=require('node:child_process');"
+                "const {spawnSync}=require('node:child_process');const fs=require('node:fs');"
                 "if(typeof process.getuid!=='function'||process.getuid()===0)process.exit(11);"
                 "for(const p of ['/usr/bin/ffmpeg','/usr/bin/ffprobe']){"
                 "const r=spawnSync(p,['-version'],{stdio:'ignore'});if(r.error||r.status!==0)process.exit(12);}"
+                "const mem=fs.readFileSync('/sys/fs/cgroup/memory.max','utf8').trim();"
+                "const cpu=fs.readFileSync('/sys/fs/cgroup/cpu.max','utf8').trim();"
+                "const pids=fs.readFileSync('/sys/fs/cgroup/pids.max','utf8').trim();"
+                "if(mem==='max'||pids==='max'||cpu.startsWith('max '))process.exit(14);"
                 "const net=require('node:net');const s=net.connect({host:'1.1.1.1',port:443});"
                 "s.setTimeout(1200);s.on('connect',()=>process.exit(13));"
                 "s.on('error',()=>{console.log('isolated');process.exit(0)});"
@@ -188,6 +233,9 @@ class PodmanIsolation:
             }
         except (OSError, subprocess.TimeoutExpired, ValueError, TypeError, json.JSONDecodeError):
             return {"available": False, "reason": "Podman isolation self-test failed closed."}
+
+    def validate_limits(self, limits: WorkerResourceLimits) -> None:
+        limits.validate(self.config)
 
     def build_command(
         self, project_root: str | Path, attempt_root: str | Path,

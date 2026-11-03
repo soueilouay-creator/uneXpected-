@@ -190,7 +190,32 @@ class Coordinator:
     def media_list_jobs(self, limit=50, state=None):
         if self.media_jobs is None:
             raise MediaJobError(self._openfilm_error or "Media-job storage is unavailable.")
-        return self.media_jobs.list(limit=limit, state=state)
+        items = self.media_jobs.list(limit=limit, state=state)
+        public = []
+        for job in items:
+            result = {}
+            if job.get("result_json"):
+                try:
+                    parsed = json.loads(job["result_json"])
+                    if isinstance(parsed, dict):
+                        result = {
+                            "qa_status": parsed.get("qa_status"),
+                            "failure_category": parsed.get("failure_category"),
+                            "artifact_hashes": parsed.get("artifact_hashes", {}),
+                        }
+                except (TypeError, ValueError):
+                    result = {"failure_category": "stored_result_invalid"}
+            public.append({
+                "job_id": job["job_id"],
+                "task_id": job["task_id"],
+                "state": job["state"],
+                "attempt_count": job["attempt_count"],
+                "cancel_requested": job["cancel_requested"],
+                "created_at": job["created_at"],
+                "updated_at": job["updated_at"],
+                **({"result": result} if result else {}),
+            })
+        return public
 
     def media_create_job(self, arguments):
         self.media_register_adapter()
