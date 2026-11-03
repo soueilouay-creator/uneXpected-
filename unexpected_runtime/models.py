@@ -26,6 +26,7 @@ class TaskRequest:
     source_refs: tuple[str, ...] = ()
     provider_route: str | None = None
     requested_skill_ids: tuple[str, ...] = ()
+    parent_task_id: str | None = None
     created_at: float = field(default_factory=time.time)
 
     @classmethod

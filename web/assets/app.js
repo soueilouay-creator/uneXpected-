@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const state = { token: "", agents: [], providers: [], status: null };
+  const state = { token: "", agents: [], providers: [], status: null, traceTaskId: null, traceCursor: 0 };
   const $ = (id) => document.getElementById(id);
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const time = (v) => { if (!v) return "—"; const n=Number(v); const d=new Date(n>1e12?n:n*1000); return Number.isNaN(d.getTime())?String(v):d.toLocaleString(); };
@@ -34,6 +34,32 @@
   }
   function readiness(name,value,ok) {
     return '<div class="list-row"><div class="list-title">'+esc(name)+'</div><div class="list-meta"><span class="state '+(ok?"ok":"")+'">'+esc(value)+'</span></div></div>';
+  }
+  async function loadTaskTrace(taskId, after=0, append=false) {
+    const panel=$("task-trace-panel");
+    const button=$("trace-load-more");
+    panel.hidden=false;
+    $("trace-title").textContent="Task trace · "+taskId;
+    if(!append)$("trace-events").textContent="Loading persisted task events…";
+    try {
+      const response=await api("/v1/tasks/"+encodeURIComponent(taskId)+"/events?after="+encodeURIComponent(after)+"&limit=50");
+      const items=response.items||[];
+      const html=items.map(item=>row("Event #"+item.event_id,item.event_type+" · "+(item.agent_id||"runtime"),time(item.ts))).join("");
+      if(append)$("trace-events").insertAdjacentHTML("beforeend",html);
+      else $("trace-events").innerHTML=html||'<div class="empty">No events recorded for this task yet.</div>';
+      state.traceTaskId=taskId;
+      state.traceCursor=response.next_cursor??after;
+      button.hidden=!response.has_more;
+      button.disabled=false;
+    } catch(error) {
+      if(!append)$("trace-events").textContent="Trace could not be loaded: "+error.message;
+      button.hidden=true;
+      toast(error.message);
+    }
+  }
+  function renderTaskList(items) {
+    if(!items.length){$("task-list").innerHTML='<div class="empty">No tasks recorded yet.</div>';return;}
+    $("task-list").innerHTML=items.map(t=>'<div class="list-row"><div><div class="list-title">'+esc(t.objective||t.task_id)+'</div><div class="list-detail">'+esc(t.agent_id+" · "+t.status+(t.parent_task_id?" · child of "+t.parent_task_id:""))+'</div></div><div class="list-meta"><div>'+esc(time(t.created_at))+'</div><button class="button secondary trace-task" data-trace-task="'+esc(t.task_id)+'" type="button">View trace</button></div></div>').join("");
   }
   function renderAgents() {
     $("agent-grid").innerHTML=state.agents.length?state.agents.map(a=>'<article><div class="agent-id">'+esc(a.id)+'</div><h4>'+esc(a.name)+'</h4><p>'+esc(a.objective||a.capability_label||"Governed specialist role")+'</p><div class="tags"><span class="tag">'+esc(a.version||"version —")+'</span><span class="tag">'+esc(a.status||"registered")+'</span></div></article>').join(""):'<div class="empty">Agent registry unavailable.</div>';
@@ -96,7 +122,7 @@
       ].join("");
       $("recent-events").innerHTML=(events.items||[]).length?events.items.map(e=>row(e.event_type,e.agent_id||e.task_id||"",time(e.ts))).join(""):'<div class="empty">No events recorded yet.</div>';
       $("audit-events").innerHTML=$("recent-events").innerHTML;
-      $("task-list").innerHTML=(tasks.items||[]).length?tasks.items.map(t=>row(t.objective||t.task_id,t.agent_id+" · "+t.status,time(t.created_at))).join(""):'<div class="empty">No tasks recorded yet.</div>';
+      renderTaskList(tasks.items||[]);
       $("capability-list").innerHTML=(caps.items||[]).length?caps.items.map(c=>row(c.name||c.capability_id,c.source||c.description||"",c.status||"registered")).join(""):'<div class="empty">No capabilities registered. Catalog entries do not imply live integrations.</div>';
       $("improvement-list").innerHTML=(improvements.items||[]).length?improvements.items.map(p=>row(p.proposal_id,p.agent_id+" · "+p.changes,p.status)).join(""):'<div class="empty">No improvement proposals recorded.</div>';
       $("approval-list").innerHTML=(approvals.items||[]).length?approvals.items.map(a=>row(a.approval_id,a.permission,a.status)).join(""):'<div class="empty">'+esc(approvals.message||"No pending approval records are exposed. Privileged execution remains disabled.")+'</div>';
@@ -127,6 +153,16 @@
   }
   document.querySelectorAll("[data-view]").forEach(link=>link.addEventListener("click",e=>{e.preventDefault();const name=link.dataset.view;showView(name);history.replaceState(null,"","#"+name);}));
   $("refresh").addEventListener("click",refresh);
+  $("task-list").addEventListener("click",e=>{
+    const button=e.target.closest("[data-trace-task]");
+    if(!button)return;
+    loadTaskTrace(button.dataset.traceTask,0,false);
+  });
+  $("trace-load-more").addEventListener("click",async()=>{
+    if(!state.traceTaskId)return;
+    $("trace-load-more").disabled=true;
+    await loadTaskTrace(state.traceTaskId,state.traceCursor,true);
+  });
   $("provider-grid").addEventListener("click",async e=>{
     const button=e.target.closest("[data-test-provider]");
     if(!button)return;

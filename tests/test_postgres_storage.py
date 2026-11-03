@@ -18,12 +18,21 @@ class Cursor:
         return [] if self.row is None else [self.row]
 
 
+class RowsCursor:
+    def __init__(self, rows):
+        self.rows = rows
+    def fetchall(self):
+        return list(self.rows)
+
+
 class FakePostgres:
     def __init__(self, version=2):
         self.version = version
         self.lock = threading.Lock()
         self.claims = {}
         self.closed = 0
+        self.events = []
+        self.event_queries = []
 
     def connect(self):
         return FakeConnection(self)
@@ -37,6 +46,13 @@ class FakeConnection:
             return Cursor({"version": self.db.version})
         if sql.strip() == "SELECT 1 AS ok":
             return Cursor({"ok": 1})
+        if "FROM events" in sql and "WHERE task_id=%s" in sql:
+            self.db.event_queries.append((sql, params))
+            selected = [
+                row for row in self.db.events
+                if row["task_id"] == params[0] and row["event_id"] > params[1]
+            ]
+            return RowsCursor(selected[:params[2]])
         if sql.startswith("INSERT INTO idempotency_claims"):
             key, request_hash, task_id, created, updated = params
             with self.db.lock:
@@ -90,6 +106,25 @@ class PostgresStorageTests(unittest.TestCase):
         store = PostgresStateStore("postgresql://unit.test/db", connect_factory=db.connect)
         self.assertTrue(store.check_health())
         self.assertEqual(store.backend, "postgres")
+
+    def test_task_event_reads_are_task_scoped_ordered_and_cursor_bounded(self):
+        db = FakePostgres(version=2)
+        db.events = [
+            {"event_id": 4, "ts": 1.0, "task_id": "task-1", "agent_id": "role",
+             "event_type": "first", "payload_json": "{}"},
+            {"event_id": 5, "ts": 2.0, "task_id": "task-1", "agent_id": "role",
+             "event_type": "second", "payload_json": "{}"},
+            {"event_id": 6, "ts": 3.0, "task_id": "task-2", "agent_id": "role",
+             "event_type": "other", "payload_json": "{}"},
+        ]
+        store = PostgresStateStore("postgresql://unit.test/db", connect_factory=db.connect)
+        rows = store.list_task_events("task-1", after_event_id=4, limit=10)
+        self.assertEqual([row["event_id"] for row in rows], [5])
+        sql, params = db.event_queries[-1]
+        self.assertIn("WHERE task_id=%s AND event_id>%s ORDER BY event_id ASC LIMIT %s", sql)
+        self.assertEqual(params, ("task-1", 4, 10))
+        with self.assertRaises(ValueError):
+            store.list_task_events("task-1", after_event_id=-1, limit=10)
 
     def test_concurrent_idempotency_claims_have_one_owner(self):
         db = FakePostgres(version=2)
