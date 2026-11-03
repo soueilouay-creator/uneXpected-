@@ -165,7 +165,7 @@ class MCPToolGateway:
 
     def register_adapter(self, capability_id: str, adapter: MCPToolAdapter) -> tuple[MCPToolDescriptor, ...]:
         record = self.capabilities.get(capability_id)
-        if record.status != "installed":
+        if record.status not in {"installed", "enabled"}:
             raise MCPToolError("Only reviewed and installed MCP adapters may be registered.")
         descriptors = self._describe(adapter)
         if any(set(item.required_permissions) & PRIVILEGED for item in descriptors):

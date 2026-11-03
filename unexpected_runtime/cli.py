@@ -15,6 +15,7 @@ def main(argv=None):
     resources=sub.add_parser('resources'); resources.add_argument('--category'); resources.add_argument('--status'); resources.add_argument('--validate',action='store_true')
     quality=sub.add_parser('quality-eval'); quality.add_argument('--provider-route'); quality.add_argument('--scenario',action='append',dest='scenario_ids')
     sub.add_parser('eval')
+    media=sub.add_parser('media'); media_sub=media.add_subparsers(dest='media_cmd',required=True); media_sub.add_parser('status')
     args=p.parse_args(argv); c=Coordinator(); exit_code=0
     try:
         if args.cmd=='status': out=c.status()
@@ -24,6 +25,7 @@ def main(argv=None):
         elif args.cmd=='quality-eval':
             out=QualityEvaluationRunner(c).run(provider_route=args.provider_route,scenario_ids=args.scenario_ids)
             exit_code=0 if out.get('status')=='passed' else 3
+        elif args.cmd=='media': out={'media':c.media_status()}
         elif args.cmd=='list': out={'count':len(c.registry),'agents':c.list_agents()}
         elif args.cmd=='run': out=c.invoke(args.agent_id,args.objective,json.loads(args.inputs),idempotency_key=args.idempotency_key,deadline_seconds=args.deadline).to_dict()
         elif args.cmd=='lifecycle':
