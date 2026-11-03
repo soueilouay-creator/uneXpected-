@@ -55,6 +55,6 @@ The Command Center's Prompt Intelligence workspace supports source registration,
 
 ## Verification evidence
 
-The implementation candidate's CI run #672 completed successfully on code head `c7cde66e0c96bf89e0169211c7b31ff39aefd917`: 280 tests passed with one optional skip; Node syntax validation, PostgreSQL migration 003, SHA-256 integrity, Docker build, actual container UI/auth/38-role/task smoke, Prompt Intelligence catalogue/source/review-queue API checks and CLI smoke passed. Subsequent changes to repository documentation and the integrity inventory require their own current-head CI confirmation before merge.
+The implementation candidate's CI run #672 completed successfully on code head `c7cde66e0c96bf89e0169211c7b31ff39aefd917`: 280 tests passed with one optional skip; Node syntax validation, PostgreSQL migration 003, SHA-256 integrity, Docker build, actual container UI/auth/38-role/task smoke, Prompt Intelligence catalogue/source/review-queue API checks and CLI smoke passed. CI run #680 then passed on the current documentation/integrity head `58cd79b25563a858b39bf238d0d17d787d1ae6cc` with the same 280-test, one-skip and full build/smoke gates. Future changes must likewise pass current-head CI before merge.
 
 Canonical review candidate: https://github.com/soueilouay-creator/uneXpected-/pull/19 (draft; not merged or deployed).
