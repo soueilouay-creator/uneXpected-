@@ -1,5 +1,13 @@
 # Changelog
 
+## v8.1.1-preview — Governed tools, isolated subagents and resumable trace reads (2026-11-03)
+
+- Adds an in-process MCP adapter gateway with provenance-matched capability descriptors, explicit enabled-state checks, role scopes, permission checks, bounded JSON inputs/results, deadlines and redacted audit metadata. No remote MCP transport or external MCP server is configured.
+- Adds bounded specialist child runs through the Coordinator and authenticated API. Each child has a separate task ID, explicitly supplied input, persisted parent-task lineage and bounded summary; parent approvals do not grant child privileges.
+- Adds ordered, task-scoped event cursor reads for SQLite and PostgreSQL through authenticated GET /v1/tasks/{task_id}/events. Reconnect reads persisted events and never repeats the original task.
+- Adds regression tests for tool gating, provenance mismatch, role scope, input/output limits, child isolation, handoff scope, depth/child-count limits and cursor continuation.
+- Draft feature PR #15 only. No merge, Render deployment, live MCP server connection, scheduler activation, or consequential execution is included.
+
 ## v8.1.0-preview — Verified Skill bundles (2026-11-02)
 
 - Extends the existing local SHA-256-pinned Skill registry with backward-compatible manifest v2 bundle metadata.
