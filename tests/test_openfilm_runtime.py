@@ -25,12 +25,18 @@ class OpenFilmCoordinatorTests(unittest.TestCase):
                 self.assertFalse(status["available"])
                 self.assertTrue(status["job_store_ready"])
                 self.assertTrue(status["adapter_ready"])
+                coordinator.capability_registry.transition(
+                    "media.openfilm.render", "reviewed",
+                    reviewer="test-owner", reason="test lifecycle",
+                )
+                coordinator.capability_registry.transition(
+                    "media.openfilm.render", "installed", reason="fixture adapter staged"
+                )
                 with self.assertRaises(CapabilityRegistryError):
                     coordinator.capability_registry.transition(
-                        "media.openfilm.render", "reviewed",
-                        reviewer="test-owner", reason="test lifecycle",
+                        "media.openfilm.render", "enabled", reason="worker self-test not verified"
                     )
-                self.assertEqual(coordinator.media_status()["status"], "discovered")
+                self.assertEqual(coordinator.media_status()["status"], "installed")
             finally:
                 coordinator.close()
 
