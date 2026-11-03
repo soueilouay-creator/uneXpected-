@@ -1,5 +1,16 @@
 # Changelog
 
+## Draft PR #20 — Native uneXpected Video Engine (2026-11-03)
+
+- Adds native OpenFilm 0.2.7 render-job orchestration inside the existing v8.1 Coordinator, CapabilityRegistry, MCPToolGateway and shared state; no second runtime, agent registry, database or CRM.
+- Adds durable idempotent media jobs, migration 004 after Prompt Intelligence migration 003, relative-path/symlink controls, rootless Podman worker isolation, resource ceilings, one-job CLI execution and local worker image build instructions.
+- Adds FFprobe/FFmpeg technical QA for MP4 profile, audio coverage/loudness/true peak when required, black frames, freezes, captions and contact sheets; creates portable artifact manifests with project/output and rights hashes.
+- Adds authenticated media status/job APIs and a Video Engine command-center view. Capability remains discovered by default and requires human source review, local worker preflight, installation and explicit enablement.
+- Everygen is no longer a required/default dependency. External generation providers remain optional adapters; no paid provider, upload, schedule or public post is triggered.
+- Verification so far: CI run #692 passed 314 Python tests (one optional skip) and the Node worker-runner tests at commit 8c0097b. Later CLI/preflight/UI changes are under fresh CI verification. No actual local host render, MP4 playback review, PostgreSQL production migration or deployment has been performed.
+
+# Changelog
+
 ## Draft integration — Prompt Intelligence (2026-11-03)
 
 - Adds a permanent source-agnostic Prompt Intelligence subsystem to the existing runtime and Command Center; it reuses the canonical 38-role registry, Coordinator, shared SQLite/PostgreSQL state, permission policy and audit events.

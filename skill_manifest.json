@@ -3,9 +3,9 @@
   "skills": [
     {
       "id": "creative-media",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "path": "skills/creative-media/WORKFLOW.md",
-      "sha256": "fd3be6fe0d44c2055cba937d7fdae727755cb4330b22d71f904e6cb13c6f3cd2",
+      "sha256": "55da126c827841d4f843c877b12bae02268f28975b21e9d84796214513882480",
       "agent_ids": [
         "creative-director",
         "media-producer",
