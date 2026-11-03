@@ -117,8 +117,14 @@
   }
   async function loadMedia() {
     try {
-      const [status,jobs]=await Promise.all([api("/v1/media/status"),api("/v1/media/jobs?limit=30")]);
-      renderMedia(status.media,jobs.items||[]);
+      const status=await api("/v1/media/status");
+      renderMedia(status.media,[]);
+      try {
+        const jobs=await api("/v1/media/jobs?limit=30");
+        renderMedia(status.media,jobs.items||[]);
+      } catch(error) {
+        $("media-job-list").textContent="Media job history unavailable: "+error.message;
+      }
     } catch(error) {
       $("media-status").textContent="Native video status unavailable: "+error.message;
       $("media-queue-submit").disabled=true;
@@ -130,11 +136,9 @@
       const [status,agents,tasks,events,providers,caps,improvements,approvals,resources,qualityRuns,mediaStatus,mediaJobs]=await Promise.all([
         api("/v1/status"),api("/v1/agents"),api("/v1/tasks?limit=8"),api("/v1/events?limit=8"),
         api("/v1/providers"),api("/v1/capabilities"),api("/v1/improvements"),api("/v1/approvals"),
-        api("/v1/resources?limit=100"),api("/v1/quality-evaluations?limit=20"),
-        api("/v1/media/status"),api("/v1/media/jobs?limit=30")
+        api("/v1/resources?limit=100"),api("/v1/quality-evaluations?limit=20")
       ]);
       state.status=status; state.agents=agents.items||[];
-      renderMedia(mediaStatus.media,mediaJobs.items||[]);
       $("metric-health").textContent=status.health?.status||"Ready";
       $("health-note").textContent=status.health?.detail||"Runtime status received";
       $("metric-agents").textContent=agents.count??state.agents.length;
@@ -168,6 +172,7 @@
       $("updated").textContent="Updated "+new Date().toLocaleTimeString();
       renderAgents(); renderProviders(providers.providers||[]); setConnected(true);
       if ($("view-prompts").classList.contains("active")) await loadPromptIntelligence();
+      if ($("view-media").classList.contains("active")) await loadMedia();
     } catch(error) {
       setConnected(false);
       if (error.message==="Unauthorized."||error.message==="Unauthorized") {
@@ -268,7 +273,7 @@
   function showView(name) {
     document.querySelectorAll(".view").forEach(v=>v.classList.toggle("active",v.id==="view-"+name));
     document.querySelectorAll(".nav").forEach(v=>v.classList.toggle("active",v.dataset.view===name));
-    const titles={overview:"System overview",agents:"Agent registry",tasks:"Tasks & workflows",prompts:"Prompt Intelligence",providers:"AI providers",capabilities:"Capabilities",intelligence:"Resource & AI quality",governance:"Governance",audit:"Audit & learning"};
+    const titles={overview:"System overview",agents:"Agent registry",tasks:"Tasks & workflows",prompts:"Prompt Intelligence",media:"Video Engine",providers:"AI providers",capabilities:"Capabilities",intelligence:"Resource & AI quality",governance:"Governance",audit:"Audit & learning"};
     $("page-title").textContent=titles[name]||"System overview";
     if (name==="tasks"||name==="audit"||name==="governance"||name==="intelligence") refresh();
     if (name==="prompts") loadPromptIntelligence();
