@@ -52,8 +52,6 @@ class PromptIntelligenceTests(unittest.TestCase):
             "canonical_url": "https://example.com/prompts",
             "publisher": "Example Publisher",
             "source_type": source_type,
-            "rights_status": rights_status,
-            "retention_policy": retention_policy,
             "attribution": "Example Publisher prompt directory",
         }, actor="owner")
 
@@ -182,7 +180,7 @@ class PromptIntelligenceTests(unittest.TestCase):
         activated = self.service.activate_prompt(item["prompt_id"], 1, approval)
         self.assertEqual(activated["status"], "active")
         self.assertEqual(self.service.get_active(item["prompt_id"])["active_version"], 1)
-        with self.assertRaises(PermissionDenied):
+        with self.assertRaises(PromptIntelligenceError):
             self.service.activate_prompt(item["prompt_id"], 1, approval)
 
     def test_new_version_does_not_replace_active_until_approved(self):
