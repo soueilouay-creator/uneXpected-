@@ -63,7 +63,8 @@
       "allowed_permissions": [
         "read_context",
         "write_local_artifact",
-        "collaborate"
+        "collaborate",
+        "media.local_render"
       ],
       "memory_namespace": "agent:orchestrator",
       "tools_and_capabilities": [
@@ -1722,7 +1723,8 @@
       "allowed_permissions": [
         "read_context",
         "write_local_artifact",
-        "collaborate"
+        "collaborate",
+        "media.local_render"
       ],
       "memory_namespace": "agent:creative-director",
       "tools_and_capabilities": [
@@ -2111,7 +2113,8 @@
       "allowed_permissions": [
         "read_context",
         "write_local_artifact",
-        "collaborate"
+        "collaborate",
+        "media.local_render"
       ],
       "memory_namespace": "agent:media-producer",
       "tools_and_capabilities": [
@@ -2845,7 +2848,8 @@
       "allowed_permissions": [
         "read_context",
         "write_local_artifact",
-        "collaborate"
+        "collaborate",
+        "media.local_render"
       ],
       "memory_namespace": "agent:voice-agent",
       "tools_and_capabilities": [
