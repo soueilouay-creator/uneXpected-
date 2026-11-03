@@ -35,15 +35,16 @@ class SubagentDelegationTests(unittest.TestCase):
         self.temp.cleanup()
 
     def test_child_runs_have_isolated_context_and_persist_parent_lineage(self):
+        children = [
+            {"agent_id": "project-manager", "objective": "Create a small project plan.",
+             "inputs": {"child_label": "planning-only"}},
+            {"agent_id": "research-scout", "objective": "Research the supplied question.",
+             "inputs": {"child_label": "research-only"}},
+        ]
         result = self.coordinator.run_subagents(
             parent_task_id=self.parent_task_id,
             parent_agent_id="orchestrator",
-            children=[
-                {"agent_id": "project-manager", "objective": "Create a small project plan.",
-                 "inputs": {"child_label": "planning-only"}},
-                {"agent_id": "research-scout", "objective": "Research the supplied question.",
-                 "inputs": {"child_label": "research-only"}},
-            ],
+            children=children,
         )
         self.assertEqual(result["status"], "completed")
         self.assertEqual(len(result["children"]), 2)
@@ -58,6 +59,14 @@ class SubagentDelegationTests(unittest.TestCase):
         self.assertNotIn("parent-only-context", json.dumps(provider_payloads))
         events = self.coordinator.store.events(100)
         self.assertIn("subagent_child_completed", {event["event_type"] for event in events})
+        provider_calls = self.provider.calls
+        replay = self.coordinator.run_subagents(
+            parent_task_id=self.parent_task_id,
+            parent_agent_id="orchestrator",
+            children=children,
+        )
+        self.assertEqual([item["task_id"] for item in replay["children"]], child_ids)
+        self.assertEqual(self.provider.calls, provider_calls)
 
     def test_handoff_scope_is_checked_before_any_child_task_is_created(self):
         before = len(self.coordinator.store.list_tasks(100))
