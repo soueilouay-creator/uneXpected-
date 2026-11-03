@@ -198,6 +198,8 @@ class PromptIntelligence:
         source = self.store.get_prompt_source(source_id)
         if not source or source.get("status") in {"suspended", "archived"}:
             raise PromptIntelligenceError("Prompt source is unknown or unavailable.")
+        if source.get("status") not in {"reviewed", "active"}:
+            raise PromptIntelligenceError("Prompt source rights and retention must be reviewed before import.")
         staged = []
         seen_external: set[str] = set()
         for raw in records:
