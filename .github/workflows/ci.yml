@@ -140,8 +140,11 @@ jobs:
           with urllib.request.urlopen(request, timeout=20) as response:
               prompt_result = json.loads(response.read())["result"]
           assert prompt_result["status"] == "completed", prompt_result
-          prompt_inputs = prompt_result.get("inputs", {}).get("__uneXpected_prompt", {})
-          assert prompt_inputs.get("prompt_id") == selected["id"], prompt_result
+          task_request = urllib.request.Request(base + "/v1/tasks/" + prompt_result["task_id"], headers=headers)
+          with urllib.request.urlopen(task_request, timeout=5) as response:
+              task_detail = json.loads(response.read())["task"]
+          prompt_inputs = task_detail["inputs"].get("__uneXpected_prompt", {})
+          assert prompt_inputs.get("prompt_id") == selected["id"], task_detail
           payload = json.dumps({"agent_id":"orchestrator","objective":"Container image smoke test"}).encode()
           request = urllib.request.Request(base + "/v1/invoke", data=payload, headers=headers, method="POST")
           with urllib.request.urlopen(request, timeout=20) as response:
