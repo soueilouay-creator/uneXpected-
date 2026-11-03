@@ -27,6 +27,7 @@ jobs:
               "workers/openfilm/run-job.mjs",
               "workers/openfilm/package-lock.json",
               "workers/openfilm/UPSTREAM-NOTICES.md",
+              "workers/openfilm/test/run-job.test.mjs",
           ]
           for name in paths:
               print(f"{hashlib.sha256(Path(name).read_bytes()).hexdigest()}  {name}")
