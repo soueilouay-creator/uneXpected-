@@ -110,8 +110,8 @@ class PostgresStateStore(PostgresIdempotencyMixin):
             raise ValueError("task_id must be a non-empty string.")
         if isinstance(after_event_id, bool) or not isinstance(after_event_id, int) or after_event_id < 0:
             raise ValueError("after_event_id must be a non-negative integer.")
-        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
-            raise ValueError("limit must be an integer between 1 and 200.")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 201:
+            raise ValueError("limit must be an integer between 1 and 201.")
         with self._session() as connection:
             rows = connection.execute(
                 "SELECT event_id,ts,task_id,agent_id,event_type,payload_json FROM events "
