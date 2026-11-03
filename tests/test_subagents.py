@@ -1,9 +1,12 @@
+import http.client
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
 from unexpected_runtime.coordinator import Coordinator
+from unexpected_runtime.http_api import create_server
 from unexpected_runtime.models import PermissionDenied
 from unexpected_runtime.providers import DeterministicMockProvider
 from unexpected_runtime.subagents import SubagentError
@@ -88,6 +91,68 @@ class SubagentDelegationTests(unittest.TestCase):
                 max_depth=1,
             )
 
+
+
+class SubagentAPITests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.coordinator = Coordinator(
+            manifest_path=Path(__file__).resolve().parents[1] / "agent_manifest.json",
+            state_dir=Path(self.temp.name) / "state",
+            provider=DeterministicMockProvider(),
+            max_retries=0,
+        )
+        parent = self.coordinator.invoke(
+            "orchestrator", "Create a parent task for the API test.",
+            idempotency_key="subagent-api-parent-" + str(id(self)),
+        )
+        self.parent_task_id = parent.task_id
+        self.token = "subagent-api-test-token-" + "x" * 32
+        self.server = create_server(coordinator=self.coordinator, api_token=self.token, host="127.0.0.1", port=0)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.host, self.port = self.server.server_address
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=2)
+        self.coordinator.close()
+        self.temp.cleanup()
+
+    def request(self, method, path, payload=None, token=None):
+        connection = http.client.HTTPConnection(self.host, self.port, timeout=8)
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = "Bearer " + token
+        body = json.dumps(payload) if payload is not None else None
+        connection.request(method, path, body=body, headers=headers)
+        response = connection.getresponse()
+        raw = response.read()
+        connection.close()
+        return response.status, json.loads(raw) if raw else {}
+
+    def test_subagent_run_api_is_authenticated_and_returns_child_lineage(self):
+        payload = {
+            "parent_task_id": self.parent_task_id,
+            "parent_agent_id": "orchestrator",
+            "children": [{"agent_id": "project-manager", "objective": "Prepare a concise plan."}],
+        }
+        self.assertEqual(self.request("POST", "/v1/subagents/run", payload)[0], 401)
+        status, response = self.request("POST", "/v1/subagents/run", payload, self.token)
+        self.assertEqual(status, 200)
+        self.assertEqual(response["result"]["status"], "completed")
+        child = response["result"]["children"][0]
+        self.assertEqual(child["status"], "completed")
+        task = self.coordinator.store.get_task(child["task_id"])
+        self.assertEqual(json.loads(task["payload_json"])["parent_task_id"], self.parent_task_id)
+
+    def test_mcp_tool_catalog_is_authenticated_and_metadata_only(self):
+        self.assertEqual(self.request("GET", "/v1/mcp/tools")[0], 401)
+        status, response = self.request("GET", "/v1/mcp/tools", token=self.token)
+        self.assertEqual(status, 200)
+        self.assertEqual(response["count"], 0)
+        self.assertEqual(response["items"], [])
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
