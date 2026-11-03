@@ -2,3 +2,29 @@
 .proposal-form{display:grid;gap:9px;margin:15px 0}.proposal-form label{font-size:11px;color:#aeb9ca;font-weight:650}.proposal-form input,.proposal-form select,.proposal-form textarea{background:#0f1622;border:1px solid #37445b;border-radius:9px;color:var(--text);padding:10px 12px;font:inherit}.proposal-form textarea{resize:vertical;line-height:1.5}.proposal-form small{font-size:10px;color:#8391a6;line-height:1.5}.provider-test{margin-top:12px}
 
 .quality-form{display:grid;gap:10px;margin:15px 0}.quality-form label{font-size:11px;color:#aeb9ca;font-weight:650}.quality-form select{background:#0f1622;border:1px solid #37445b;border-radius:9px;color:var(--text);padding:10px 12px;font:inherit}.quality-form small{font-size:10px;color:#8391a6;line-height:1.5}#quality-evaluation-result{font-size:11px;color:#bfc9d8;line-height:1.6;overflow-wrap:anywhere}.resource-status{color:#b8adff}
+
+
+.prompt-admin-grid{align-items:start}
+.prompt-admin-form{display:grid;gap:9px;margin-top:14px}
+.prompt-admin-form label{font-size:12px;color:var(--muted);font-weight:650}
+.prompt-admin-form input,.prompt-admin-form select,.prompt-admin-form textarea,.prompt-active-search input{width:100%;min-width:0;background:var(--surface-2);border:1px solid var(--line);border-radius:9px;color:var(--text);padding:10px 11px;font:inherit}
+.prompt-admin-form textarea{resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.prompt-admin-form input:focus,.prompt-admin-form select:focus,.prompt-admin-form textarea:focus,.prompt-active-search input:focus{outline:2px solid var(--accent);outline-offset:1px}
+.prompt-admin-form button{justify-self:start}
+.form-result{font-size:13px;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere}
+.prompt-queue{display:grid;gap:12px}
+.prompt-queue-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,260px);gap:12px;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
+.prompt-queue-card h4{margin:0 0 5px;font-size:15px}
+.prompt-queue-card p,.prompt-queue-card small{margin:0;color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.prompt-queue-actions{display:grid;gap:8px;align-content:start}
+.prompt-queue-actions select{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:9px;color:var(--text)}
+.prompt-queue-actions .button{width:100%}
+.prompt-approval-panel{margin-top:18px}
+.prompt-approval-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.prompt-approval-grid>div{display:grid;align-content:start;gap:8px}
+.prompt-approval-grid label{font-size:12px;color:var(--muted);font-weight:650}
+.prompt-approval-grid input,.prompt-approval-grid textarea{width:100%;min-width:0;background:var(--surface-2);border:1px solid var(--line);border-radius:9px;color:var(--text);padding:10px;font:inherit}
+.prompt-approval-grid textarea{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;resize:vertical}
+.prompt-approval-grid .button{justify-self:start}
+.prompt-active-search{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;margin-bottom:14px}
+@media(max-width:800px){.prompt-queue-card,.prompt-approval-grid{grid-template-columns:1fr}.prompt-active-search{grid-template-columns:1fr}}
