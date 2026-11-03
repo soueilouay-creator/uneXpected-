@@ -23,7 +23,7 @@ The command center and runtime are one application. Roles are specifications exe
 
 ## v8.1 implementation boundaries
 
-- MCP adapters must match a reviewed capability record by source, publisher, version, digest, permission scopes and data-access scopes. Calls require an enabled capability, role scope, permission authorization, bounded JSON inputs/results and a deadline. Timeouts are not retried automatically.
+- MCP adapters must match a reviewed capability record by source, publisher, version, digest, permission scopes and data-access scopes. Calls require an enabled capability, role scope, permission authorization and bounded JSON inputs/results. In-process timeouts signal cooperative cancellation and are never retried; Python cannot forcibly stop an already-running adapter. Privileged MCP tools remain blocked until durable approval/replay is verified.
 - Subagents are limited to three child requests per parent call, four steps per child, a maximum configured depth of three, explicit child inputs and bounded summaries. Parent approval does not grant child privileges.
 - Task event pages use monotonically increasing event IDs. Reconnecting with a cursor reads later events; it never re-enqueues or re-invokes the task.
 - Remote MCP transport, full RAG ingestion, visual trace streaming, parallel subagents and recurring schedules remain separate future gates.
