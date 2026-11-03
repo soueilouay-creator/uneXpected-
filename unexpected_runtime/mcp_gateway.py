@@ -223,6 +223,8 @@ class MCPToolGateway:
         record = self.capabilities.get(capability_id)
         if record.status != "enabled":
             raise MCPToolError("MCP capability is not enabled.")
+        if not self.verify_adapter(record):
+            raise MCPToolError("MCP adapter provenance no longer matches its reviewed capability record.")
         agent = self.agent_registry.get(agent_id)
         if agent_id not in descriptor.allowed_agent_ids:
             raise PermissionDenied(f"Permission denied: role {agent_id} is outside MCP tool scope.")
