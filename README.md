@@ -93,6 +93,31 @@ Example authenticated request:
 }
 ```
 
+## Governed MCP adapter boundary
+
+The v8.1 branch adds an in-process MCP adapter contract and an authenticated metadata catalog at GET /v1/mcp/tools. Adapters must match a reviewed capability record by source URL, publisher, version, content digest, permission scopes and data-access scopes. A capability must be installed, explicitly enabled and revalidated before each call.
+
+Tool calls are role-scoped, permission-checked and bounded by JSON input/result sizes and a deadline. Audit events store hashes and safe metadata rather than raw arguments or results. A timeout is not retried automatically.
+
+**Important:** this is an adapter boundary, not a remote MCP client. It does not discover or connect to external MCP servers, and no third-party tool is enabled by default. CI uses deterministic fake adapters.
+
+## Bounded specialist delegation
+
+The Coordinator exposes a bounded subagent workflow through POST /v1/subagents/run and its internal run_subagents method. A parent may delegate up to three sequential child tasks. Each child has:
+
+- Its own task ID and role-specific memory namespace.
+- Only the explicitly supplied JSON inputs; parent conversation and private context are not copied automatically.
+- A maximum of four steps, a bounded deadline and a role handoff check.
+- A persisted parent_task_id and a concise result summary returned to the parent.
+
+The maximum configured delegation depth is three. Cycles, unauthorized handoffs, oversized inputs and budget overflow fail closed. Parent approval never grants a child broader permissions. This release does not run child tasks in parallel or retry failed child runs automatically.
+
+## Resumable task event reads
+
+Authenticated GET /v1/tasks/{task_id}/events?after={event_id} returns ordered, bounded event pages from SQLite or PostgreSQL. The response includes next_cursor and has_more. A client reconnects by supplying the last received event ID; this only reads persisted history and never re-executes the task.
+
+This is durable event retrieval, not live streaming. The command-center visual trace viewer and live token/cost stream remain future work. Cost is recorded only when an actual provider reports it or the runtime measures it; unknown values are not fabricated.
+
 ## Security and approval boundary
 
 - One bearer-token boundary protects all `/v1/*` APIs.
