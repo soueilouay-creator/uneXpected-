@@ -419,7 +419,23 @@ class PromptIntelligence:
         item = self.store.get_active_prompt(prompt_id)
         if not item:
             raise PromptIntelligenceError("Unknown or inactive prompt.")
+        item.pop("body", None)
         return item
+
+    def source_public_dict(self) -> dict[str, Any]:
+        source = self.store.get_prompt_source("aimoneymove-prompt-index")
+        if not source:
+            return {"name": "Prompt Intelligence", "url": None, "license_status": "source-specific"}
+        return {
+            "name": source.get("name"),
+            "url": source.get("canonical_url"),
+            "publisher_url": source.get("canonical_url"),
+            "advertised_prompt_count": 1178,
+            "advertised_category_count": 15,
+            "license_status": "not_found_on_directory_page",
+            "storage_mode": "metadata_only",
+            "attribution": source.get("attribution"),
+        }
 
     def task_binding(self, prompt_id: str) -> dict[str, Any]:
         item = self.store.get_active_prompt(prompt_id)
@@ -476,6 +492,10 @@ class PromptIntelligence:
         return self.store.list_prompt_versions(statuses=("staged", "ready_for_activation", "rejected"), limit=limit)
 
     def seed_catalog(self) -> int:
+        # The source ID is reserved for the immutable, metadata-only bundled seed.
+        # Since source+prompt seeding is one transaction, its presence proves the batch committed.
+        if self.store.get_prompt_source("aimoneymove-prompt-index"):
+            return 0
         try:
             data = json.loads(self.catalog_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
