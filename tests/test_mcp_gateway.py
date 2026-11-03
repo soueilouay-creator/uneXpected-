@@ -162,7 +162,7 @@ class MCPGatewayTests(unittest.TestCase):
             )
         self.assertEqual(len(self.adapter.calls), 1)
 
-    def test_privileged_permission_requires_trusted_action_bound_approval(self):
+    def test_privileged_mcp_tools_remain_disabled_until_durable_approval_is_verified(self):
         record = CapabilityRecord(
             capability_id="mcp.email-server",
             name="Email MCP adapter",
@@ -202,13 +202,8 @@ class MCPGatewayTests(unittest.TestCase):
             data_access=("email",),
         )
         adapter = FakeMCPAdapter(descriptor)
-        self.gateway.register_adapter(record.capability_id, adapter)
-        self.capabilities.transition(record.capability_id, "enabled", reason="Owner enabled adapter.")
-        with self.assertRaises(PermissionDenied):
-            self.gateway.call(
-                agent_id="maintenance-engineer", task_id="task-email",
-                tool_id="mcp.email.send", arguments={"to": "customer@example.test"},
-            )
+        with self.assertRaises(MCPToolError):
+            self.gateway.register_adapter(record.capability_id, adapter)
         self.assertEqual(adapter.calls, [])
 
     def test_timeout_is_cancellable_and_never_automatically_retried(self):
