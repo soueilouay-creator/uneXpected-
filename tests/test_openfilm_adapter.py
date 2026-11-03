@@ -154,6 +154,11 @@ class OpenFilmAdapterTests(unittest.TestCase):
         with self.assertRaises(OpenFilmAdapterError):
             self.adapter.call(TOOL_CREATE, args, None)
 
+    def test_create_requires_a_fresh_worker_preflight_callback(self):
+        blocked = OpenFilmAdapter(self.jobs, self.record, worker_ready=lambda: False)
+        with self.assertRaises(OpenFilmAdapterError):
+            blocked.call(TOOL_CREATE, self.create_args(), None)
+
     def test_unknown_fields_and_unknown_job_ids_fail_closed(self):
         args = self.create_args()
         args["shell_command"] = "echo unsafe"
