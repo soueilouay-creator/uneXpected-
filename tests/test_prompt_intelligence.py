@@ -64,6 +64,16 @@ class PromptIntelligenceTests(unittest.TestCase):
             "source_url": "https://example.com/prompts/p-1",
             **extra,
         }
+        source = self.store.get_prompt_source(source_id)
+        if source and source.get("status") == "staged":
+            self.service.review_source(
+                source_id,
+                rights_status="unknown",
+                retention_policy="metadata_only",
+                evidence_url=None,
+                attribution=source["attribution"],
+                reviewer="owner",
+            )
         result = self.service.stage_batch(source_id, [record], actor="owner")
         return result["items"][0]
 
