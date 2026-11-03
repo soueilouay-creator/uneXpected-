@@ -116,7 +116,7 @@ The maximum configured delegation depth is three. Cycles, unauthorized handoffs,
 
 Authenticated GET /v1/tasks/{task_id}/events?after={event_id} returns ordered, bounded event pages from SQLite or PostgreSQL. The response includes next_cursor and has_more. A client reconnects by supplying the last received event ID; this only reads persisted history and never re-executes the task.
 
-This is durable event retrieval, not live streaming. The command-center visual trace viewer and live token/cost stream remain future work. Cost is recorded only when an actual provider reports it or the runtime measures it; unknown values are not fabricated.
+The command center includes a basic visual trace panel. Live streaming and detailed provider token/cost views remain future work. Cost is recorded only when an actual provider reports it or the runtime measures it; unknown values are not fabricated.
 
 ## Security and approval boundary
 
