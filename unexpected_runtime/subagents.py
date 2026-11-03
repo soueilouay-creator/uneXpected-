@@ -101,12 +101,21 @@ class SubagentRunner:
             if agent_id not in parent_spec.handoff_targets and agent_id != "orchestrator":
                 raise PermissionDenied(f"Parent role is not authorized to delegate to {agent_id}.")
             self.coordinator.permissions.authorize(child_spec, "collaborate")
+            identity = {
+                "parent_task_id": parent_task_id,
+                "agent_id": agent_id,
+                "objective": objective,
+                "inputs": dict(inputs),
+                "max_steps": max_steps,
+            }
+            idempotency_key = "subagent-" + self._digest(identity)
             prepared.append({
                 "agent_id": agent_id,
                 "objective": objective,
                 "inputs": dict(inputs),
                 "max_steps": max_steps,
                 "inputs_sha256": hashlib.sha256(encoded_inputs).hexdigest(),
+                "idempotency_key": idempotency_key,
             })
 
         summaries = []
@@ -126,6 +135,7 @@ class SubagentRunner:
                     child["inputs"],
                     deadline_seconds=30.0,
                     max_steps=child["max_steps"],
+                    idempotency_key=child["idempotency_key"],
                     source_refs=(f"task:{parent_task_id}",),
                     parent_task_id=parent_task_id,
                 )
