@@ -81,10 +81,11 @@ class TaskEventCursorAPITests(unittest.TestCase):
 
     def test_authenticated_task_event_endpoint_supports_reconnect_cursor(self):
         path = f"/v1/tasks/{self.task_id}/events?after=0&limit=2"
-        self.assertEqual(self.request(path)[0], 503 if False else 401)
+        self.assertEqual(self.request(path)[0], 401)
         status, first = self.request(path, self.token)
         self.assertEqual(status, 200)
         self.assertEqual(len(first["items"]), 2)
+        self.assertTrue(first["has_more"])
         cursor = first["next_cursor"]
         status, second = self.request(f"/v1/tasks/{self.task_id}/events?after={cursor}&limit=20", self.token)
         self.assertEqual(status, 200)
