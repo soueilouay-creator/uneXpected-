@@ -84,8 +84,14 @@ class OpenFilmAdapterTests(unittest.TestCase):
             "synthetic_data": True,
             "rights_manifest": {"sources": [{"kind": "original", "owner": "uneXpected"}]},
             "variants": [
-                {"platform": "youtube_shorts", "width": 1080, "height": 1920},
-                {"platform": "tiktok", "width": 1080, "height": 1920},
+                {"platform": "youtube_shorts", "width": 1080, "height": 1920,
+                 "fps": 30, "max_duration_seconds": 180,
+                 "black_frame_min_duration_seconds": 0.1, "black_frame_pixel_threshold": 0.1,
+                 "max_black_duration_seconds": 0.5, "freeze_frame_noise": "-50dB",
+                 "freeze_frame_min_duration_seconds": 0.5, "max_freeze_duration_seconds": 0.5,
+                 "audio_required": True, "audio_coverage_tolerance_seconds": 0.1,
+                 "audio_loudness_target_lufs": -16, "audio_true_peak_ceiling_dbfs": -1,
+                 "audio_loudness_tolerance_lu": 1, "captions_required": True},
             ],
         }
 
@@ -141,6 +147,10 @@ class OpenFilmAdapterTests(unittest.TestCase):
                 self.adapter.call(TOOL_CREATE, args, None)
         args = self.create_args()
         args["variants"][0]["width"] = 720
+        with self.assertRaises(OpenFilmAdapterError):
+            self.adapter.call(TOOL_CREATE, args, None)
+        args = self.create_args()
+        args["variants"].append({"platform": "tiktok", "width": 1080, "height": 1920})
         with self.assertRaises(OpenFilmAdapterError):
             self.adapter.call(TOOL_CREATE, args, None)
 

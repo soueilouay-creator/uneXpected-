@@ -205,9 +205,16 @@ class Coordinator:
                         }
                 except (TypeError, ValueError):
                     result = {"failure_category": "stored_result_invalid"}
+            request = {}
+            try:
+                request = json.loads(job.get("request_json") or "{}")
+            except (TypeError, ValueError):
+                request = {}
             public.append({
                 "job_id": job["job_id"],
                 "task_id": job["task_id"],
+                "campaign_id": request.get("campaign_id"),
+                "content_id": request.get("content_id"),
                 "state": job["state"],
                 "attempt_count": job["attempt_count"],
                 "cancel_requested": job["cancel_requested"],

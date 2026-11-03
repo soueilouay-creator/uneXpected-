@@ -155,8 +155,20 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                     "max_retries":raw.get("max_retries"),
                     "storage":{"backend":backend,"status":"ready" if storage_healthy else "unavailable","healthy":storage_healthy,"recovery":"not verified"},
                     "governance":{"privileged_actions":"disabled","approval_authority":"not verified","replay_protection":"not verified"},
-                    "approval_verifier_configured":bool(getattr(active,"approval_verifier",None))
+                    "approval_verifier_configured":bool(getattr(active,"approval_verifier",None)),
+                    "media":active.media_status()
                 })
+            if path=="/v1/media/status":
+                return self.send_json(200,{"media":active.media_status()})
+            if path=="/v1/media/jobs":
+                state_filter=(query.get("state") or [None])[0]
+                try:
+                    items=active.media_list_jobs(limit=limit,state=state_filter)
+                    return self.send_json(200,{"count":len(items),"items":items})
+                except ValueError:
+                    return self.send_json(400,{"error":"Invalid media-job state filter."})
+                except Exception:
+                    return self.send_json(503,{"error":"Media-job state is unavailable."})
             if path=="/v1/prompts":
                 search_text=(query.get("q") or [""])[0]
                 category=(query.get("category") or [None])[0]
@@ -330,6 +342,7 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             parts=route.strip("/").split("/")
             prompt_admin_kind=None
             prompt_admin_id=None
+            media_cancel_id=None
             if route=="/v1/prompt-intelligence/sources":
                 prompt_admin_kind="source_register"
             elif route=="/v1/prompt-intelligence/import":
@@ -343,22 +356,40 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             elif len(parts)==5 and parts[:3]==["v1","prompt-intelligence","prompts"] and parts[4]=="activate":
                 prompt_admin_kind="prompt_activate"
                 prompt_admin_id=unquote(parts[3])
-            known_routes={"/v1/invoke", "/v1/lifecycle", "/v1/providers/test",
+            elif len(parts)==5 and parts[:3]==["v1","media","jobs"] and parts[4]=="cancel":
+                media_cancel_id=unquote(parts[3])
+            known_routes={"/v1/media/jobs", "/v1/invoke", "/v1/lifecycle", "/v1/providers/test",
                           "/v1/improvements/propose", "/v1/quality-evaluations",
                           "/v1/subagents/run"}
-            if route not in known_routes and prompt_admin_kind is None:
+            if route not in known_routes and prompt_admin_kind is None and media_cancel_id is None:
                 return self.send_json(404,{"error":"Not found."})
             is_lifecycle=route=="/v1/lifecycle"
             is_provider_test=route=="/v1/providers/test"
             is_improvement_propose=route=="/v1/improvements/propose"
             is_quality_evaluation=route=="/v1/quality-evaluations"
             is_subagents_run=route=="/v1/subagents/run"
+            is_media_enqueue=route=="/v1/media/jobs"
+            is_media_cancel=media_cancel_id is not None
             if not self.authorize(): return
             identity=self.client_address[0] if self.client_address else "unknown"
             active_limiter=lifecycle_limiter if is_lifecycle else (quality_limiter if is_quality_evaluation else limiter)
             if not active_limiter.allow(identity): return self.send_json(429,{"error":"Request rate limit exceeded."})
             body=self.read_body()
             if body is None: return
+            if is_media_enqueue:
+                try:
+                    result=active.media_create_job(body)
+                    return self.send_json(201,{"job":result})
+                except Exception:
+                    return self.send_json(409,{"error":"Media capability is not enabled or the render request was rejected."})
+            if is_media_cancel:
+                if body:
+                    return self.send_json(400,{"error":"Media cancellation accepts an empty JSON object only."})
+                try:
+                    result=active.media_cancel_job(media_cancel_id)
+                    return self.send_json(200,{"job":result})
+                except Exception:
+                    return self.send_json(409,{"error":"Media capability is not enabled or the cancellation was rejected."})
             if prompt_admin_kind:
                 try:
                     if prompt_admin_kind=="source_register":

@@ -15,6 +15,7 @@
 <a class="nav" href="#agents" data-view="agents">◎ Agent registry <b id="nav-count">38</b></a>
 <a class="nav" href="#tasks" data-view="tasks">▤ Tasks & workflows</a>
 <a class="nav" href="#prompts" data-view="prompts">✧ Prompt Intelligence</a>
+<a class="nav" href="#media" data-view="media">▣ Video Engine</a>
 <a class="nav" href="#providers" data-view="providers">⌘ AI providers</a>
 <a class="nav" href="#capabilities" data-view="capabilities">⌬ Capabilities</a>
 <a class="nav" href="#intelligence" data-view="intelligence">⌕ Resource & AI quality</a>
@@ -43,6 +44,48 @@
 </section>
 <section class="view" id="view-agents"><div class="heading"><div><p class="eyebrow">SPECIALIST ECOSYSTEM</p><h3>38 canonical roles</h3><p>Governed specifications routed by one coordinator—not separate autonomous services.</p></div><input id="agent-search" type="search" placeholder="Search roles…"></div><div id="agent-grid" class="cards">Loading agent registry…</div></section>
 <section class="view" id="view-tasks"><div class="heading"><div><p class="eyebrow">EXECUTION CONTROL</p><h3>Submit a governed task</h3><p>Tasks are executed by the canonical coordinator and recorded in shared state.</p></div></div><article class="panel task-panel"><form id="task-form"><label for="task-agent">Specialist role</label><select id="task-agent"></select><label for="task-objective">What should uneXpected do?</label><textarea id="task-objective" rows="4" maxlength="16000" required placeholder="Describe the objective, context and expected result…"></textarea><label for="task-mode">Execution mode</label><select id="task-mode"><option value="invoke" selected>Single governed invocation (runtime test)</option><option value="lifecycle" disabled>Full verified lifecycle (requires a live AI provider)</option></select><label for="task-provider">Provider route</label><select id="task-provider"><option value="">Default configured route</option></select><button class="button primary" id="task-submit">Run task →</button><small>Publishing, spending, payments, account changes and other privileged actions are not authorized by this form.</small></form><div id="task-result" aria-live="polite"></div></article><div class="heading"><h3>Recent tasks</h3></div><article class="panel"><div id="task-list" class="list">Loading tasks…</div></article><article class="panel" id="task-trace-panel" hidden><div class="heading"><div><p class="eyebrow">PERSISTED EXECUTION HISTORY</p><h3 id="trace-title">Task trace</h3><p>Read-only event history. Reconnecting never reruns the task.</p></div><button class="button secondary" id="trace-load-more" type="button" hidden>Load older events</button></div><div id="trace-events" class="list">Select a task to inspect its trace.</div></article></section>
+<section class="view" id="view-media">
+<div class="heading"><div><p class="eyebrow">NATIVE CONTENT PRODUCTION</p><h3>uneXpected Video Engine</h3><p>Local rendering and quality control inside the existing runtime. External video providers are optional adapters, not dependencies.</p></div><button class="button secondary" id="media-refresh" type="button">↻ Refresh</button></div>
+<div class="columns">
+<article class="panel"><h3>Engine readiness</h3><div id="media-status" class="list">Loading native video capability…</div><p id="media-blocker" class="notice">Worker host readiness has not been verified.</p></article>
+<article class="panel"><h3>Queue a render</h3><form id="media-queue-form"><label for="media-request-json">One render request (JSON)</label><textarea id="media-request-json" rows="14" spellcheck="false">{
+  "task_id": "YT-TRACKER-03",
+  "idempotency_key": "YT-TRACKER-03-youtube-v1",
+  "project_path": "YT-TRACKER-03",
+  "campaign_id": "MAINTENANCE_TRACKER_GROWTH",
+  "content_id": "YT-TRACKER-03",
+  "source_code": "YT-TRACKER-03",
+  "synthetic_data": true,
+  "title": "Your Spare Parts Can Run Out Before You Notice",
+  "description": "A factual preventive-maintenance explainer.",
+  "cta": "Explore the Preventive Maintenance Tracker.",
+  "rights_manifest": {"sources": [{"kind": "original", "owner": "uneXpected"}]},
+  "variants": [{
+    "platform": "youtube_shorts",
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "max_duration_seconds": 180,
+    "audio_required": true,
+    "audio_coverage_tolerance_seconds": 0.1,
+    "audio_loudness_target_lufs": -16,
+    "audio_true_peak_ceiling_dbfs": -1,
+    "audio_loudness_tolerance_lu": 1,
+    "black_frame_min_duration_seconds": 0.1,
+    "black_frame_pixel_threshold": 0.1,
+    "max_black_duration_seconds": 0.5,
+    "freeze_frame_noise": "-50dB",
+    "freeze_frame_min_duration_seconds": 0.5,
+    "max_freeze_duration_seconds": 0.5,
+    "captions_required": true
+  }],
+  "caption_tracks": [{"path": "captions/en.srt", "language": "en"}]
+}</textarea><button class="button primary" id="media-queue-submit" disabled>Queue render →</button><small>One platform variant per job. Queueing remains disabled until the capability is reviewed, installed, enabled and the local worker host passes preflight. No publication is triggered.</small></form><div id="media-queue-result" aria-live="polite"></div></article>
+</div>
+<div class="heading"><div><p class="eyebrow">PERSISTED JOB STATE</p><h3>Render queue</h3></div></div>
+<article class="panel"><div id="media-job-list" class="list">Loading media jobs…</div></article>
+<article class="panel"><h3>Human review gate</h3><p>Every exported master must pass technical QA and receive human playback/listening review. YouTube/TikTok publishing remains a separate approval and platform integration.</p></article>
+</section>
 <section class="view" id="view-providers"><div class="heading"><div><p class="eyebrow">MODEL ROUTING</p><h3>Provider readiness</h3><p>Configured, reachable and verified are separate states. No key is shown here.</p></div></div><div id="provider-grid" class="cards">Loading provider status…</div><article class="panel"><h3>Provider safety</h3><p>A configured credential does not prove connectivity. A provider is marked verified only after a successful bounded live request. Mock responses are never labelled as live.</p></article></section>
 <section class="view" id="view-capabilities"><div class="heading"><div><p class="eyebrow">INTEGRATION INVENTORY</p><h3>Capabilities & integrations</h3><p>Catalog metadata is not proof of installation, authorization or live access.</p></div></div><article class="panel"><div id="capability-list" class="list">Loading capabilities…</div></article></section>
 <section class="view" id="view-intelligence">

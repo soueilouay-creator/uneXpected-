@@ -96,8 +96,8 @@ class OpenFilmAdapter:
         if not isinstance(arguments.get("rights_manifest"), (dict, list)):
             raise OpenFilmAdapterError("rights_manifest must be a JSON object or array.")
         variants = arguments.get("variants")
-        if not isinstance(variants, list) or not 1 <= len(variants) <= 3:
-            raise OpenFilmAdapterError("variants must contain between one and three render profiles.")
+        if not isinstance(variants, list) or len(variants) != 1:
+            raise OpenFilmAdapterError("Each media job must contain exactly one render variant.")
         for variant in variants:
             if not isinstance(variant, dict):
                 raise OpenFilmAdapterError("Each render variant must be a JSON object.")
