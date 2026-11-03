@@ -13,6 +13,7 @@ from .skills import SkillRegistry, SkillRegistryError
 from .capabilities import CapabilityRegistry
 from .mcp_gateway import MCPToolGateway
 from .subagents import SubagentRunner
+from .prompt_intelligence import PromptIntelligence
 
 class Coordinator:
     def __init__(self, manifest_path=None, state_dir=None, provider=None, max_workers=None, max_retries=None, skill_manifest_path=None, skill_package_root=None, approval_verifier:ApprovalVerifier|None=None):
@@ -39,6 +40,8 @@ class Coordinator:
         self.mcp_gateway=MCPToolGateway(store=self.store,capabilities=self.capabilities,
                                         permissions=self.permissions,agent_registry=self.registry)
         self.subagents=SubagentRunner(self)
+        self.prompt_intelligence=PromptIntelligence(store=self.store,agent_registry=self.registry,permission_policy=self.permissions)
+        self.prompt_intelligence.seed_catalog()
         self.max_workers=workers; self.max_retries=retries
         self.task_pool=ThreadPoolExecutor(max_workers=workers,thread_name_prefix='unexpected-task')
         self.provider_pool=ThreadPoolExecutor(max_workers=workers,thread_name_prefix='unexpected-provider')
