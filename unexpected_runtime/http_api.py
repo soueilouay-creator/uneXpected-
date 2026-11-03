@@ -235,6 +235,9 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             if path=="/v1/capabilities":
                 items=active.store.list_capabilities()
                 return self.send_json(200,{"count":len(items),"items":items})
+            if path=="/v1/mcp/tools":
+                items=active.mcp_gateway.list_tools()
+                return self.send_json(200,{"count":len(items),"items":items})
             if path=="/v1/improvements":
                 items=active.store.list_proposals(limit)
                 return self.send_json(200,{"count":len(items),"items":items})
