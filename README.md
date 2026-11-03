@@ -97,7 +97,7 @@ Example authenticated request:
 
 The v8.1 branch adds an in-process MCP adapter contract and an authenticated metadata catalog at GET /v1/mcp/tools. Adapters must match a reviewed capability record by source URL, publisher, version, content digest, permission scopes and data-access scopes. A capability must be installed, explicitly enabled and revalidated before each call.
 
-Tool calls are role-scoped, permission-checked and bounded by JSON input/result sizes and a deadline. Audit events store hashes and safe metadata rather than raw arguments or results. A timeout is not retried automatically.
+Tool calls are role-scoped, permission-checked and bounded by JSON input/result sizes and a deadline. Audit events store hashes and safe metadata rather than raw arguments or results. A timeout is not retried automatically and only signals cooperative cancellation; Python cannot forcibly stop an already-running in-process adapter. Privileged MCP tools are rejected until durable approval/replay storage is verified, so this branch must not register write-capable adapters.
 
 **Important:** this is an adapter boundary, not a remote MCP client. It does not discover or connect to external MCP servers, and no third-party tool is enabled by default. CI uses deterministic fake adapters.
 
