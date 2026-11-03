@@ -1,25 +1,32 @@
-# Architecture — uneXpected v7.3.1
+# Architecture — uneXpected v8.1 preview
 
 ```mermaid
 flowchart TD
-  U[CLI / host caller] --> R[Orchestrator / Coordinator]
-  R --> Q[SQLite task queue]
-  R --> P[Permission policy + approval context]
-  R --> W[Bounded worker pool]
-  W --> PA[Provider abstraction]
-  PA --> M[Deterministic mock provider]
-  PA --> O[Optional OpenAI-compatible adapter]
-  W --> A[38 registered agent specs]
-  A --> AM[Isolated per-agent memory namespace]
-  A --> SK[Reviewed shared knowledge + provenance]
-  R --> E[SQLite audit/event log]
-  A --> G[Self-improvement governor]
-  G --> B[Fixed benchmark + regression checks]
-  B --> PR[Guarded version promotion / rollback]
-  PR --> AM
+  U[Desktop Command Center / API caller] --> C[One Python Coordinator]
+  C --> T[Task queue + task lifecycle]
+  C --> P[Permission policy + action-bound approval]
+  C --> PR[Provider router]
+  C --> S[Hash-pinned Skill registry]
+  C --> M[MCP adapter gateway]
+  C --> D[Bounded SubagentRunner]
+  C --> E[Task-linked event log + cursor reads]
+  M --> CR[Capability provenance / lifecycle registry]
+  D --> CH[Isolated child task IDs + role memory]
+  T --> DB[(SQLite local / PostgreSQL hosted)]
+  E --> DB
+  CH --> DB
+  PR --> L[Configured live provider or deterministic mock]
+  C --> Q[Quality evaluation + governed improvement]
 ```
 
-SQLite stores queue state, events, idempotency results, isolated agent memory, provenance-tagged shared knowledge, outcomes, proposals and version history. The provider adapter is shared; roles are specifications executed as sessions, not separate autonomous models. The default provider is deterministic mock.
+The command center and runtime are one application. Roles are specifications executed as bounded sessions, not separate autonomous services. SQLite is the local backend; PostgreSQL is the hosted shared-state adapter. Provider keys remain server-side. Skills are hash-pinned context packages; their tool declarations do not grant capabilities. The MCP gateway is an in-process adapter boundary and does not open remote MCP connections. Child runs are sequential, bounded and linked to their parent task. Task event cursors retrieve persisted history without replaying work.
+
+## v8.1 implementation boundaries
+
+- MCP adapters must match a reviewed capability record by source, publisher, version, digest, permission scopes and data-access scopes. Calls require an enabled capability, role scope, permission authorization, bounded JSON inputs/results and a deadline. Timeouts are not retried automatically.
+- Subagents are limited to three child requests per parent call, four steps per child, a maximum configured depth of three, explicit child inputs and bounded summaries. Parent approval does not grant child privileges.
+- Task event pages use monotonically increasing event IDs. Reconnecting with a cursor reads later events; it never re-enqueues or re-invokes the task.
+- Remote MCP transport, full RAG ingestion, visual trace streaming, parallel subagents and recurring schedules remain separate future gates.
 
 
 ## Historical notes — 7.3.0 governed workflow and capability upgrade
@@ -36,4 +43,4 @@ SQLite stores queue state, events, idempotency results, isolated agent memory, p
 
 The `ApprovalVerifier` protocol is `verify(approval: ApprovalContext, permission: str, action_digest: str) -> bool`. The v7.3.1 package includes `GitHubPullRequestApprovalVerifier` and `approval_verifier_from_env()`, which checks GitHub-authenticated reviewer identity, current repository admin permission, the exact reviewed commit, action digest and one-use ledger. It remains disabled until the host supplies a read-only token, exact repository allowlist, trusted reviewers and durable ledger storage. With no valid verifier, privileged direct invocation, shared-knowledge approval, protected promotion and rollback fail closed. Privileged durable queue requests remain denied because this release has no durable approval-reference revalidation path.
 
-The capability registry stores provenance and lifecycle metadata. A transition is not an external installation or execution; `enabled` requires a registered adapter verifier. No TAAFT or MCP adapter is shipped in this Python runtime.
+The capability registry stores provenance and lifecycle metadata. A transition is not an external installation or execution; `enabled` requires a registered adapter verifier. The v8.1 branch includes an in-process MCP adapter gateway; no remote MCP transport, external MCP server, TAAFT service, hosted scheduler or production approval authority is configured.
