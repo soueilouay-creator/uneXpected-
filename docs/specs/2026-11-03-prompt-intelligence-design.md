@@ -1,6 +1,6 @@
 # Prompt Intelligence — Permanent uneXpected Capability
 
-**Status:** Approved architecture; implemented in draft PR #19; current-head verification is tracked in GitHub Actions  
+**Status:** Approved architecture; implemented in draft PR #19; current-head CI #680 passed (280 tests, 1 optional skip, Node syntax, PostgreSQL migration, integrity, Docker/container and CLI checks)  
 **Date:** 2026-11-03  
 **Integration base:** `feat/v8.1-durable-traces` at upstream commit `da89926b965dc62fa72800bf909c844692a1b4ef`; one runtime and one Command Center
 
