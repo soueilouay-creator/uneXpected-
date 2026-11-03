@@ -1,5 +1,6 @@
 import hashlib
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -22,6 +23,13 @@ class FakeMCPAdapter:
         return (self.descriptor,)
     def call(self, tool_id, arguments, context):
         self.calls.append((tool_id, dict(arguments), context))
+        return self.output
+
+
+class SlowMCPAdapter(FakeMCPAdapter):
+    def call(self, tool_id, arguments, context):
+        self.calls.append((tool_id, dict(arguments), context))
+        time.sleep(0.2)
         return self.output
 
 
@@ -153,6 +161,106 @@ class MCPGatewayTests(unittest.TestCase):
                 arguments={},
             )
         self.assertEqual(len(self.adapter.calls), 1)
+
+    def test_privileged_permission_requires_trusted_action_bound_approval(self):
+        record = CapabilityRecord(
+            capability_id="mcp.email-server",
+            name="Email MCP adapter",
+            category="integration",
+            purpose="Send an email.",
+            source_url="https://example.test/mcp",
+            source_publisher="Example Publisher",
+            discovered_at=1761900001.0,
+            verified_at=None,
+            evidence_refs=("test:source",),
+            reviewer=None,
+            adapter_type="mcp",
+            provider="example",
+            required_permissions=("email_send",),
+            dependencies=(),
+            cost_notes="Test only.",
+            risk_notes="Privileged external message.",
+            data_access=("email",),
+            version="1.0.0",
+            content_sha256=self.digest,
+            status="discovered",
+        )
+        self.capabilities.register(record)
+        self.capabilities.transition(record.capability_id, "reviewed", reviewer="owner", reason="Reviewed.")
+        self.capabilities.transition(record.capability_id, "installed", reason="Staged.")
+        descriptor = MCPToolDescriptor(
+            tool_id="mcp.email.send",
+            capability_id=record.capability_id,
+            name="Send email",
+            description="Send an externally visible email.",
+            source_url=record.source_url,
+            source_publisher=record.source_publisher,
+            version=record.version,
+            content_sha256=self.digest,
+            allowed_agent_ids=("maintenance-engineer",),
+            required_permissions=("email_send",),
+            data_access=("email",),
+        )
+        adapter = FakeMCPAdapter(descriptor)
+        self.gateway.register_adapter(record.capability_id, adapter)
+        self.capabilities.transition(record.capability_id, "enabled", reason="Owner enabled adapter.")
+        with self.assertRaises(PermissionDenied):
+            self.gateway.call(
+                agent_id="maintenance-engineer", task_id="task-email",
+                tool_id="mcp.email.send", arguments={"to": "customer@example.test"},
+            )
+        self.assertEqual(adapter.calls, [])
+
+    def test_timeout_is_cancellable_and_never_automatically_retried(self):
+        record = CapabilityRecord(
+            capability_id="mcp.slow-server",
+            name="Slow MCP adapter",
+            category="integration",
+            purpose="Test a bounded timeout.",
+            source_url="https://example.test/mcp",
+            source_publisher="Example Publisher",
+            discovered_at=1761900002.0,
+            verified_at=None,
+            evidence_refs=("test:source",),
+            reviewer=None,
+            adapter_type="mcp",
+            provider="example",
+            required_permissions=("collaborate",),
+            dependencies=(),
+            cost_notes="Test only.",
+            risk_notes="Read-only.",
+            data_access=("public-status",),
+            version="1.0.0",
+            content_sha256=self.digest,
+            status="discovered",
+        )
+        self.capabilities.register(record)
+        self.capabilities.transition(record.capability_id, "reviewed", reviewer="owner", reason="Reviewed.")
+        self.capabilities.transition(record.capability_id, "installed", reason="Staged.")
+        descriptor = MCPToolDescriptor(
+            tool_id="mcp.slow.read",
+            capability_id=record.capability_id,
+            name="Slow read",
+            description="Read a public status value slowly.",
+            source_url=record.source_url,
+            source_publisher=record.source_publisher,
+            version=record.version,
+            content_sha256=self.digest,
+            allowed_agent_ids=("maintenance-engineer",),
+            required_permissions=("collaborate",),
+            data_access=("public-status",),
+            timeout_seconds=0.1,
+        )
+        adapter = SlowMCPAdapter(descriptor)
+        self.gateway.register_adapter(record.capability_id, adapter)
+        self.capabilities.transition(record.capability_id, "enabled", reason="Owner enabled adapter.")
+        with self.assertRaises(MCPToolError):
+            self.gateway.call(
+                agent_id="maintenance-engineer", task_id="task-slow",
+                tool_id="mcp.slow.read", arguments={},
+            )
+        self.assertEqual(len(adapter.calls), 1)
+        self.assertTrue(adapter.calls[0][2].cancelled)
 
     def test_adapter_provenance_mismatch_is_rejected(self):
         wrong = MCPToolDescriptor(
