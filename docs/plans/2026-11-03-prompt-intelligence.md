@@ -1,6 +1,6 @@
 # Prompt Intelligence Implementation Plan
 
-**Status:** Approved and implemented in draft PR #19; CI #672 passed for the code candidate. Documentation and integrity-manifest follow-up is awaiting current-head CI.
+**Status:** Approved and implemented in draft PR #19; current-head CI #680 passed on `58cd79b25563a858b39bf238d0d17d787d1ae6cc` (280 tests, 1 optional skip, Node syntax, PostgreSQL migration, integrity, Docker/container and CLI checks). Pending independent review and upstream merge sequencing.
 
 > **For agentic workers:** Use the host's available task-by-task implementation workflow. Steps use checkbox syntax for tracking.
 
@@ -236,7 +236,7 @@ Open a draft PR targeting feat/v8.1-durable-traces and record exact base/head SH
 1. PR #11 remains the v8 foundation candidate on main; it is not merged.
 2. PR #12 (advanced skills) remains stacked on #11 and is still a draft dependency.
 3. PR #15 (durable traces/MCP gateway/subagents) remains stacked on #12. Its CI run #634 passed on head `da89926b965dc62fa72800bf909c844692a1b4ef`, but the PR remains draft and must be reviewed/merged in the agreed order.
-4. Canonical Prompt Intelligence candidate is PR #19 on `feat/v8.1-prompt-intelligence-v3`, based directly on the latest PR #15 branch commit above. The Command Center UI, source rights review, import, queue, role mapping, approval preparation and active catalogue are included. CI #672 passed on code head `c7cde66e0c96bf89e0169211c7b31ff39aefd917`; documentation/inventory updates after that run require current-head CI before merge.
+4. Canonical Prompt Intelligence candidate is PR #19 on `feat/v8.1-prompt-intelligence-v3`, based directly on the latest PR #15 branch commit above. The Command Center UI, source rights review, import, queue, role mapping, approval preparation and active catalogue are included. CI #672 passed on code head `c7cde66e0c96bf89e0169211c7b31ff39aefd917`, and CI #680 passed on current documentation/inventory head `58cd79b25563a858b39bf238d0d17d787d1ae6cc`.
 5. PR #16 (static Prompt Library) and PR #17 (earlier diverged Prompt Intelligence branch) are closed as superseded. PR #18 was a closed temporary CI mirror. Do not merge any of these older branches or duplicate catalogue paths.
 6. PR #13 is a separate overlapping MCP-boundary proposal and needs consolidation review rather than an automatic parallel merge. Keep one active MCP execution boundary only.
 7. Merge only after current-head CI, independent code review, clean diff and explicit upstream merge order. Keep PR #19 draft until those gates are met.
