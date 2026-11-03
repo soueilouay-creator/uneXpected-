@@ -105,6 +105,21 @@ class PostgresStateStore(PostgresIdempotencyMixin):
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def list_task_events(self, task_id: str, *, after_event_id: int = 0, limit: int = 100):
+        if not isinstance(task_id, str) or not task_id.strip():
+            raise ValueError("task_id must be a non-empty string.")
+        if isinstance(after_event_id, bool) or not isinstance(after_event_id, int) or after_event_id < 0:
+            raise ValueError("after_event_id must be a non-negative integer.")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
+            raise ValueError("limit must be an integer between 1 and 200.")
+        with self._session() as connection:
+            rows = connection.execute(
+                "SELECT event_id,ts,task_id,agent_id,event_type,payload_json FROM events "
+                "WHERE task_id=%s AND event_id>%s ORDER BY event_id ASC LIMIT %s",
+                (task_id, after_event_id, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def enqueue(self, request):
         payload = {
             "task_id": request.task_id, "agent_id": request.agent_id,
