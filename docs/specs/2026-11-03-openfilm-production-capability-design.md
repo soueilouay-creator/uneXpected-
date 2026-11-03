@@ -1,6 +1,6 @@
 # OpenFilm Production Capability — uneXpected v8.1 Design Specification
 
-**Status:** Architecture approved; specification prepared for owner review  
+**Status:** Owner-approved specification (2026-11-03)  
 **Date:** 2026-11-03  
 **Repository:** soueilouay-creator/uneXpected-  
 **Base branch:** feat/v8.1-runtime-intelligence  
