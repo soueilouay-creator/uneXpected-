@@ -75,6 +75,10 @@ class PromptIntelligenceAPITests(unittest.TestCase):
         return payload["source"]
 
     def import_prompt(self, source_id="api-fixture"):
+        source = next((item for item in self.coordinator.prompt_intelligence.list_sources()
+                       if item["source_id"] == source_id), None)
+        if source and source.get("status") == "staged":
+            self.review_metadata_source(source_id)
         status, payload = self.request(
             "POST", "/v1/prompt-intelligence/import",
             body={
