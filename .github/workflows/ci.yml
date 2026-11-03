@@ -17,6 +17,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.18.0'
+      - name: Print source integrity digests for inventory update
+        run: |
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+          paths = [
+              ".github/workflows/ci.yml",
+              "workers/openfilm/run-job.mjs",
+              "workers/openfilm/package-lock.json",
+              "workers/openfilm/UPSTREAM-NOTICES.md",
+          ]
+          for name in paths:
+              print(f"{hashlib.sha256(Path(name).read_bytes()).hexdigest()}  {name}")
+          PY
       - name: Verify exact upstream package tarball metadata
         run: |
           npm view openfilm@0.2.7 dist --json
