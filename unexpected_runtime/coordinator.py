@@ -146,6 +146,29 @@ class Coordinator:
             self.mcp_gateway.register_adapter(record.capability_id, self.openfilm_adapter)
         return self.mcp_gateway.list_tools()
 
+    @staticmethod
+    def media_worker_config_fingerprint():
+        names = (
+            "UNEXPECTED_OPENFILM_PODMAN_PATH", "UNEXPECTED_OPENFILM_WORKER_IMAGE",
+            "UNEXPECTED_OPENFILM_HOST_MAX_MEMORY_BYTES", "UNEXPECTED_OPENFILM_HOST_MAX_CPU_LIMIT",
+            "UNEXPECTED_OPENFILM_HOST_MAX_PIDS", "UNEXPECTED_OPENFILM_HOST_TMPFS_BYTES",
+            "UNEXPECTED_OPENFILM_WORKER_ID", "UNEXPECTED_OPENFILM_PROJECT_ROOT",
+            "UNEXPECTED_OPENFILM_ARTIFACT_ROOT", "UNEXPECTED_OPENFILM_TIMEOUT_SECONDS",
+            "UNEXPECTED_OPENFILM_LEASE_SECONDS", "UNEXPECTED_OPENFILM_MAX_PROJECT_BYTES",
+            "UNEXPECTED_OPENFILM_MAX_ASSET_COUNT", "UNEXPECTED_OPENFILM_MAX_FILE_BYTES",
+            "UNEXPECTED_OPENFILM_MAX_OUTPUT_BYTES", "UNEXPECTED_OPENFILM_MEMORY_BYTES",
+            "UNEXPECTED_OPENFILM_CPU_LIMIT", "UNEXPECTED_OPENFILM_PIDS_LIMIT",
+            "UNEXPECTED_OPENFILM_TMPFS_BYTES", "UNEXPECTED_OPENFILM_FFPROBE_PATH",
+            "UNEXPECTED_OPENFILM_FFMPEG_PATH", "UNEXPECTED_OPENFILM_QA_TIMEOUT_SECONDS",
+            "XDG_RUNTIME_DIR",
+        )
+        values = {name: os.environ.get(name, "").strip() for name in names}
+        required = [name for name in names if name != "XDG_RUNTIME_DIR"]
+        if any(not values[name] for name in required):
+            return None
+        encoded = json.dumps(values, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
     def media_status(self):
         try:
             record = self.capabilities.get("media.openfilm.render")
@@ -153,6 +176,7 @@ class Coordinator:
         except Exception:
             capability_status = "unavailable"
         registered = {item["tool_id"] for item in self.mcp_gateway.list_tools()}
+        adapter_registered = TOOL_CREATE in registered and TOOL_STATUS in registered and TOOL_CANCEL in registered
         job_store_ready = self.media_jobs is not None
         queued_jobs = 0
         total_jobs = 0
@@ -162,25 +186,44 @@ class Coordinator:
                 total_jobs = len(self.media_jobs.list(limit=200))
             except Exception:
                 job_store_ready = False
+        fingerprint = self.media_worker_config_fingerprint()
         worker_ready = False
+        worker_preflight_at = None
+        if fingerprint:
+            try:
+                for event in self.store.events(limit=100):
+                    if event.get("event_type") != "media_worker_preflight_passed":
+                        continue
+                    payload = json.loads(event.get("payload_json") or "{}")
+                    tested_at = float(payload.get("tested_at", 0))
+                    if payload.get("config_sha256") == fingerprint and 0 <= time.time() - tested_at <= 3600:
+                        worker_ready = True
+                        worker_preflight_at = tested_at
+                        break
+            except Exception:
+                worker_ready = False
+        available = bool(job_store_ready and adapter_registered and worker_ready and capability_status == "enabled")
         reason = self._openfilm_error or "Worker host is not configured; rendering remains disabled until rootless isolation and resource limits pass."
         if capability_status == "discovered":
             reason = "OpenFilm source is recorded but awaits human review and installation."
         elif capability_status == "reviewed":
-            reason = "OpenFilm source is reviewed but the pinned local worker is not installed."
+            reason = "OpenFilm source is reviewed but the pinned local worker image is not installed."
         elif capability_status == "installed":
-            reason = "Adapter is installed; worker host self-test and explicit enablement are still required."
-        elif capability_status == "enabled":
-            reason = "Capability is enabled, but the worker is unavailable until its host self-test passes."
+            reason = "Adapter is installed; run local worker preflight and explicitly enable the capability."
+        elif capability_status == "enabled" and not worker_ready:
+            reason = "Worker preflight is missing, expired or no longer matches the current host configuration."
+        elif available:
+            reason = "Local worker preflight passed for the current configuration. Rendering is available; publishing remains separate."
         return {
             "capability_id": "media.openfilm.render",
             "provider": "openfilm",
             "version": OPENFILM_VERSION,
             "capability_status": capability_status,
             "job_store_ready": job_store_ready,
-            "adapter_registered": TOOL_CREATE in registered and TOOL_STATUS in registered and TOOL_CANCEL in registered,
+            "adapter_registered": adapter_registered,
             "worker_ready": worker_ready,
-            "available": False,
+            "worker_preflight_at": worker_preflight_at,
+            "available": available,
             "queued_jobs": queued_jobs,
             "total_jobs": total_jobs,
             "reason": reason,

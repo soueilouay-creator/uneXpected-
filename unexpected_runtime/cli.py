@@ -1,5 +1,5 @@
 from __future__ import annotations
-import argparse, json, sys
+import argparse, json, sys, time
 from .coordinator import Coordinator
 from .models import RuntimeErrorBase
 from .resource_intelligence import ResourceRegistry
@@ -59,12 +59,21 @@ def main(argv=None):
                 worker=MediaWorker(c.media_jobs,isolation,worker_config,qa=qa)
                 isolation.validate_limits(worker._limits())
                 if args.media_cmd=='preflight':
-                    out={'worker_readiness':isolation.self_test(),'limits':'validated against configured host ceilings'}
-                    exit_code=0 if out['worker_readiness'].get('available') is True else 3
+                    readiness=isolation.self_test()
+                    out={'worker_readiness':readiness,'limits':'validated against configured host ceilings'}
+                    if readiness.get('available') is True:
+                        c.store.log_event('media_worker_preflight_passed',agent_id='media-worker',
+                            payload={'config_sha256':c.media_worker_config_fingerprint(),
+                                     'worker_image':isolation.config.image,'tested_at':time.time()})
+                    else:
+                        exit_code=3
                 elif args.media_cmd=='enable':
                     readiness=isolation.self_test()
                     if readiness.get('available') is not True:
                         raise RuntimeError(readiness.get('reason','Worker host isolation self-test failed.'))
+                    c.store.log_event('media_worker_preflight_passed',agent_id='media-worker',
+                        payload={'config_sha256':c.media_worker_config_fingerprint(),
+                                 'worker_image':isolation.config.image,'tested_at':time.time()})
                     c.media_register_adapter()
                     out=c.capabilities.transition('media.openfilm.render','enabled',reason=args.reason).to_dict()
                 else:
