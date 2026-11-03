@@ -10,6 +10,8 @@ from .permissions import PermissionPolicy
 from .approvals import ApprovalVerifier, approval_verifier_from_env
 from .storage import StateStore
 from .skills import SkillRegistry, SkillRegistryError
+from .capabilities import CapabilityRegistry
+from .mcp_gateway import MCPToolGateway
 
 class Coordinator:
     def __init__(self, manifest_path=None, state_dir=None, provider=None, max_workers=None, max_retries=None, skill_manifest_path=None, skill_package_root=None, approval_verifier:ApprovalVerifier|None=None):
@@ -31,12 +33,17 @@ class Coordinator:
         self.provider=provider or provider_router_from_env()
         self.skills=SkillRegistry.load(skill_manifest_path, skill_package_root)
         self.approval_verifier = approval_verifier if approval_verifier is not None else approval_verifier_from_env(state_dir=root)
-        self.permissions=PermissionPolicy(self.approval_verifier); self.max_workers=workers; self.max_retries=retries
+        self.permissions=PermissionPolicy(self.approval_verifier)
+        self.capabilities=CapabilityRegistry(self.store)
+        self.mcp_gateway=MCPToolGateway(store=self.store,capabilities=self.capabilities,
+                                        permissions=self.permissions,agent_registry=self.registry)
+        self.max_workers=workers; self.max_retries=retries
         self.task_pool=ThreadPoolExecutor(max_workers=workers,thread_name_prefix='unexpected-task')
         self.provider_pool=ThreadPoolExecutor(max_workers=workers,thread_name_prefix='unexpected-provider')
         self._tokens={}
     def close(self):
         for token in list(self._tokens.values()): token.cancel()
+        self.mcp_gateway.close()
         self.task_pool.shutdown(wait=True,cancel_futures=True); self.provider_pool.shutdown(wait=True,cancel_futures=True)
         close_store=getattr(self.store,'close',None)
         if callable(close_store): close_store()
