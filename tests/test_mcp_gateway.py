@@ -4,11 +4,10 @@ import time
 import unittest
 from pathlib import Path
 
-from unexpected_runtime.approvals import canonical_action_digest
 from unexpected_runtime.capabilities import CapabilityRecord, CapabilityRegistry
 from unexpected_runtime.coordinator import Coordinator
 from unexpected_runtime.mcp_gateway import MCPToolDescriptor, MCPToolError, MCPToolGateway
-from unexpected_runtime.models import ApprovalContext, PermissionDenied
+from unexpected_runtime.models import PermissionDenied
 from unexpected_runtime.permissions import PermissionPolicy
 from unexpected_runtime.registry import AgentRegistry
 from unexpected_runtime.storage import StateStore
