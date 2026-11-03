@@ -232,6 +232,8 @@ class MCPToolGateway:
         record = self.capabilities.get(capability_id)
         if record.status != "enabled":
             raise MCPToolError("MCP capability is not enabled.")
+        if set(descriptor.required_permissions) & PRIVILEGED:
+            raise MCPToolError("Privileged MCP tools remain disabled until durable approval/replay storage is verified.")
         if not self.verify_adapter(record):
             raise MCPToolError("MCP adapter provenance no longer matches its reviewed capability record.")
         agent = self.agent_registry.get(agent_id)
