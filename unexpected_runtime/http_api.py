@@ -2,10 +2,11 @@ from __future__ import annotations
 import hmac, json, os, threading, time, math
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
-from urllib.parse import urlsplit, parse_qs
+from urllib.parse import urlsplit, parse_qs, unquote
 from .web_ui import read_index, read_asset
 from . import __version__
 from .coordinator import Coordinator
+from .prompt_library import PromptLibrary, PromptLibraryError
 
 MAX_BODY_BYTES=64*1024
 MAX_OBJECTIVE_CHARS=16000
@@ -41,6 +42,7 @@ class _RateLimiter:
 
 def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0):
     active=coordinator or Coordinator()
+    prompt_library=PromptLibrary.load()
     token=(os.getenv("UNEXPECTED_RUNTIME_API_TOKEN","") if api_token is None else str(api_token or "")).strip()
     limiter=_RateLimiter()
     lifecycle_limiter=_RateLimiter(limit=3)
@@ -158,6 +160,36 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             if path=="/v1/skills":
                 items=[skill.public_dict() for skill in active.skills.list()]
                 return self.send_json(200,{"count":len(items),"items":items})
+            if path=="/v1/prompts":
+                search_text=(query.get("q") or [""])[0]
+                category=(query.get("category") or [None])[0]
+                try:
+                    raw_offset=(query.get("offset") or ["0"])[0]
+                    offset=int(raw_offset)
+                    items,total=prompt_library.search(
+                        query=search_text,category=category,limit=limit,offset=offset
+                    )
+                except (PromptLibraryError,TypeError,ValueError):
+                    return self.send_json(400,{"error":"Invalid prompt search, category, limit or offset."})
+                return self.send_json(200,{
+                    "total":total,"count":len(items),"offset":offset,"limit":limit,
+                    "category_count":len(prompt_library.list_categories()),
+                    "categories":prompt_library.list_categories(),"items":items,
+                    "source":prompt_library.source_public_dict()
+                })
+            if path.startswith("/v1/prompts/"):
+                prompt_id=unquote(path[len("/v1/prompts/"):])
+                if not prompt_id or "/" in prompt_id:
+                    return self.send_json(404,{"error":"Not found."})
+                try:
+                    entry=prompt_library.get(prompt_id)
+                    return self.send_json(200,{
+                        "item":entry.public_dict(),
+                        "starter_instructions":prompt_library.render_instructions(entry),
+                        "source":prompt_library.source_public_dict()
+                    })
+                except PromptLibraryError:
+                    return self.send_json(404,{"error":"Unknown prompt."})
             if path=="/v1/agents":
                 items=active.list_agents()
                 return self.send_json(200,{"count":len(items),"items":items})
@@ -319,9 +351,9 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                     active.store.log_event("provider_test_failed",payload={"route":body.get("provider_route"),
                         "error_type":type(exc).__name__,"diagnostic":diagnostic})
                     return self.send_json(502,{"ok":False,"error":diagnostic})
-            allowed=({"agent_id","objective","inputs","deadline_seconds","max_corrections","max_improvements","provider_route"}
+            allowed=({"agent_id","objective","inputs","deadline_seconds","max_corrections","max_improvements","provider_route","prompt_id"}
                      if is_lifecycle else
-                     {"agent_id","objective","inputs","deadline_seconds","max_steps","idempotency_key","source_refs","provider_route","skill_ids"})
+                     {"agent_id","objective","inputs","deadline_seconds","max_steps","idempotency_key","source_refs","provider_route","skill_ids","prompt_id"})
             if set(body)-allowed: return self.send_json(400,{"error":"Unsupported fields; privileged actions are not exposed."})
             provider_route=body.get("provider_route")
             if provider_route is not None and not isinstance(provider_route,str): return self.send_json(400,{"error":"provider_route must be a string."})
@@ -333,11 +365,35 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             steps=body.get("max_steps",6)
             idem=body.get("idempotency_key"); refs=body.get("source_refs",[])
             skill_ids=body.get("skill_ids",[])
+            prompt_id=body.get("prompt_id")
             corrections=body.get("max_corrections",1)
             improvements=body.get("max_improvements",3)
             if not isinstance(agent,str) or not agent.strip() or not isinstance(objective,str) or not objective.strip():
                 return self.send_json(400,{"error":"agent_id and objective are required."})
             if len(objective)>MAX_OBJECTIVE_CHARS: return self.send_json(413,{"error":"Objective too large."})
+            if "__uneXpected_prompt" in inputs if isinstance(inputs,dict) else False:
+                return self.send_json(400,{"error":"Reserved prompt metadata cannot be supplied by the caller."})
+            if prompt_id is not None:
+                if not isinstance(prompt_id,str) or not prompt_id.strip() or len(prompt_id)>160:
+                    return self.send_json(400,{"error":"prompt_id must be a non-empty string up to 160 characters."})
+                try:
+                    selected_prompt=prompt_library.get(prompt_id)
+                except PromptLibraryError:
+                    return self.send_json(400,{"error":"Unknown prompt_id."})
+                if selected_prompt.agent_id != agent.strip():
+                    return self.send_json(400,{"error":"Selected prompt is mapped to a different specialist role."})
+                prompt_instructions=prompt_library.render_instructions(selected_prompt)
+                prompt_metadata={
+                    "prompt_id":selected_prompt.id,
+                    "title":selected_prompt.title,
+                    "category_id":selected_prompt.category_id,
+                    "category":selected_prompt.category,
+                    "agent_id":selected_prompt.agent_id,
+                    "source_url":selected_prompt.source_url
+                }
+                objective=objective.rstrip()+"\\n\\n"+prompt_instructions
+                inputs=dict(inputs)
+                inputs["__uneXpected_prompt"]=prompt_metadata
             if (not isinstance(inputs,dict) or isinstance(deadline,bool) or not isinstance(deadline,(int,float))
                     or (not is_lifecycle and (isinstance(steps,bool) or not isinstance(steps,int)))
                     or (is_lifecycle and (isinstance(corrections,bool) or not isinstance(corrections,int)
