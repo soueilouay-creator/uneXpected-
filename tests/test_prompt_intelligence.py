@@ -84,6 +84,16 @@ class PromptIntelligenceTests(unittest.TestCase):
         self.assertEqual(source["retention_policy"], "metadata_only")
         self.assertIsNone(source.get("reviewed_at"))
 
+    def test_source_public_metadata_is_resolved_for_each_source(self):
+        self.source(source_id="second-prompt-publisher")
+        source = self.service.source_public_dict("second-prompt-publisher")
+        self.assertEqual(source["source_id"], "second-prompt-publisher")
+        self.assertEqual(source["url"], "https://example.com/prompts")
+        self.assertEqual(source["rights_status"], "unknown")
+        self.assertEqual(source["retention_policy"], "metadata_only")
+        self.assertNotIn("advertised_prompt_count", source)
+        self.assertEqual(self.service.source_public_dict()["license_status"], "source-specific")
+
     def test_unknown_rights_source_rejects_original_prompt_body(self):
         self.source()
         with self.assertRaises(PromptIntelligenceError):
