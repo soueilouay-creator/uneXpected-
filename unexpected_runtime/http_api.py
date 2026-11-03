@@ -170,6 +170,30 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                 items=self.event_items(rows)
                 if task_filter: items=[item for item in items if item.get("task_id")==task_filter]
                 return self.send_json(200,{"count":len(items),"items":items})
+            if path.startswith("/v1/tasks/") and path.endswith("/events"):
+                task_id=path[len("/v1/tasks/"):-len("/events")].strip("/")
+                if not task_id or "/" in task_id:
+                    return self.send_json(404,{"error":"Not found."})
+                if not active.store.get_task(task_id):
+                    return self.send_json(404,{"error":"Unknown task."})
+                after_values=query.get("after",["0"])
+                if len(after_values)!=1:
+                    return self.send_json(400,{"error":"after must be a single non-negative event cursor."})
+                try:
+                    after_event_id=int(after_values[0])
+                except (TypeError,ValueError):
+                    return self.send_json(400,{"error":"after must be a single non-negative event cursor."})
+                if after_event_id<0:
+                    return self.send_json(400,{"error":"after must be a non-negative event cursor."})
+                page_limit=self.bounded_limit(query,default=50)
+                try:
+                    rows=active.store.list_task_events(task_id,after_event_id=after_event_id,limit=page_limit)
+                except (TypeError,ValueError):
+                    return self.send_json(400,{"error":"Invalid task event cursor or page size."})
+                items=self.event_items(rows)
+                next_cursor=items[-1]["event_id"] if items else after_event_id
+                return self.send_json(200,{"task_id":task_id,"count":len(items),"items":items,
+                                           "next_cursor":next_cursor,"has_more":len(items)==page_limit})
             if path.startswith("/v1/tasks/"):
                 task_id=path[len("/v1/tasks/"):]
                 if not task_id or "/" in task_id: return self.send_json(404,{"error":"Not found."})
