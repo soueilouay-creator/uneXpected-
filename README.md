@@ -93,6 +93,23 @@ Example authenticated request:
 }
 ```
 
+## Prompt Library — AI Money Move directory
+
+The command center includes a read-only index of the public [AI Money Move Prompt Directory](https://aimoneymove-prompts.netlify.app/): **1,178 prompt titles across 15 categories**. Entries are mapped to existing canonical roles; this adds no new agent identities.
+
+The source page did not expose an explicit prompt-reuse licence during the 2026-11-03 review. The local snapshot therefore stores **titles, category labels, stable IDs, role routing and attribution only**. It deliberately does not reproduce the source's full prompt bodies. When an entry is selected, `unexpected_runtime/prompt_library.py` produces newly authored uneXpected task instructions with category-specific guidance and the normal safety boundary.
+
+Authenticated API:
+- `GET /v1/prompts?q=<text>&category=<category-id>&limit=<1..200>&offset=<n>` — filtered title search, category counts, source metadata and bounded pagination.
+- `GET /v1/prompts/{prompt_id}` — one metadata record and its uneXpected-native starter instructions.
+- `POST /v1/invoke` or `POST /v1/lifecycle` may include `prompt_id`. The selected entry must match the requested existing specialist role. Its ID and source metadata are bound into the objective and stored task inputs, so idempotency hashes bind the selected workflow.
+
+The Command Center's **Prompt Library** view supports title search, category filtering, pagination and “Use in task”. Selecting an entry fills the mapped role and a draft objective; the user reviews and completes the context, then explicitly submits the governed task. It does not run on selection.
+
+Source refreshes must retain attribution, recount all categories, compare IDs/titles and review reuse terms before changing the stored data scope. External titles are untrusted metadata. A catalogue entry never installs a tool, changes role permissions, authorizes messaging, publishing, paid operations or account changes. Existing coordinator, provider, verification and approval controls remain authoritative.
+
+Detailed source, mapping and refresh notes: [docs/integrations/aimoneymove-prompt-library.md](docs/integrations/aimoneymove-prompt-library.md).
+
 ## Security and approval boundary
 
 - One bearer-token boundary protects all `/v1/*` APIs.
