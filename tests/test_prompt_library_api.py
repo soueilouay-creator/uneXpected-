@@ -116,6 +116,8 @@ class PromptLibraryAPITests(unittest.TestCase):
         invalid = [
             {"prompt_id": "unknown-prompt"},
             {"inputs": {"__uneXpected_prompt": {"prompt_id": "forged"}}},
+            {"agent_id": "sales-intel", "prompt_id": "sales-001", "inputs": [["malformed", "mapping"]]},
+            {"agent_id": "coding-engineer", "prompt_id": "sales-001"},
         ]
         for index, extra in enumerate(invalid):
             body = {
