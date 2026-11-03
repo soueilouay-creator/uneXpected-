@@ -187,13 +187,14 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                     return self.send_json(400,{"error":"after must be a non-negative event cursor."})
                 page_limit=self.bounded_limit(query,default=50)
                 try:
-                    rows=active.store.list_task_events(task_id,after_event_id=after_event_id,limit=page_limit)
+                    rows=active.store.list_task_events(task_id,after_event_id=after_event_id,limit=page_limit+1)
                 except (TypeError,ValueError):
                     return self.send_json(400,{"error":"Invalid task event cursor or page size."})
-                items=self.event_items(rows)
+                has_more=len(rows)>page_limit
+                items=self.event_items(rows[:page_limit])
                 next_cursor=items[-1]["event_id"] if items else after_event_id
                 return self.send_json(200,{"task_id":task_id,"count":len(items),"items":items,
-                                           "next_cursor":next_cursor,"has_more":len(items)==page_limit})
+                                           "next_cursor":next_cursor,"has_more":has_more})
             if path.startswith("/v1/tasks/"):
                 task_id=path[len("/v1/tasks/"):]
                 if not task_id or "/" in task_id: return self.send_json(404,{"error":"Not found."})
