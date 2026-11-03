@@ -10,6 +10,9 @@ flowchart TD
   C --> M[MCP adapter gateway]
   C --> D[Bounded SubagentRunner]
   C --> E[Task-linked event log + cursor reads]
+  C --> PI[Prompt Intelligence module]
+  PI --> DB
+  PI --> P
   M --> CR[Capability provenance / lifecycle registry]
   D --> CH[Isolated child task IDs + role memory]
   T --> DB[(SQLite local / PostgreSQL hosted)]
@@ -20,12 +23,14 @@ flowchart TD
 ```
 
 The command center and runtime are one application. Roles are specifications executed as bounded sessions, not separate autonomous services. SQLite is the local backend; PostgreSQL is the hosted shared-state adapter. Provider keys remain server-side. Skills are hash-pinned context packages; their tool declarations do not grant capabilities. The MCP gateway is an in-process adapter boundary and does not open remote MCP connections. Child runs are sequential, bounded and linked to their parent task. Task event cursors retrieve persisted history without replaying work.
+Prompt Intelligence is an in-process module, not another service or agent registry. It stores source provenance, rights decisions, immutable prompt versions and evaluations in the same state layer. Every prompt maps to one existing canonical role; imported text cannot add permissions. Source rights default to unknown and metadata-only. Activation requires a host-verified, one-use approval bound to the exact version and action digest.
 
 ## v8.1 implementation boundaries
 
 - MCP adapters must match a reviewed capability record by source, publisher, version, digest, permission scopes and data-access scopes. Calls require an enabled capability, role scope, permission authorization and bounded JSON inputs/results. In-process timeouts signal cooperative cancellation and are never retried; Python cannot forcibly stop an already-running adapter. Privileged MCP tools remain blocked until durable approval/replay is verified.
 - Subagents are limited to three child requests per parent call, four steps per child, a maximum configured depth of three, explicit child inputs and bounded summaries. Parent approval does not grant child privileges.
 - Task event pages use monotonically increasing event IDs. Reconnecting with a cursor reads later events; it never re-enqueues or re-invokes the task.
+- Prompt source ingestion is staged and rights-aware. Unknown/restricted rights allow metadata only; review and deterministic safety evaluation precede any activation request. The Command Center prepares a GitHub approval request; the host verifier independently checks the trusted review, exact action digest, expiry and one-use ledger.
 - Remote MCP transport, full RAG ingestion, visual trace streaming, parallel subagents and recurring schedules remain separate future gates.
 
 
