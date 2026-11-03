@@ -10,6 +10,43 @@ permissions:
   contents: read
 
 jobs:
+  openfilm-worker-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Print source integrity digests for inventory update
+        run: |
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+          paths = [
+              ".github/workflows/ci.yml",
+              "workers/openfilm/run-job.mjs",
+              "workers/openfilm/package-lock.json",
+              "workers/openfilm/UPSTREAM-NOTICES.md",
+              "workers/openfilm/test/run-job.test.mjs",
+          ]
+          for name in paths:
+              print(f"{hashlib.sha256(Path(name).read_bytes()).hexdigest()}  {name}")
+          PY
+      - name: Verify exact upstream package tarball metadata
+        run: |
+          npm view openfilm@0.2.7 dist --json
+          npm view playwright-core@1.61.1 dist --json
+      - name: Install pinned OpenFilm dependencies
+        working-directory: workers/openfilm
+        run: npm ci --ignore-scripts
+      - name: Verify dependency graph and audit production dependencies
+        working-directory: workers/openfilm
+        run: |
+          npm ls --depth=0
+          npm audit --omit=dev
+      - name: Run OpenFilm runner contract tests
+        working-directory: workers/openfilm
+        run: npm test
   runtime-tests:
     runs-on: ubuntu-latest
     env:
