@@ -4,6 +4,8 @@ import hashlib
 import json
 from typing import Any
 
+from .models import PermissionDenied
+
 
 class SubagentError(RuntimeError):
     """A bounded specialist delegation was rejected or could not be completed."""
@@ -97,7 +99,7 @@ class SubagentRunner:
                 raise SubagentError(f"Child max_steps must be between 1 and {self.MAX_CHILD_STEPS}.")
             child_spec = self.coordinator.registry.get(agent_id)
             if agent_id not in parent_spec.handoff_targets and agent_id != "orchestrator":
-                raise SubagentError(f"Parent role is not authorized to delegate to {agent_id}.")
+                raise PermissionDenied(f"Parent role is not authorized to delegate to {agent_id}.")
             self.coordinator.permissions.authorize(child_spec, "collaborate")
             prepared.append({
                 "agent_id": agent_id,
