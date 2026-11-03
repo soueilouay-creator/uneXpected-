@@ -66,10 +66,18 @@ def main(argv=None):
                             payload={'config_sha256':c.media_worker_config_fingerprint(),
                                      'worker_image':isolation.config.image,'tested_at':time.time()})
                     else:
+                        c.store.log_event('media_worker_preflight_failed',agent_id='media-worker',
+                            payload={'config_sha256':c.media_worker_config_fingerprint(),
+                                     'worker_image':isolation.config.image,'tested_at':time.time(),
+                                     'failure_category':'worker_self_test_failed'})
                         exit_code=3
                 elif args.media_cmd=='enable':
                     readiness=isolation.self_test()
                     if readiness.get('available') is not True:
+                        c.store.log_event('media_worker_preflight_failed',agent_id='media-worker',
+                            payload={'config_sha256':c.media_worker_config_fingerprint(),
+                                     'worker_image':isolation.config.image,'tested_at':time.time(),
+                                     'failure_category':'worker_self_test_failed'})
                         raise RuntimeError(readiness.get('reason','Worker host isolation self-test failed.'))
                     c.store.log_event('media_worker_preflight_passed',agent_id='media-worker',
                         payload={'config_sha256':c.media_worker_config_fingerprint(),
@@ -80,8 +88,20 @@ def main(argv=None):
                     record=c.capabilities.get('media.openfilm.render')
                     if record.status!='enabled':
                         raise RuntimeError('OpenFilm must be enabled after review, installation and a passing worker preflight.')
-                    out=worker.run_once()
-                    exit_code=0 if out.get('status') in {'idle','ready_for_human_review','cancelled'} else 3
+                    readiness=isolation.self_test()
+                    if readiness.get('available') is not True:
+                        c.store.log_event('media_worker_preflight_failed',agent_id='media-worker',
+                            payload={'config_sha256':c.media_worker_config_fingerprint(),
+                                     'worker_image':isolation.config.image,'tested_at':time.time(),
+                                     'failure_category':'worker_self_test_failed'})
+                        out={'status':'worker_unavailable','readiness':readiness}
+                        exit_code=3
+                    else:
+                        c.store.log_event('media_worker_preflight_passed',agent_id='media-worker',
+                            payload={'config_sha256':c.media_worker_config_fingerprint(),
+                                     'worker_image':isolation.config.image,'tested_at':time.time()})
+                        out=worker.run_once()
+                        exit_code=0 if out.get('status') in {'idle','ready_for_human_review','cancelled'} else 3
         elif args.cmd=='list': out={'count':len(c.registry),'agents':c.list_agents()}
         elif args.cmd=='run': out=c.invoke(args.agent_id,args.objective,json.loads(args.inputs),idempotency_key=args.idempotency_key,deadline_seconds=args.deadline).to_dict()
         elif args.cmd=='lifecycle':

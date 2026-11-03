@@ -128,7 +128,7 @@ class Coordinator:
             self._openfilm_error = "Stored OpenFilm capability provenance differs from the current pinned adapter."
             return
         if self.media_jobs is not None:
-            self.openfilm_adapter = OpenFilmAdapter(self.media_jobs, existing)
+            self.openfilm_adapter = OpenFilmAdapter(self.media_jobs, existing, worker_ready=self.media_worker_preflight_ready)
             if existing.status in {"installed", "enabled"}:
                 try:
                     self.media_register_adapter()
@@ -169,6 +169,29 @@ class Coordinator:
         encoded = json.dumps(values, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
 
+    def media_worker_preflight(self):
+        fingerprint = self.media_worker_config_fingerprint()
+        if not fingerprint:
+            return {"ready": False, "tested_at": None}
+        try:
+            for event in self.store.events(limit=100):
+                if event.get("event_type") not in {"media_worker_preflight_passed", "media_worker_preflight_failed"}:
+                    continue
+                payload = json.loads(event.get("payload_json") or "{}")
+                tested_at = float(payload.get("tested_at", 0))
+                matches = payload.get("config_sha256") == fingerprint
+                fresh = 0 <= time.time() - tested_at <= 3600
+                return {
+                    "ready": event.get("event_type") == "media_worker_preflight_passed" and matches and fresh,
+                    "tested_at": tested_at if matches and fresh and event.get("event_type") == "media_worker_preflight_passed" else None,
+                }
+        except Exception:
+            return {"ready": False, "tested_at": None}
+        return {"ready": False, "tested_at": None}
+
+    def media_worker_preflight_ready(self):
+        return self.media_worker_preflight()["ready"]
+
     def media_status(self):
         try:
             record = self.capabilities.get("media.openfilm.render")
@@ -186,22 +209,8 @@ class Coordinator:
                 total_jobs = len(self.media_jobs.list(limit=200))
             except Exception:
                 job_store_ready = False
-        fingerprint = self.media_worker_config_fingerprint()
-        worker_ready = False
-        worker_preflight_at = None
-        if fingerprint:
-            try:
-                for event in self.store.events(limit=100):
-                    if event.get("event_type") != "media_worker_preflight_passed":
-                        continue
-                    payload = json.loads(event.get("payload_json") or "{}")
-                    tested_at = float(payload.get("tested_at", 0))
-                    if payload.get("config_sha256") == fingerprint and 0 <= time.time() - tested_at <= 3600:
-                        worker_ready = True
-                        worker_preflight_at = tested_at
-                        break
-            except Exception:
-                worker_ready = False
+        preflight = self.media_worker_preflight()
+        worker_ready = preflight["ready"]
         available = bool(job_store_ready and adapter_registered and worker_ready and capability_status == "enabled")
         reason = self._openfilm_error or "Worker host is not configured; rendering remains disabled until rootless isolation and resource limits pass."
         if capability_status == "discovered":
@@ -211,7 +220,7 @@ class Coordinator:
         elif capability_status == "installed":
             reason = "Adapter is installed; run local worker preflight and explicitly enable the capability."
         elif capability_status == "enabled" and not worker_ready:
-            reason = "Worker preflight is missing, expired or no longer matches the current host configuration."
+            reason = "Worker preflight is missing, failed, expired or no longer matches the current host configuration."
         elif available:
             reason = "Local worker preflight passed for the current configuration. Rendering is available; publishing remains separate."
         return {
@@ -222,7 +231,7 @@ class Coordinator:
             "job_store_ready": job_store_ready,
             "adapter_registered": adapter_registered,
             "worker_ready": worker_ready,
-            "worker_preflight_at": worker_preflight_at,
+            "worker_preflight_at": preflight["tested_at"],
             "available": available,
             "queued_jobs": queued_jobs,
             "total_jobs": total_jobs,
@@ -268,6 +277,8 @@ class Coordinator:
         return public
 
     def media_create_job(self, arguments):
+        if not self.media_status()["available"]:
+            raise MediaJobError("Native rendering is unavailable until the worker preflight and capability enablement are current.")
         self.media_register_adapter()
         task_id = arguments.get("task_id") if isinstance(arguments, dict) else None
         if not task_id:

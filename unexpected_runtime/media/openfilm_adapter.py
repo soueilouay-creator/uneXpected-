@@ -25,9 +25,10 @@ TOOL_CANCEL = "openfilm.job.cancel"
 class OpenFilmAdapter:
     """Governed enqueue/status/cancel adapter; it never performs a render."""
 
-    def __init__(self, jobs: MediaJobService, capability: CapabilityRecord):
+    def __init__(self, jobs: MediaJobService, capability: CapabilityRecord, worker_ready=None):
         self.jobs = jobs
         self.capability = capability
+        self.worker_ready = worker_ready
 
     def describe(self) -> tuple[MCPToolDescriptor, ...]:
         common = {
