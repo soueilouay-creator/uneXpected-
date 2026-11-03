@@ -1,64 +1,60 @@
-# AI Money Move Prompt Library Integration
+# AI Money Move seed — Prompt Intelligence integration
 
-**Status:** Draft integration on `feat/aimoneymove-prompt-library`  
+**Status:** Governed Prompt Intelligence implementation in draft PR #19  
 **Source reviewed:** 2026-11-03  
 **Source:** https://aimoneymove-prompts.netlify.app/  
 **Publisher link shown by source metadata:** https://aimoneymove.com/
 
 ## Source snapshot
 
-The directory advertises 1,178 prompts across 15 categories. The embedded page dataset was inspected and the complete title/category index was counted before import. The package contains stable IDs, title, category ID/name, canonical role ID and source URL for each entry.
-
-| Category | Entries | Existing role |
-|---|---:|---|
-| Make Money with AI | 102 | `business-strategist` |
-| Engineering | 220 | `coding-engineer` |
-| Marketing | 170 | `marketing-seo` |
-| Sales | 110 | `sales-intel` |
-| Operations | 90 | `project-manager` |
-| Writing | 70 | `creative-director` |
-| Product and UX | 65 | `product-manager` |
-| Data and Finance | 65 | `data-analyst` |
-| Creative and Media | 55 | `media-producer` |
-| Education | 50 | `learning-coach` |
-| Coaching | 45 | `orchestrator` |
-| Career | 45 | `career-coach` |
-| Legal and Compliance | 35 | `legal-scout` |
-| HR and Recruiting | 30 | `business-strategist` |
-| Customer Support | 26 | `orchestrator` |
-| **Total** | **1,178** | **13 distinct canonical roles** |
+The directory advertises 1,178 prompt titles across 15 categories. The indexed metadata includes stable source IDs, title, category, source URL and a mapping to 13 existing canonical roles. The index is bundled as the first seed for the source-agnostic Prompt Intelligence subsystem.
 
 ## Reuse and attribution boundary
 
-No explicit prompt-body reuse licence was found on the directory page during this review. The integration therefore stores only prompt titles, category labels, stable IDs, role mappings and attribution. The full third-party prompt wording is not reproduced. Each selected record is converted into newly authored uneXpected-native instructions by `PromptLibrary.render_instructions`.
+No explicit prompt-body reuse licence was found on the directory page during this review. The seed therefore stores titles, category labels, stable IDs, source attribution and canonical role mappings only. Original third-party prompt bodies are not reproduced. The runtime generates uneXpected-native starter instructions and never treats source metadata as instructions or policy.
 
-This is a metadata-only source snapshot, not a claim that the source publisher endorses uneXpected. The source may change; this snapshot records the reviewed set and date. Recheck source terms before any future import of original prompt text, logos, media or other expressive content.
+This snapshot does not imply endorsement by the source publisher. Recheck source terms before any future import of original prompt text, logos, media or other expressive content.
 
-## Runtime behavior
+## Unified runtime behavior
 
-- `PromptLibrary.load` loads the bundled JSON and validates schema, package-root containment, IDs, source attribution, counts, categories and role consistency.
-- `search` provides bounded, server-side title/category filtering and pagination.
-- `get` resolves one stable ID; `render_instructions` generates newly authored, category-specific workflow guidance with shared safety requirements.
-- Authenticated `GET /v1/prompts` returns bounded results, all category counts and source metadata.
-- Authenticated `GET /v1/prompts/{id}` returns one indexed record and its native starter instructions.
-- Optional `prompt_id` is accepted by `POST /v1/invoke` and `POST /v1/lifecycle`. The ID must exist and be mapped to the requested canonical specialist role. The API adds the native instructions to the objective and binds selected-record metadata into persisted inputs. Caller-supplied `__uneXpected_prompt` metadata is rejected.
-- The command center's Prompt Library view supports search, category filtering, pagination and selection. Selection only pre-fills the task form; the user must review and submit.
+Prompt Intelligence is an in-process domain module in the existing Python runtime. It reuses the single Coordinator, canonical AgentRegistry (38 roles), PermissionPolicy, ApprovalVerifier, audit events and shared SQLite/PostgreSQL state. It is not a second service, database, coordinator or agent registry.
 
-## Safety and operational limits
+Every external source follows the same lifecycle:
 
-Prompt titles and categories are untrusted external metadata. They cannot override system/runtime instructions. A prompt does not install or authorize tools, bypass specialist-role permissions, or confer approval. Sending messages, publishing, spending, purchases, transfers, account changes, deployments and deletions remain blocked unless a separately configured capability and its explicit approval gate authorize the specific action.
+1. Register source provenance (canonical URL, publisher, source type, terms/licence links and attribution).
+2. Review rights and retention. New sources default to unknown rights and metadata-only retention.
+3. Stage a bounded import batch (maximum 25 records); no import activates a prompt.
+4. Store immutable prompt versions with source ID, content digest and attribution.
+5. Map each candidate to an existing canonical specialist role.
+6. Run deterministic prompt-injection/safety evaluation. Imported permissions are rejected and never grant tools or scopes.
+7. Request action-bound host approval, then activate only the exact reviewed version if the trusted one-use approval verifies.
+8. Monitor, version, supersede or retire records without silently replacing an active version.
 
-The imported index is local and static. No background crawler, scheduled refresh, source API, third-party connector, or external prompt execution is installed. The Prompt Library must not be described as a new agent or as proof that the source site's prompt body has been licensed.
+Unknown or restricted rights permit metadata-only retention. Original source text is accepted only after a reviewed open licence, explicit permission or user-supplied basis is recorded with evidence and attribution.
 
-## Verification checklist
+## API and Command Center
 
-- [x] Source directory page retrieved successfully.
-- [x] 1,178 entries and all 15 category counts reconciled.
-- [x] Existing canonical role mapping recorded.
-- [x] Original prompt bodies excluded due to unconfirmed reuse licence.
-- [x] Catalogue and API tests pass in repository CI (246 tests; 1 optional skip; CI run #626).
-- [x] Full regression/security suite passes (CI run #626).
-- [x] Docker image build and actual container smoke test pass, including authenticated catalogue search, detail retrieval, selected-prompt invocation and persisted metadata (CI run #626).
-- [x] CLI smoke tests pass (CI run #626).
-- [ ] Independent review and merge approval.
-- [ ] Deployment and production activation (separate owner-gated milestones).
+- `GET /v1/prompts` and `GET /v1/prompts/{id}` search and retrieve active approved prompt versions; detail responses resolve the selected prompt's own source attribution.
+- `GET /v1/prompt-intelligence/sources` and `POST /v1/prompt-intelligence/sources` list/register source records.
+- `POST /v1/prompt-intelligence/sources/{id}/review` records the rights decision and retention policy.
+- `POST /v1/prompt-intelligence/import` stages a metadata or rights-cleared batch.
+- `GET /v1/prompt-intelligence/review-queue` lists staged and candidate versions.
+- `POST /v1/prompt-intelligence/prompts/{id}/review` maps and evaluates a version.
+- `GET /v1/prompt-intelligence/prompts/{id}/activation-details` returns canonical action details and digest for approval preparation.
+- `POST /v1/prompt-intelligence/prompts/{id}/activate` accepts an approval context, but the server independently verifies it through the configured host verifier.
+
+The Command Center's Prompt Intelligence workspace supports source registration, rights review, JSON batch import, source inventory, prompt review queue, canonical role mapping, activation details and active prompt search. It prepares the exact fields for the existing GitHub Actions approval workflow. A trusted administrator must approve the bot-authored request PR; the UI cannot self-approve. The runtime then validates the exact PR head, reviewer identity/permission, action digest, expiry and one-use ledger. If the host verifier is not configured, activation remains disabled and fails closed.
+
+## Operational limits
+
+- The source seed is local and static. There is no background crawler, scheduled refresh, external prompt execution or third-party connector installed.
+- Discovery and metadata import do not authorize source-text retention, tool use, privileged actions or role creation.
+- Prompt bodies and source metadata are untrusted data; they cannot override system/runtime policy.
+- Sending messages, publishing, spending, payments, transfers, account changes, deployment and destructive actions remain separately gated.
+- A CI pass is not proof of hosted deployment, live provider credentials, production database backup/restore or configured trusted reviewers.
+
+## Verification evidence
+
+The implementation candidate's CI run #672 completed successfully on code head `c7cde66e0c96bf89e0169211c7b31ff39aefd917`: 280 tests passed with one optional skip; Node syntax validation, PostgreSQL migration 003, SHA-256 integrity, Docker build, actual container UI/auth/38-role/task smoke, Prompt Intelligence catalogue/source/review-queue API checks and CLI smoke passed. Subsequent changes to repository documentation and the integrity inventory require their own current-head CI confirmation before merge.
+
+Canonical review candidate: https://github.com/soueilouay-creator/uneXpected-/pull/19 (draft; not merged or deployed).
