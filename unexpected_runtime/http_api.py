@@ -172,7 +172,7 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                     return self.send_json(200,{
                         "total":total,"count":len(items),"offset":offset,"limit":limit,
                         "category_count":len(categories),"categories":categories,
-                        "items":items,"source":active.prompt_intelligence.source_public_dict()
+                        "items":items,"source":active.prompt_intelligence.source_public_dict(item["source_id"])
                     })
                 except (PromptIntelligenceError,TypeError,ValueError):
                     return self.send_json(400,{"error":"Invalid prompt search, category, limit or offset."})
