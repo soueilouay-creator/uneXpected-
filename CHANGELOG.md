@@ -7,7 +7,7 @@
 - Adds authenticated source/import/review/activation APIs and a Command Center workspace for source management, import batches, review queue, approval preparation and active prompt search.
 - Activation requires the existing host-verified, one-use GitHub PR approval bound to the exact prompt version/action digest. Prompts cannot grant permissions or install tools.
 - The AI Money Move seed contains 1,178 metadata records across 15 categories mapped to 13 existing roles; original prompt bodies are not copied because reuse rights were not confirmed.
-- Draft PR #19 only. CI run #672 passed 280 tests (1 optional skip), Node syntax validation, PostgreSQL migrations, integrity checks, Docker build, container smoke and CLI smoke. No merge, production deployment, live provider activation, crawler or automatic external action is included.
+- Draft PR #19 only. CI run #672 passed 280 tests (1 optional skip), Node syntax validation, PostgreSQL migrations, integrity checks, Docker build, container smoke and CLI smoke; current documentation/integrity head also passed CI run #680. No merge, production deployment, live provider activation, crawler or automatic external action is included.
 
 ## v8.1.1-preview — Governed tools, isolated subagents and resumable trace reads (2026-11-03)
 
