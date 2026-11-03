@@ -51,6 +51,21 @@ class StateStore:
     def events(self,limit:int=100):
         with self._session() as c: rows=c.execute('SELECT * FROM events ORDER BY event_id DESC LIMIT ?',(max(1,min(limit,1000)),)).fetchall()
         return [dict(r) for r in rows]
+
+    def list_task_events(self, task_id: str, *, after_event_id: int = 0, limit: int = 100):
+        if not isinstance(task_id, str) or not task_id.strip():
+            raise ValueError("task_id must be a non-empty string.")
+        if isinstance(after_event_id, bool) or not isinstance(after_event_id, int) or after_event_id < 0:
+            raise ValueError("after_event_id must be a non-negative integer.")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
+            raise ValueError("limit must be an integer between 1 and 200.")
+        with self._session() as c:
+            rows = c.execute(
+                'SELECT event_id,ts,task_id,agent_id,event_type,payload_json FROM events '
+                'WHERE task_id=? AND event_id>? ORDER BY event_id ASC LIMIT ?',
+                (task_id, after_event_id, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
     def enqueue(self,request):
         payload={'task_id':request.task_id,'agent_id':request.agent_id,'objective':request.objective,'inputs':request.inputs,'required_permissions':list(request.required_permissions),'deadline_seconds':request.deadline_seconds,'max_steps':request.max_steps,'idempotency_key':request.idempotency_key,'source_refs':list(request.source_refs),'provider_route':request.provider_route,'requested_skill_ids':list(request.requested_skill_ids),'created_at':request.created_at}
         now=time.time()
