@@ -331,6 +331,8 @@ class PromptIntelligence:
         source = self.store.get_prompt_source(prompt["source_id"])
         if not source:
             raise PromptIntelligenceError("Prompt source record is missing.")
+        if source.get("status") not in {"reviewed", "active"}:
+            raise PromptIntelligenceError("Prompt source rights and retention must be reviewed before prompt review.")
         if record.get("body") is not None and (
             source.get("rights_status") not in {"open_license", "permission_granted", "user_supplied"}
             or source.get("retention_policy") not in {"source_text", "user_text"}
