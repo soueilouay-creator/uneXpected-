@@ -105,7 +105,9 @@ jobs:
                   time.sleep(1)
           assert health["ok"] is True, health
           with urllib.request.urlopen(base + "/", timeout=5) as response:
-              assert b"uneXpected" in response.read()
+              page = response.read().decode("utf-8")
+              assert "uneXpected" in page
+              assert 'data-view="prompts"' in page
           try:
               urllib.request.urlopen(base + "/v1/status", timeout=5)
               raise AssertionError("Protected status endpoint unexpectedly allowed anonymous access.")
@@ -116,12 +118,36 @@ jobs:
           with urllib.request.urlopen(request, timeout=5) as response:
               agents = json.loads(response.read())
           assert agents["count"] == 38, agents.get("count")
+          request = urllib.request.Request(base + "/v1/prompts?limit=1", headers=headers)
+          with urllib.request.urlopen(request, timeout=5) as response:
+              catalog = json.loads(response.read())
+          assert catalog["total"] == 1178, catalog.get("total")
+          assert catalog["category_count"] == 15, catalog.get("category_count")
+          assert len(catalog["items"]) == 1, catalog.get("items")
+          selected = catalog["items"][0]
+          detail_request = urllib.request.Request(base + "/v1/prompts/" + selected["id"], headers=headers)
+          with urllib.request.urlopen(detail_request, timeout=5) as response:
+              detail = json.loads(response.read())
+          assert detail["item"]["id"] == selected["id"], detail
+          assert "uneXpected-native" in detail["starter_instructions"], detail
+          prompt_payload = json.dumps({
+              "agent_id": selected["agent_id"],
+              "objective": "Container image prompt-selection smoke test",
+              "prompt_id": selected["id"],
+              "idempotency_key": "container-prompt-library-smoke"
+          }).encode()
+          request = urllib.request.Request(base + "/v1/invoke", data=prompt_payload, headers=headers, method="POST")
+          with urllib.request.urlopen(request, timeout=20) as response:
+              prompt_result = json.loads(response.read())["result"]
+          assert prompt_result["status"] == "completed", prompt_result
+          prompt_inputs = prompt_result.get("inputs", {}).get("__uneXpected_prompt", {})
+          assert prompt_inputs.get("prompt_id") == selected["id"], prompt_result
           payload = json.dumps({"agent_id":"orchestrator","objective":"Container image smoke test"}).encode()
           request = urllib.request.Request(base + "/v1/invoke", data=payload, headers=headers, method="POST")
           with urllib.request.urlopen(request, timeout=20) as response:
               result = json.loads(response.read())["result"]
           assert result["status"] == "completed", result
-          print("Container smoke passed: health, UI, auth, 38 agents and task invocation.")
+          print("Container smoke passed: health, UI, auth, 38 roles, prompt catalog/search/detail/selection and task invocation.")
           PY
       - name: CLI smoke tests
         run: |
