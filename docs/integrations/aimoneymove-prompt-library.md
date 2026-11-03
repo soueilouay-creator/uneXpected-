@@ -56,8 +56,9 @@ The imported index is local and static. No background crawler, scheduled refresh
 - [x] 1,178 entries and all 15 category counts reconciled.
 - [x] Existing canonical role mapping recorded.
 - [x] Original prompt bodies excluded due to unconfirmed reuse licence.
-- [ ] Catalogue and API tests pass in repository CI.
-- [ ] Full regression/security suite passes.
-- [ ] Docker image build and actual container smoke test pass.
+- [x] Catalogue and API tests pass in repository CI (246 tests; 1 optional skip; CI run #626).
+- [x] Full regression/security suite passes (CI run #626).
+- [x] Docker image build and actual container smoke test pass, including authenticated catalogue search, detail retrieval, selected-prompt invocation and persisted metadata (CI run #626).
+- [x] CLI smoke tests pass (CI run #626).
 - [ ] Independent review and merge approval.
 - [ ] Deployment and production activation (separate owner-gated milestones).
