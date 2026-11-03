@@ -57,7 +57,7 @@ b4a18522e3519b63e617bcfcdd8ea1f0add9185ccda62716d2a4ab92d1220622  docs/integrati
 681088c6bdbdf3906c682db2caf6112466fa6694cc55de7f4c8925dadf680162  docs/plans/2026-11-02-resource-intelligence-ai-quality-evaluation.md
 c6882111f911f4e0de968b8aa3fbbb421d3550275876dc3a3f806b7f058503d9  docs/plans/2026-11-02-unexpected-v8-single-command-center.md
 aa178fdf08c04aed062b62a9affbc56f01c353dc41caba82346e3654a73631f9  docs/plans/2026-11-02-v8.1-librechat-adaptation.md
-5dc4d89ee971709b4b45442947e0189eb606ed0893b30b5553c30fc775fe4720  docs/plans/2026-11-03-prompt-intelligence.md
+ccb79294ad428dfafe8b5d4e23c081a43aff1fcda3e2b00a612752161ed6a5e3  docs/plans/2026-11-03-prompt-intelligence.md
 c5ebe574349cd4590621adc24d0ab834b31e924fd55778be429611add0ad8579  docs/RUNTIME_CONNECTIVITY.md
 214ee1be9fc51a5dc1f7666c860769208b962a1e483e56ccf75cd8b1cc6affed  docs/specs/2026-11-02-resource-intelligence-ai-quality-evaluation-design.md
 abf7a1e69d610981c19471670d32592c8de2489cdf2dfcefd49376a058d8db84  docs/specs/2026-11-02-unexpected-v8-unified-design.md
