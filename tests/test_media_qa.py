@@ -57,7 +57,7 @@ class MediaQualityAssuranceTests(unittest.TestCase):
         }]
         if audio:
             streams.append({"codec_type": "audio", "duration": "10"})
-        metadata = {"streams": streams, "format": {"duration": "10"}}
+        metadata = {"streams": streams, "format": {"duration": "10", "format_name": "mov,mp4,m4a,3gp,3g2,mj2"}}
 
         def run(command, **kwargs):
             if command[0].endswith("ffprobe"):

@@ -206,6 +206,9 @@ class MediaQualityAssurance:
             if abs(fps - expected_fps) > 0.05:
                 raise MediaQAError("Rendered MP4 frame rate does not match the requested profile.")
             format_data = metadata.get("format") if isinstance(metadata.get("format"), dict) else {}
+            format_names = str(format_data.get("format_name", "")).split(",")
+            if output.suffix.lower() != ".mp4" or "mp4" not in format_names:
+                raise MediaQAError("Rendered artifact is not an MP4 container.")
             duration_value = format_data.get("duration") or video.get("duration")
             duration = self._finite_number(duration_value, "measured_duration")
             max_duration = self._finite_number(profile["max_duration_seconds"], "max_duration_seconds")
