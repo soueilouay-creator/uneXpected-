@@ -209,6 +209,7 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                 item.update({"objective":payload.get("objective",""),"inputs":payload.get("inputs",{}),
                              "source_refs":payload.get("source_refs",[]),"provider_route":payload.get("provider_route"),
                              "requested_skill_ids":payload.get("requested_skill_ids",[]),
+                             "parent_task_id":payload.get("parent_task_id"),
                              "result":result})
                 return self.send_json(200,{"task":item})
             if path=="/v1/resources":
@@ -265,17 +266,38 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             return self.send_json(404,{"error":"Not found."})
         def do_POST(self):
             route=urlsplit(self.path).path
-            if route not in {"/v1/invoke", "/v1/lifecycle", "/v1/providers/test", "/v1/improvements/propose", "/v1/quality-evaluations"}: return self.send_json(404,{"error":"Not found."})
+            if route not in {"/v1/invoke", "/v1/lifecycle", "/v1/providers/test", "/v1/improvements/propose", "/v1/quality-evaluations", "/v1/subagents/run"}: return self.send_json(404,{"error":"Not found."})
             is_lifecycle=route=="/v1/lifecycle"
             is_provider_test=route=="/v1/providers/test"
             is_improvement_propose=route=="/v1/improvements/propose"
             is_quality_evaluation=route=="/v1/quality-evaluations"
+            is_subagents_run=route=="/v1/subagents/run"
             if not self.authorize(): return
             identity=self.client_address[0] if self.client_address else "unknown"
             active_limiter=lifecycle_limiter if is_lifecycle else (quality_limiter if is_quality_evaluation else limiter)
             if not active_limiter.allow(identity): return self.send_json(429,{"error":"Request rate limit exceeded."})
             body=self.read_body()
             if body is None: return
+            if is_subagents_run:
+                allowed={"parent_task_id","parent_agent_id","children","max_depth"}
+                if set(body)-allowed:
+                    return self.send_json(400,{"error":"Unsupported subagent delegation fields."})
+                parent_task_id=body.get("parent_task_id")
+                parent_agent_id=body.get("parent_agent_id")
+                children=body.get("children")
+                max_depth=body.get("max_depth",2)
+                if (not isinstance(parent_task_id,str) or not parent_task_id.strip()
+                        or not isinstance(parent_agent_id,str) or not parent_agent_id.strip()
+                        or not isinstance(children,list) or len(children)>3
+                        or isinstance(max_depth,bool) or not isinstance(max_depth,int)):
+                    return self.send_json(400,{"error":"Invalid subagent delegation request."})
+                try:
+                    result=active.run_subagents(parent_task_id=parent_task_id,
+                                                parent_agent_id=parent_agent_id,
+                                                children=children,max_depth=max_depth)
+                    return self.send_json(200,{"result":result})
+                except Exception as exc:
+                    return self.send_json(400,{"error":f"Subagent delegation rejected ({type(exc).__name__})."})
             if is_quality_evaluation:
                 allowed_quality={"provider_route","scenario_ids"}
                 if set(body)-allowed_quality:
