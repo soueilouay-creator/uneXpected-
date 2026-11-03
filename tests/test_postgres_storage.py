@@ -26,7 +26,7 @@ class RowsCursor:
 
 
 class FakePostgres:
-    def __init__(self, version=2):
+    def __init__(self, version=3):
         self.version = version
         self.lock = threading.Lock()
         self.claims = {}
@@ -100,6 +100,11 @@ class PostgresStorageTests(unittest.TestCase):
         with self.assertRaises(PostgresStorageError):
             PostgresStateStore("postgresql://unit.test/db", connect_factory=db.connect)
         self.assertEqual(db.claims, {})
+
+    def test_requires_prompt_intelligence_migration_three(self):
+        db = FakePostgres(version=2)
+        with self.assertRaises(PostgresStorageError):
+            PostgresStateStore("postgresql://unit.test/db", connect_factory=db.connect)
 
     def test_checks_database_readiness(self):
         db = FakePostgres(version=2)
