@@ -14,6 +14,7 @@
 <a class="nav active" href="#overview" data-view="overview">◈ Overview</a>
 <a class="nav" href="#agents" data-view="agents">◎ Agent registry <b id="nav-count">38</b></a>
 <a class="nav" href="#tasks" data-view="tasks">▤ Tasks & workflows</a>
+<a class="nav" href="#prompts" data-view="prompts">✧ Prompt Intelligence</a>
 <a class="nav" href="#providers" data-view="providers">⌘ AI providers</a>
 <a class="nav" href="#capabilities" data-view="capabilities">⌬ Capabilities</a>
 <a class="nav" href="#intelligence" data-view="intelligence">⌕ Resource & AI quality</a>
@@ -58,6 +59,83 @@
 </div>
 <div class="heading"><div><p class="eyebrow">EVALUATION EVIDENCE</p><h3>Recent AI quality runs</h3></div></div>
 <article class="panel"><div id="quality-evaluation-list" class="list">Loading evaluation history…</div></article>
+</section>
+<section class="view" id="view-prompts">
+<div class="heading"><div><p class="eyebrow">SOURCE GOVERNANCE & REUSABLE TASK STARTERS</p><h3>Prompt Intelligence</h3><p>One governed catalogue for every source. Discovery and import never grant permissions or activate prompt versions.</p></div><button class="button secondary" id="prompt-intelligence-refresh" type="button">↻ Refresh sources & queue</button></div>
+<div class="metrics">
+<article><label>REGISTERED SOURCES</label><strong id="prompt-source-count">—</strong><small>Provenance and rights records</small></article>
+<article><label>REVIEW QUEUE</label><strong id="prompt-queue-count">—</strong><small>Staged and candidate versions</small></article>
+<article><label>ACTIVE PROMPTS</label><strong id="prompt-active-count">—</strong><small>Approved versions only</small></article>
+<article><label>ACTIVATION GATE</label><strong id="prompt-approval-status">Checking</strong><small id="prompt-approval-note">Host approval is verified server-side</small></article>
+</div>
+<div class="columns prompt-admin-grid">
+<article class="panel">
+<h3>Register a source</h3><p>Registration records provenance only. Rights default to unknown and metadata-only.</p>
+<form id="prompt-source-register-form" class="prompt-admin-form">
+<label for="prompt-source-id">Stable source ID</label><input id="prompt-source-id" maxlength="128" pattern="[a-z0-9][a-z0-9._-]{1,127}" required placeholder="publisher-project">
+<label for="prompt-source-name">Source name</label><input id="prompt-source-name" maxlength="160" required>
+<label for="prompt-source-url">Canonical source URL</label><input id="prompt-source-url" type="url" maxlength="2048" required placeholder="https://example.com/prompts">
+<label for="prompt-source-publisher">Publisher</label><input id="prompt-source-publisher" maxlength="160" required>
+<label for="prompt-source-type">Source type</label><select id="prompt-source-type"><option value="website">Website</option><option value="repository">Repository</option><option value="api">API</option><option value="document">Document</option><option value="user_supplied">User supplied</option></select>
+<label for="prompt-source-terms">Terms URL (optional)</label><input id="prompt-source-terms" type="url" maxlength="2048">
+<label for="prompt-source-license">Licence URL (optional)</label><input id="prompt-source-license" type="url" maxlength="2048">
+<label for="prompt-source-attribution">Attribution text</label><input id="prompt-source-attribution" maxlength="500" required>
+<label for="prompt-source-description">Description (optional)</label><textarea id="prompt-source-description" rows="2" maxlength="1000"></textarea>
+<button class="button primary" id="prompt-source-register-submit" type="submit">Register source →</button>
+<div id="prompt-source-register-result" class="form-result" aria-live="polite"></div>
+</form>
+</article>
+<article class="panel">
+<h3>Review source rights</h3><p>Unknown or restricted rights must remain metadata-only. Retaining source text requires evidence.</p>
+<form id="prompt-source-review-form" class="prompt-admin-form">
+<label for="prompt-source-review-id">Registered source</label><select id="prompt-source-review-id" required><option value="">Select a staged source</option></select>
+<label for="prompt-rights-status">Rights status</label><select id="prompt-rights-status"><option value="unknown">Unknown</option><option value="restricted">Restricted</option><option value="open_license">Open licence</option><option value="permission_granted">Permission granted</option><option value="user_supplied">User supplied</option></select>
+<label for="prompt-retention-policy">Retention policy</label><select id="prompt-retention-policy"><option value="metadata_only">Metadata only</option><option value="source_text">Source text (evidence required)</option><option value="user_text">User text (evidence required)</option></select>
+<label for="prompt-rights-evidence">Rights evidence URL</label><input id="prompt-rights-evidence" type="url" maxlength="2048" placeholder="Required for open licence, permission or user supplied text">
+<label for="prompt-review-attribution">Attribution</label><input id="prompt-review-attribution" maxlength="500" required>
+<button class="button primary" id="prompt-source-review-submit" type="submit">Save rights review →</button>
+<div id="prompt-source-review-result" class="form-result" aria-live="polite"></div>
+</form>
+</article>
+</div>
+<div class="columns prompt-admin-grid">
+<article class="panel">
+<h3>Stage an import batch</h3><p>JSON batch limit: 25 records. Use only metadata unless the source has reviewed text-retention rights. Imported permissions are rejected.</p>
+<form id="prompt-import-form" class="prompt-admin-form">
+<label for="prompt-import-source">Reviewed source</label><select id="prompt-import-source" required><option value="">Select a reviewed source</option></select>
+<label for="prompt-import-json">Prompt records (JSON array)</label><textarea id="prompt-import-json" rows="8" required placeholder='[{"external_id":"item-001","title":"Example task starter","category":"Operations","category_id":"operations","suggested_agent_id":"project-manager"}]'></textarea>
+<button class="button primary" id="prompt-import-submit" type="submit">Stage batch →</button>
+<div id="prompt-import-result" class="form-result" aria-live="polite"></div>
+</form>
+</article>
+<article class="panel">
+<h3>Registered sources</h3><p>Each source keeps its own licence state, evidence and attribution.</p>
+<div id="prompt-source-list" class="list"><div class="empty">Loading prompt sources…</div></div>
+</article>
+</div>
+<div class="heading"><div><p class="eyebrow">VERSIONED REVIEW</p><h3>Prompt review queue</h3><p>Map each candidate to an existing canonical role, then review and evaluate it. Review does not activate it.</p></div></div>
+<article class="panel"><div id="prompt-review-queue" class="prompt-queue"><div class="empty">Loading staged prompt versions…</div></div></article>
+<article class="panel prompt-approval-panel" id="prompt-activation-panel" hidden>
+<div class="heading"><div><p class="eyebrow">ACTION-BOUND APPROVAL</p><h3>Activate reviewed prompt version</h3><p>First request approval through the existing GitHub Actions workflow. The host verifier checks the exact PR head, trusted administrator review, digest, expiry and one-use ledger.</p></div></div>
+<div class="prompt-approval-grid">
+<div><label>Prompt version</label><div id="prompt-activation-label" class="list-detail">—</div><label for="prompt-approval-digest">Action digest</label><input id="prompt-approval-digest" readonly></div>
+<div><label>GitHub approval request data</label><textarea id="prompt-approval-bundle" rows="7" readonly></textarea><a class="button secondary" id="prompt-approval-workflow-link" href="https://github.com/soueilouay-creator/uneXpected-/actions/workflows/request-approval.yml" target="_blank" rel="noopener noreferrer">Open approval workflow ↗</a><button class="button secondary" id="prompt-copy-approval-bundle" type="button">Copy request fields</button></div>
+</div>
+<form id="prompt-activation-form" class="prompt-admin-form">
+<input type="hidden" id="prompt-activation-id"><input type="hidden" id="prompt-activation-version"><input type="hidden" id="prompt-activation-proposal-id">
+<label for="prompt-approval-id">Approved GitHub request ID</label><input id="prompt-approval-id" required placeholder="github-pr:123:proposal-id">
+<label for="prompt-approval-approver">Trusted reviewer username</label><input id="prompt-approval-approver" required maxlength="39">
+<label for="prompt-approval-rationale">Activation rationale</label><textarea id="prompt-approval-rationale" rows="2" maxlength="1000" required></textarea>
+<button class="button primary" id="prompt-activate-submit" type="submit" disabled>Activate with verified approval →</button>
+<small id="prompt-activation-note">Activation stays fail-closed until the host approval verifier is configured. Entered fields are not trusted; the server independently verifies them.</small>
+<div id="prompt-activation-result" class="form-result" aria-live="polite"></div>
+</form>
+</article>
+<div class="heading"><div><p class="eyebrow">ACTIVE CATALOGUE</p><h3>Approved prompt versions</h3></div></div>
+<article class="panel">
+<div class="prompt-active-search"><input id="prompt-active-query" type="search" maxlength="160" placeholder="Search active prompt titles or categories…"><button class="button secondary" id="prompt-active-search-button" type="button">Search</button></div>
+<div id="prompt-active-results" class="list"><div class="empty">Loading active prompts…</div></div>
+</article>
 </section>
 <section class="view" id="view-governance"><div class="heading"><div><p class="eyebrow">SAFETY BOUNDARY</p><h3>Governance & approvals</h3></div></div><div class="metrics"><article><label>PRIVILEGED EXECUTION</label><strong class="warning">DISABLED</strong><small>Fail-closed policy</small></article><article><label>APPROVAL AUTHORITY</label><strong id="approval-state">Not verified</strong><small>Durable one-use approval gate</small></article><article><label>REPLAY PROTECTION</label><strong id="replay-state">Not verified</strong><small>Transactional consumption</small></article><article><label>RECOVERY</label><strong id="recovery-state">Not verified</strong><small>Backup and restore evidence</small></article></div><article class="panel"><h3>Approval records</h3><p>Read-only view. This command center cannot self-approve actions.</p><div id="approval-list" class="list">Loading approval state…</div></article></section>
 <section class="view" id="view-audit"><div class="heading"><div><p class="eyebrow">TRACEABILITY & IMPROVEMENT</p><h3>Audit and learning</h3></div></div><article class="panel"><h3>Recent events</h3><div id="audit-events" class="list">Loading events…</div></article><article class="panel"><h3>Propose a system improvement</h3><p>Creates a reviewable proposal only. It does not change an active agent version.</p><form id="proposal-form" class="proposal-form"><label for="proposal-agent">Agent</label><select id="proposal-agent"></select><label for="proposal-benchmark">Existing baseline ID</label><input id="proposal-benchmark" required maxlength="120" placeholder="Benchmark identifier"><label for="proposal-instruction">Candidate instruction</label><textarea id="proposal-instruction" rows="4" maxlength="20000" required placeholder="Proposed revised agent instruction…"></textarea><label for="proposal-changes">Change rationale</label><textarea id="proposal-changes" rows="3" maxlength="5000" required placeholder="What should improve and why?"></textarea><button class="button primary" id="proposal-submit">Create proposal</button><small>Protected changes remain subject to independent evaluation and authenticated approval. Promotion and rollback are not exposed here.</small></form><div id="proposal-result" aria-live="polite"></div></article><article class="panel"><h3>Improvement proposals</h3><p>Proposals are not automatically promoted.</p><div id="improvement-list" class="list">Loading proposals…</div></article></section>
