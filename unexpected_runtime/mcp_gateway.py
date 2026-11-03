@@ -11,7 +11,7 @@ import time
 
 from .capabilities import CapabilityRecord, CapabilityRegistry, CapabilityRegistryError
 from .models import ApprovalContext, PermissionDenied
-from .permissions import PermissionPolicy
+from .permissions import PermissionPolicy, PRIVILEGED
 
 
 class MCPToolError(RuntimeError):
@@ -168,6 +168,8 @@ class MCPToolGateway:
         if record.status != "installed":
             raise MCPToolError("Only reviewed and installed MCP adapters may be registered.")
         descriptors = self._describe(adapter)
+        if any(set(item.required_permissions) & PRIVILEGED for item in descriptors):
+            raise MCPToolError("Privileged MCP tools remain disabled until durable approval/replay storage is verified.")
         if any(not self._matches_record(record, item) for item in descriptors):
             raise MCPToolError("MCP adapter provenance does not match its reviewed capability record.")
         if any(item.tool_id in self._tools for item in descriptors):
