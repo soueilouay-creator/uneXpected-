@@ -22,6 +22,7 @@ async function workspace() {
     artifact_root: artifactRoot,
     attempt_root: attemptRoot,
     output_path: path.join(attemptRoot, "master.mp4"),
+    max_output_bytes: 50_000_000,
     profile: {
       platform: "youtube_shorts",
       width: 1080,
