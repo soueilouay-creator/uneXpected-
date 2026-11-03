@@ -6,6 +6,7 @@ from pathlib import Path
 from unexpected_runtime.coordinator import Coordinator
 from unexpected_runtime.models import PermissionDenied
 from unexpected_runtime.providers import DeterministicMockProvider
+from unexpected_runtime.subagents import SubagentError
 
 
 class SubagentDelegationTests(unittest.TestCase):
@@ -51,7 +52,7 @@ class SubagentDelegationTests(unittest.TestCase):
         provider_payloads = [json.loads(request["user_prompt"]) for request in self.provider.requests[1:]]
         self.assertIn("planning-only", json.dumps(provider_payloads[0]))
         self.assertNotIn("research-only", json.dumps(provider_payloads[0]))
-        self.assertNotIn(self.parent_output, json.dumps(provider_payloads))
+        self.assertNotIn("parent-only-context", json.dumps(provider_payloads))
         events = self.coordinator.store.events(100)
         self.assertIn("subagent_child_completed", {event["event_type"] for event in events})
 
@@ -79,7 +80,7 @@ class SubagentDelegationTests(unittest.TestCase):
             max_depth=1,
         )
         child_id = child["children"][0]["task_id"]
-        with self.assertRaises(ValueError):
+        with self.assertRaises(SubagentError):
             self.coordinator.run_subagents(
                 parent_task_id=child_id,
                 parent_agent_id="code-reviewer",
