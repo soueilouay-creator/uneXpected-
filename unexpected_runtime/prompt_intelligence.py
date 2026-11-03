@@ -426,19 +426,30 @@ class PromptIntelligence:
         item["agent_id"] = item.get("mapped_agent_id")
         return item
 
-    def source_public_dict(self) -> dict[str, Any]:
-        source = self.store.get_prompt_source("aimoneymove-prompt-index")
+    def source_public_dict(self, source_id: str | None = None) -> dict[str, Any]:
+        if source_id is None:
+            return {
+                "name": "Prompt Intelligence",
+                "source_scope": "per-prompt",
+                "license_status": "source-specific",
+                "storage_mode": "source-specific",
+            }
+        source = self.store.get_prompt_source(source_id)
         if not source:
-            return {"name": "Prompt Intelligence", "url": None, "license_status": "source-specific"}
+            raise PromptIntelligenceError("Unknown prompt source.")
         return {
+            "source_id": source.get("source_id"),
             "name": source.get("name"),
             "url": source.get("canonical_url"),
-            "publisher_url": source.get("canonical_url"),
-            "advertised_prompt_count": 1178,
-            "advertised_category_count": 15,
-            "license_status": "not_found_on_directory_page",
-            "storage_mode": "metadata_only",
+            "publisher": source.get("publisher"),
+            "source_type": source.get("source_type"),
+            "terms_url": source.get("terms_url"),
+            "license_url": source.get("license_url"),
+            "rights_status": source.get("rights_status", "unknown"),
+            "retention_policy": source.get("retention_policy", "metadata_only"),
+            "rights_evidence_url": source.get("rights_evidence_url"),
             "attribution": source.get("attribution"),
+            "status": source.get("status"),
         }
 
     def task_binding(self, prompt_id: str) -> dict[str, Any]:
