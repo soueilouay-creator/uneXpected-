@@ -117,6 +117,16 @@ class StructureTests(unittest.TestCase):
    self.assertIsNone(z.testzip()); self.assertGreaterEqual(len(z.namelist()),140)
  def test_individual_agent_count_matches_catalog(self):
   self.assertEqual(len(list((ROOT/'agents').glob('*.md'))),38)
+ def test_prompt_intelligence_command_center_workspace_contract(self):
+  html=(ROOT/'web/index.html').read_text()
+  app=(ROOT/'web/assets/app.js').read_text()
+  css=(ROOT/'web/assets/styles.css').read_text()
+  for token in ('data-view="prompts"','id="view-prompts"','id="prompt-source-register-form"','id="prompt-source-review-form"','id="prompt-import-form"','id="prompt-review-queue"','id="prompt-activation-form"','id="prompt-approval-workflow-link"'):
+   self.assertIn(token,html)
+  for token in ('/v1/prompt-intelligence/sources','/v1/prompt-intelligence/import','/v1/prompt-intelligence/review-queue','/v1/prompt-intelligence/prompts/'):
+   self.assertIn(token,app)
+  self.assertIn('host approval verifier',app)
+  self.assertIn('.prompt-queue-card',css)
  def test_file_inventory_sha256(self):
   import hashlib
   inv=ROOT/'FILE_INVENTORY_SHA256.txt'; self.assertTrue(inv.is_file())
