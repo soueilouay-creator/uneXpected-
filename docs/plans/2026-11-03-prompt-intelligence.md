@@ -1,5 +1,7 @@
 # Prompt Intelligence Implementation Plan
 
+**Status:** Approved and implemented in draft PR #19; CI #672 passed for the code candidate. Documentation and integrity-manifest follow-up is awaiting current-head CI.
+
 > **For agentic workers:** Use the host's available task-by-task implementation workflow. Steps use checkbox syntax for tracking.
 
 **Goal:** Build a persistent, source-agnostic Prompt Intelligence subsystem that governs prompt sources, rights, versions, specialist mapping, safety evaluation and approved activation through the existing uneXpected runtime.
@@ -7,6 +9,8 @@
 **Architecture:** Add a domain service backed by the existing StateStore, using additive SQLite/PostgreSQL schema, immutable prompt versions and the existing ApprovalVerifier/PermissionPolicy. Keep the current AI Money Move catalogue as the first idempotent metadata-only seed and preserve the existing authenticated prompt-search/invocation contract.
 
 **Tech Stack:** Python 3.12 runtime, SQLite, PostgreSQL 16, standard-library JSON/HTTP, existing Coordinator/AgentRegistry/PermissionPolicy, unittest, GitHub Actions and the existing single-process Docker image.
+
+**Execution note:** Tests and implementation are present, but the plan's separate red-phase verification (Step 2) was not captured as a distinct CI run for every task and remains unchecked. The green verification evidence is recorded in the PR and CI run references.
 
 ## Global Constraints
 
@@ -42,7 +46,7 @@
 - get_active(prompt_id: str) -> dict.
 - evaluate_prompt(record: dict) -> dict is deterministic and returns checks, risk flags, evaluation ID and SHA-256 digest.
 
-- [ ] Step 1: Add failing domain tests
+- [x] Step 1: Add failing domain tests
 
 Test metadata-only unknown source acceptance, rejection of a body for unknown/restricted rights, evidence requirements for open/permissioned source text, user-supplied text, exact duplicate idempotency, version staging without active-version replacement, injection-marker rejection, invalid canonical role rejection, and rejection of non-empty prompt permission scopes.
 
@@ -52,15 +56,15 @@ Run: python -m unittest discover -s tests -p 'test_prompt_intelligence.py' -v
 
 Expected: import failure for unexpected_runtime.prompt_intelligence or missing domain methods, with no setup/syntax error.
 
-- [ ] Step 3: Implement domain service
+- [x] Step 3: Implement domain service
 
 Implement typed source/prompt/version records, strict HTTP(S) source URL validation, rights/retention validation, stable source/external IDs, SHA-256 hashing over canonical version data, deterministic evaluator and lifecycle validation. Keep source bodies nullable; never synthesize a body for metadata-only sources. Validate mapped role IDs against AgentRegistry. Reject required_permissions in imported records. New imports create staged candidate versions only.
 
-- [ ] Step 4: Verify green
+- [x] Step 4: Verify green
 
 Run the same focused command. Expected: all domain tests pass, with no mutation of an existing active version when a new candidate is staged.
 
-- [ ] Step 5: Commit
+- [x] Step 5: Commit
 
 git add unexpected_runtime/prompt_intelligence.py tests/test_prompt_intelligence.py tests/fixtures/prompt_imports
 git commit -m "feat: add governed prompt intelligence domain"
@@ -85,7 +89,7 @@ git commit -m "feat: add governed prompt intelligence domain"
 - activate_prompt_version(prompt_id, version, expected_candidate_version) -> dict.
 - seed_prompt_catalog(source, rows) -> int — insert-only, one transaction, safe to rerun.
 
-- [ ] Step 1: Add failing storage tests
+- [x] Step 1: Add failing storage tests
 
 Use temporary SQLite to prove source/prompt/version round trips, duplicate unique constraints, exact candidate version CAS, transaction rollback and persistence after closing/reopening the database. Add PostgreSQL integration coverage using the CI-provided DATABASE_URL and verify migration version 3.
 
@@ -95,15 +99,15 @@ Run: python -m unittest discover -s tests -p 'test_prompt_intelligence_storage.p
 
 Expected: missing StateStore methods/tables; PostgreSQL contract tests also fail until migration 003 exists.
 
-- [ ] Step 3: Implement migration and both adapters
+- [x] Step 3: Implement migration and both adapters
 
 Create prompt_sources, prompts, and prompt_versions with foreign keys, unique (source_id, external_id), unique (prompt_id, version), status indexes, JSON metadata columns, nullable body and version hashes. Add equivalent SQLite tables in StateStore._init. Add transactional insert/update/CAS methods to SQLite and PostgreSQL. Advance the Postgres minimum schema check to version 3. Never use production auto-repair or local fallback.
 
-- [ ] Step 4: Verify green
+- [x] Step 4: Verify green
 
 Run the focused SQLite tests and PostgreSQL storage test under the CI ephemeral database. Expected: same logical records and state transitions across both adapters, and a repeat migration/seed does not duplicate rows.
 
-- [ ] Step 5: Commit
+- [x] Step 5: Commit
 
 git add migrations/003_prompt_intelligence.sql unexpected_runtime/storage.py unexpected_runtime/postgres_storage.py tests/test_prompt_intelligence_storage.py tests/test_postgres_prompt_intelligence.py
 git commit -m "feat: persist governed prompt sources and versions"
@@ -130,7 +134,7 @@ git commit -m "feat: persist governed prompt sources and versions"
 - Existing GET /v1/prompts and prompt detail return active DB-backed records only.
 - Existing POST /v1/invoke and POST /v1/lifecycle accept only an active prompt_id whose mapped role equals agent_id.
 
-- [ ] Step 1: Add failing API/activation tests
+- [x] Step 1: Add failing API/activation tests
 
 Verify bearer auth, metadata-only source registration, quarantined import, missing-rights rejection, prompt review, activation denial when ApprovalVerifier is absent, denial for wrong action digest/replay/stale version, success with a fake verifier bound to the exact digest, active-only search/detail, role mismatch rejection before provider dispatch, and task source/version/hash persistence.
 
@@ -140,15 +144,15 @@ Run: python -m unittest discover -s tests -p 'test_prompt_intelligence_api.py' -
 
 Expected: missing Prompt Intelligence routes and service integration, not setup errors.
 
-- [ ] Step 3: Implement the API flow
+- [x] Step 3: Implement the API flow
 
 Initialize PromptIntelligence from the existing Coordinator store/registry/permissions. Seed metadata-only catalogue idempotently. Import operations stage only. Review requires an existing AgentRegistry role, evidence, and a passing deterministic evaluation. Activation invokes PermissionPolicy.authorize(..., "modify_policy", approval, action_details=...); digest covers source ID, prompt ID/version, content hash, rights evidence, mapped role and evaluation digest. API must not accept caller-authored reserved task metadata or caller-supplied permission grants.
 
-- [ ] Step 4: Verify green
+- [x] Step 4: Verify green
 
 Run the same focused API tests and all prompt-library tests. Expected: no prompt activates without a trusted approval; current AI Money Move 1,178 metadata records remain searchable and usable.
 
-- [ ] Step 5: Commit
+- [x] Step 5: Commit
 
 git add unexpected_runtime/prompt_intelligence.py unexpected_runtime/http_api.py unexpected_runtime/coordinator.py tests/test_prompt_intelligence_api.py tests/test_prompt_library_api.py tests/test_prompt_intelligence.py
 git commit -m "feat: gate prompt ingestion and activation through runtime approvals"
@@ -168,7 +172,7 @@ git commit -m "feat: gate prompt ingestion and activation through runtime approv
 - Display active/candidate versions separately. Active prompt remains selectable while a newer version is under review.
 - Escape all imported titles, source names, URLs and metadata before rendering.
 
-- [ ] Step 1: Add failing UI contract checks
+- [x] Step 1: Add failing UI contract checks
 
 Assert the page contains a Prompt Intelligence view, source-registration fields, batch-import field, review queue, mapped-role control and no control claiming that import or review activates a prompt automatically.
 
@@ -178,15 +182,15 @@ Run: python -m unittest discover -s tests -p 'test_prompt_intelligence_ui_contra
 
 Expected: missing Prompt Intelligence view/controls.
 
-- [ ] Step 3: Implement UI and handlers
+- [x] Step 3: Implement UI and handlers
 
 Add the view, bind it to authenticated APIs, parse bounded JSON input, show staged outcomes and render approval state. Do not call provider or external connector on source registration/import.
 
-- [ ] Step 4: Verify green
+- [x] Step 4: Verify green
 
 Run the UI contract tests and a JavaScript syntax check in CI. Expected: active catalog still works, import UI stages only, and no missing DOM references.
 
-- [ ] Step 5: Commit
+- [x] Step 5: Commit
 
 git add web/index.html web/assets/app.js web/assets/styles.css tests/test_prompt_intelligence_ui_contract.py
 git commit -m "feat: add prompt intelligence source and review workspace"
@@ -200,7 +204,7 @@ git commit -m "feat: add prompt intelligence source and review workspace"
 - Create: docs/integrations/prompt-intelligence.md
 - Modify: tests/test_structure.py.
 
-- [ ] Step 1: Add failing release contracts
+- [x] Step 1: Add failing release contracts
 
 Assert required migration/service/tests/docs exist, catalogue contains 1,178/15, source rights metadata is metadata-only, and migration history version 3 is present.
 
@@ -208,20 +212,20 @@ Assert required migration/service/tests/docs exist, catalogue contains 1,178/15,
 
 Run the focused structure tests. Expected: missing release docs/migration or stale hash.
 
-- [ ] Step 3: Add the release evidence
+- [x] Step 3: Add the release evidence
 
 Update docs, version/source provenance, integrity inventory and Docker smoke test to register a source, import a sample, reject unlicensed body content, review/map/evaluate a safe sample, deny activation without approval, and verify active seed data/search/task invocation. Use only deterministic fixtures; no live provider, paid service or outside source retrieval in CI.
 
-- [ ] Step 4: Verify green
+- [x] Step 4: Verify green
 
-Run: python -m compileall -q unexpected_runtime; python -m unittest discover -s tests -v; the full GitHub Actions CI. Expected: all regression/security tests pass, PostgreSQL migration version 3 applies, Docker image builds, real container smoke passes for prompt source/import/review/approval-gate/search/invocation, and CLI smoke passes.
+Run: node --check web/assets/app.js; python -m compileall -q unexpected_runtime; python -m unittest discover -s tests -v; the full GitHub Actions CI. Expected: regression/security tests pass, PostgreSQL migration 003 applies, the SHA-256 inventory matches, the Docker image builds, the real container smoke verifies health/UI/auth/38 roles, active prompt catalogue/source/review-queue APIs and task invocation, and CLI smoke passes. Source registration/import/review and fail-closed activation are additionally covered by authenticated API regression tests.
 
-- [ ] Step 5: Commit
+- [x] Step 5: Commit
 
 git add .github/workflows/ci.yml FILE_INVENTORY_SHA256.txt README.md CHANGELOG.md ARCHITECTURE.md CAPABILITY_MATRIX.md docs/integrations/prompt-intelligence.md tests/test_structure.py
 git commit -m "docs: verify prompt intelligence release contract"
 
-- [ ] Step 6: Open a draft PR
+- [x] Step 6: Open a draft PR
 
 Open a draft PR targeting feat/v8.1-durable-traces and record exact base/head SHA, CI run, changed paths, source rights policy and release blockers. Keep it draft until independent review and all required upstream branches are reconciled.
 
@@ -229,12 +233,14 @@ Open a draft PR targeting feat/v8.1-durable-traces and record exact base/head SH
 
 ## Release sequencing and gates
 
-1. Keep PR #11 as the v8 foundation candidate; it is still open/draft on main.
-2. PR #12 (advanced skills) remains stacked on #11.
-3. PR #15 (durable traces/MCP gateway/subagents) remains stacked on #12; resolve its current CI/inventory blocker before using its branch as a release baseline.
-4. This Prompt Intelligence PR is stacked on #15. PR #13 is a separate overlapping MCP-boundary proposal and needs consolidation review rather than an automatic parallel merge. PR #16 is the earlier Prompt Library-only implementation and is superseded by the integrated permanent subsystem only after the new PR passes.
-5. Merge/deploy only after an independent code review, required CI checks, clean diff and explicit upstream merge order.
-6. Render deployment requires the owner to select the workspace. A green GitHub CI run is not a deployed or live provider result.
+1. PR #11 remains the v8 foundation candidate on main; it is not merged.
+2. PR #12 (advanced skills) remains stacked on #11 and is still a draft dependency.
+3. PR #15 (durable traces/MCP gateway/subagents) remains stacked on #12. Its CI run #634 passed on head `da89926b965dc62fa72800bf909c844692a1b4ef`, but the PR remains draft and must be reviewed/merged in the agreed order.
+4. Canonical Prompt Intelligence candidate is PR #19 on `feat/v8.1-prompt-intelligence-v3`, based directly on the latest PR #15 branch commit above. The Command Center UI, source rights review, import, queue, role mapping, approval preparation and active catalogue are included. CI #672 passed on code head `c7cde66e0c96bf89e0169211c7b31ff39aefd917`; documentation/inventory updates after that run require current-head CI before merge.
+5. PR #16 (static Prompt Library) and PR #17 (earlier diverged Prompt Intelligence branch) are closed as superseded. PR #18 was a closed temporary CI mirror. Do not merge any of these older branches or duplicate catalogue paths.
+6. PR #13 is a separate overlapping MCP-boundary proposal and needs consolidation review rather than an automatic parallel merge. Keep one active MCP execution boundary only.
+7. Merge only after current-head CI, independent code review, clean diff and explicit upstream merge order. Keep PR #19 draft until those gates are met.
+8. Render deployment requires the owner to select the workspace. A green GitHub CI run is not a deployed service, live provider result, durable backup/restore proof or production approval configuration.
 
 ## Unresolved release decisions
 
