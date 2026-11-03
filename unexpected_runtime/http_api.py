@@ -552,7 +552,7 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                     return self.send_json(400,{"error":"Unknown or inactive prompt_id."})
                 if len(objective)+2+len(prompt_instructions)>MAX_OBJECTIVE_CHARS:
                     return self.send_json(413,{"error":"Objective and selected prompt instructions are too large."})
-                objective=objective.rstrip()+"\\n\\n"+prompt_instructions
+                objective=objective.rstrip()+"\n\n"+prompt_instructions
                 inputs=dict(inputs)
                 inputs["__uneXpected_prompt"]=prompt_binding
             if len(objective)>MAX_OBJECTIVE_CHARS: return self.send_json(413,{"error":"Objective too large."})
