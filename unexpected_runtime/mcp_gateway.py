@@ -36,9 +36,11 @@ class MCPToolDescriptor:
     timeout_seconds: float = 10.0
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "allowed_agent_ids", tuple(self.allowed_agent_ids))
-        object.__setattr__(self, "required_permissions", tuple(self.required_permissions))
-        object.__setattr__(self, "data_access", tuple(self.data_access))
+        for field_name in ("allowed_agent_ids", "required_permissions", "data_access"):
+            value = getattr(self, field_name)
+            if isinstance(value, str):
+                raise MCPToolError(f"{field_name} must be a collection of scope strings, not a single string.")
+            object.__setattr__(self, field_name, tuple(value))
         if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,127}", self.tool_id):
             raise MCPToolError("MCP tool_id must be a bounded lowercase identifier.")
         if not self.capability_id.strip() or not self.name.strip() or not self.description.strip():
@@ -124,8 +126,13 @@ class MCPToolGateway:
         self._tools: dict[str, tuple[str, MCPToolAdapter, MCPToolDescriptor]] = {}
         self._executor = ThreadPoolExecutor(max_workers=max(1, min(int(max_workers), 4)),
                                             thread_name_prefix="unexpected-mcp")
-        # Enabling a capability now requires a descriptor-matched adapter registered here.
-        self.capabilities.adapter_verifier = self.verify_adapter
+        # Preserve any verifier for other capability types; MCP enablement is verified here.
+        previous_verifier = self.capabilities.adapter_verifier
+        def verify_capability(record: CapabilityRecord) -> bool:
+            if record.adapter_type == "mcp":
+                return self.verify_adapter(record)
+            return bool(previous_verifier and previous_verifier(record))
+        self.capabilities.adapter_verifier = verify_capability
 
     @staticmethod
     def _matches_record(record: CapabilityRecord, descriptor: MCPToolDescriptor) -> bool:
