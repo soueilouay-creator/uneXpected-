@@ -1,11 +1,13 @@
 from __future__ import annotations
-import hmac, json, os, threading, time, math
+import hmac, json, os, threading, time, math, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
-from urllib.parse import urlsplit, parse_qs
+from urllib.parse import urlsplit, parse_qs, unquote
 from .web_ui import read_index, read_asset
 from . import __version__
 from .coordinator import Coordinator
+from .models import ApprovalContext, PermissionDenied
+from .prompt_intelligence import PromptIntelligenceError
 
 MAX_BODY_BYTES=64*1024
 MAX_OBJECTIVE_CHARS=16000
@@ -155,6 +157,65 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                     "governance":{"privileged_actions":"disabled","approval_authority":"not verified","replay_protection":"not verified"},
                     "approval_verifier_configured":bool(getattr(active,"approval_verifier",None))
                 })
+            if path=="/v1/prompts":
+                search_text=(query.get("q") or [""])[0]
+                category=(query.get("category") or [None])[0]
+                try:
+                    offset_values=query.get("offset",["0"])
+                    if len(offset_values)!=1:
+                        raise ValueError("offset must be a single integer")
+                    offset=int(offset_values[0])
+                    items,total=active.prompt_intelligence.search_active(
+                        query=search_text,category=category,limit=limit,offset=offset
+                    )
+                    categories=active.prompt_intelligence.list_categories()
+                    return self.send_json(200,{
+                        "total":total,"count":len(items),"offset":offset,"limit":limit,
+                        "category_count":len(categories),"categories":categories,
+                        "items":items,"source":active.prompt_intelligence.source_public_dict()
+                    })
+                except (PromptIntelligenceError,TypeError,ValueError):
+                    return self.send_json(400,{"error":"Invalid prompt search, category, limit or offset."})
+            if path.startswith("/v1/prompts/"):
+                prompt_id=unquote(path[len("/v1/prompts/"):])
+                if not prompt_id or "/" in prompt_id:
+                    return self.send_json(404,{"error":"Not found."})
+                try:
+                    item=active.prompt_intelligence.get_active(prompt_id)
+                    return self.send_json(200,{
+                        "item":item,
+                        "starter_instructions":active.prompt_intelligence.render_instructions(prompt_id),
+                        "source":active.prompt_intelligence.source_public_dict(item["source_id"])
+                    })
+                except PromptIntelligenceError:
+                    return self.send_json(404,{"error":"Unknown or inactive prompt."})
+            if path=="/v1/prompt-intelligence/sources":
+                try:
+                    items=active.prompt_intelligence.list_sources(limit)
+                    return self.send_json(200,{"count":len(items),"items":items})
+                except PromptIntelligenceError as exc:
+                    return self.send_json(400,{"error":str(exc)})
+            if path=="/v1/prompt-intelligence/review-queue":
+                try:
+                    items=active.prompt_intelligence.review_queue(limit)
+                    return self.send_json(200,{"count":len(items),"items":items})
+                except PromptIntelligenceError as exc:
+                    return self.send_json(400,{"error":str(exc)})
+            if path.startswith("/v1/prompt-intelligence/prompts/") and path.endswith("/activation-details"):
+                prompt_id=unquote(path[len("/v1/prompt-intelligence/prompts/"):-len("/activation-details")].strip("/"))
+                if not prompt_id or "/" in prompt_id:
+                    return self.send_json(404,{"error":"Not found."})
+                try:
+                    version_values=query.get("version",[])
+                    if len(version_values)!=1:
+                        return self.send_json(400,{"error":"A single version query parameter is required."})
+                    version=int(version_values[0])
+                    details=active.prompt_intelligence.activation_action_details(prompt_id,version)
+                    digest=active.permissions.approval_digest(details)
+                    return self.send_json(200,{"action_details":details,"action_digest":digest,
+                                               "approval_workflow":"Request privileged-action approval"})
+                except (PromptIntelligenceError,TypeError,ValueError):
+                    return self.send_json(400,{"error":"Prompt version is not ready for activation."})
             if path=="/v1/skills":
                 items=[skill.public_dict() for skill in active.skills.list()]
                 return self.send_json(200,{"count":len(items),"items":items})
@@ -266,7 +327,27 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             return self.send_json(404,{"error":"Not found."})
         def do_POST(self):
             route=urlsplit(self.path).path
-            if route not in {"/v1/invoke", "/v1/lifecycle", "/v1/providers/test", "/v1/improvements/propose", "/v1/quality-evaluations", "/v1/subagents/run"}: return self.send_json(404,{"error":"Not found."})
+            parts=route.strip("/").split("/")
+            prompt_admin_kind=None
+            prompt_admin_id=None
+            if route=="/v1/prompt-intelligence/sources":
+                prompt_admin_kind="source_register"
+            elif route=="/v1/prompt-intelligence/import":
+                prompt_admin_kind="prompt_import"
+            elif len(parts)==5 and parts[:3]==["v1","prompt-intelligence","sources"] and parts[4]=="review":
+                prompt_admin_kind="source_review"
+                prompt_admin_id=unquote(parts[3])
+            elif len(parts)==5 and parts[:3]==["v1","prompt-intelligence","prompts"] and parts[4]=="review":
+                prompt_admin_kind="prompt_review"
+                prompt_admin_id=unquote(parts[3])
+            elif len(parts)==5 and parts[:3]==["v1","prompt-intelligence","prompts"] and parts[4]=="activate":
+                prompt_admin_kind="prompt_activate"
+                prompt_admin_id=unquote(parts[3])
+            known_routes={"/v1/invoke", "/v1/lifecycle", "/v1/providers/test",
+                          "/v1/improvements/propose", "/v1/quality-evaluations",
+                          "/v1/subagents/run"}
+            if route not in known_routes and prompt_admin_kind is None:
+                return self.send_json(404,{"error":"Not found."})
             is_lifecycle=route=="/v1/lifecycle"
             is_provider_test=route=="/v1/providers/test"
             is_improvement_propose=route=="/v1/improvements/propose"
@@ -278,6 +359,72 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             if not active_limiter.allow(identity): return self.send_json(429,{"error":"Request rate limit exceeded."})
             body=self.read_body()
             if body is None: return
+            if prompt_admin_kind:
+                try:
+                    if prompt_admin_kind=="source_register":
+                        source=active.prompt_intelligence.register_source(body,actor="authenticated-runtime-api")
+                        return self.send_json(201,{"source":source})
+                    if prompt_admin_kind=="source_review":
+                        allowed={"rights_status","retention_policy","evidence_url","attribution"}
+                        if set(body)!=allowed:
+                            return self.send_json(400,{"error":"Source review requires rights_status, retention_policy, evidence_url and attribution only."})
+                        source=active.prompt_intelligence.review_source(
+                            prompt_admin_id,rights_status=body["rights_status"],
+                            retention_policy=body["retention_policy"],
+                            evidence_url=body["evidence_url"],attribution=body["attribution"],
+                            reviewer="authenticated-runtime-api"
+                        )
+                        return self.send_json(200,{"source":source})
+                    if prompt_admin_kind=="prompt_import":
+                        if set(body)!={"source_id","records"}:
+                            return self.send_json(400,{"error":"Prompt import requires source_id and records only."})
+                        result=active.prompt_intelligence.stage_batch(
+                            body["source_id"],body["records"],actor="authenticated-runtime-api"
+                        )
+                        return self.send_json(201,result)
+                    if prompt_admin_kind=="prompt_review":
+                        if set(body)!={"version","mapped_agent_id"}:
+                            return self.send_json(400,{"error":"Prompt review requires version and mapped_agent_id only."})
+                        version=body["version"]
+                        if isinstance(version,bool) or not isinstance(version,int) or version<1:
+                            return self.send_json(400,{"error":"version must be a positive integer."})
+                        review=active.prompt_intelligence.review_prompt(
+                            prompt_admin_id,version,mapped_agent_id=body["mapped_agent_id"],
+                            reviewer="authenticated-runtime-api"
+                        )
+                        review.pop("body",None)
+                        return self.send_json(200,{"review":review})
+                    if prompt_admin_kind=="prompt_activate":
+                        allowed={"version","approval_id","approver","approved_permissions","rationale","action_digest"}
+                        if set(body)!=allowed:
+                            return self.send_json(400,{"error":"Prompt activation requires the complete action-bound approval context."})
+                        version=body["version"]
+                        permissions=body["approved_permissions"]
+                        if (isinstance(version,bool) or not isinstance(version,int) or version<1
+                                or not isinstance(body["approval_id"],str) or not body["approval_id"].strip()
+                                or not isinstance(body["approver"],str) or not body["approver"].strip()
+                                or not isinstance(body["rationale"],str) or not body["rationale"].strip()
+                                or len(body["rationale"])>1000
+                                or not isinstance(permissions,list) or permissions!=["modify_policy"]
+                                or not isinstance(body["action_digest"],str)
+                                or not re.fullmatch(r"[0-9a-f]{64}",body["action_digest"])):
+                            return self.send_json(400,{"error":"Invalid prompt activation approval context."})
+                        approval=ApprovalContext(
+                            approval_id=body["approval_id"],
+                            approver=body["approver"],
+                            approved_permissions=frozenset(permissions),
+                            rationale=body["rationale"],
+                            action_digest=body["action_digest"],
+                        )
+                        activated=active.prompt_intelligence.activate_prompt(prompt_admin_id,version,approval)
+                        return self.send_json(200,{"prompt":activated,"activated":True})
+                    return self.send_json(404,{"error":"Not found."})
+                except PermissionDenied as exc:
+                    return self.send_json(403,{"error":str(exc)})
+                except PromptIntelligenceError as exc:
+                    return self.send_json(400,{"error":str(exc)})
+                except Exception as exc:
+                    return self.send_json(400,{"error":f"Prompt Intelligence request rejected ({type(exc).__name__})."})
             if is_subagents_run:
                 allowed={"parent_task_id","parent_agent_id","children","max_depth"}
                 if set(body)-allowed:
@@ -369,9 +516,9 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                     active.store.log_event("provider_test_failed",payload={"route":body.get("provider_route"),
                         "error_type":type(exc).__name__,"diagnostic":diagnostic})
                     return self.send_json(502,{"ok":False,"error":diagnostic})
-            allowed=({"agent_id","objective","inputs","deadline_seconds","max_corrections","max_improvements","provider_route"}
+            allowed=({"agent_id","objective","inputs","deadline_seconds","max_corrections","max_improvements","provider_route","prompt_id"}
                      if is_lifecycle else
-                     {"agent_id","objective","inputs","deadline_seconds","max_steps","idempotency_key","source_refs","provider_route","skill_ids"})
+                     {"agent_id","objective","inputs","deadline_seconds","max_steps","idempotency_key","source_refs","provider_route","skill_ids","prompt_id"})
             if set(body)-allowed: return self.send_json(400,{"error":"Unsupported fields; privileged actions are not exposed."})
             provider_route=body.get("provider_route")
             if provider_route is not None and not isinstance(provider_route,str): return self.send_json(400,{"error":"provider_route must be a string."})
@@ -383,10 +530,31 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
             steps=body.get("max_steps",6)
             idem=body.get("idempotency_key"); refs=body.get("source_refs",[])
             skill_ids=body.get("skill_ids",[])
+            prompt_id=body.get("prompt_id")
             corrections=body.get("max_corrections",1)
             improvements=body.get("max_improvements",3)
             if not isinstance(agent,str) or not agent.strip() or not isinstance(objective,str) or not objective.strip():
                 return self.send_json(400,{"error":"agent_id and objective are required."})
+            if not isinstance(inputs,dict):
+                return self.send_json(400,{"error":"inputs must be a JSON object."})
+            if "__uneXpected_prompt" in inputs:
+                return self.send_json(400,{"error":"Reserved prompt metadata cannot be supplied by the caller."})
+            if prompt_id is not None:
+                if not isinstance(prompt_id,str) or not prompt_id.strip() or len(prompt_id)>160:
+                    return self.send_json(400,{"error":"prompt_id must be a non-empty string up to 160 characters."})
+                try:
+                    selected_prompt=active.prompt_intelligence.get_active(prompt_id)
+                    if selected_prompt.get("mapped_agent_id")!=agent.strip():
+                        return self.send_json(400,{"error":"Selected prompt is mapped to a different specialist role."})
+                    prompt_binding=active.prompt_intelligence.task_binding(prompt_id)
+                    prompt_instructions=active.prompt_intelligence.render_instructions(prompt_id)
+                except PromptIntelligenceError:
+                    return self.send_json(400,{"error":"Unknown or inactive prompt_id."})
+                if len(objective)+2+len(prompt_instructions)>MAX_OBJECTIVE_CHARS:
+                    return self.send_json(413,{"error":"Objective and selected prompt instructions are too large."})
+                objective=objective.rstrip()+"\n\n"+prompt_instructions
+                inputs=dict(inputs)
+                inputs["__uneXpected_prompt"]=prompt_binding
             if len(objective)>MAX_OBJECTIVE_CHARS: return self.send_json(413,{"error":"Objective too large."})
             if (not isinstance(inputs,dict) or isinstance(deadline,bool) or not isinstance(deadline,(int,float))
                     or (not is_lifecycle and (isinstance(steps,bool) or not isinstance(steps,int)))
@@ -407,6 +575,12 @@ def create_server(*, coordinator=None, api_token=None, host="127.0.0.1", port=0)
                     return self.send_json(400,{"error":"max_steps must be between 1 and 12."})
                 if idem is not None and (not isinstance(idem,str) or len(idem)>128): return self.send_json(400,{"error":"Invalid idempotency key."})
                 if not isinstance(refs,list) or len(refs)>32 or any(not isinstance(x,str) or not x or len(x)>MAX_SOURCE_REF_CHARS for x in refs): return self.send_json(400,{"error":"Invalid source_refs."})
+                if prompt_id is not None:
+                    prompt_source_url=inputs["__uneXpected_prompt"].get("source_url")
+                    if prompt_source_url and prompt_source_url not in refs:
+                        if len(refs)>=32:
+                            return self.send_json(400,{"error":"source_refs limit leaves no room for selected prompt provenance."})
+                        refs=list(refs)+[prompt_source_url]
                 if (not isinstance(skill_ids,list) or len(skill_ids)>4
                         or any(not isinstance(x,str) or not x.strip() or len(x)>128 for x in skill_ids)
                         or len(set(skill_ids))!=len(skill_ids)):
