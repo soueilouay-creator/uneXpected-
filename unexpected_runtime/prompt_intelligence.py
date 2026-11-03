@@ -420,6 +420,8 @@ class PromptIntelligence:
         if not item:
             raise PromptIntelligenceError("Unknown or inactive prompt.")
         item.pop("body", None)
+        item["id"] = item["prompt_id"]
+        item["agent_id"] = item.get("mapped_agent_id")
         return item
 
     def source_public_dict(self) -> dict[str, Any]:
@@ -475,8 +477,12 @@ class PromptIntelligence:
             raise PromptIntelligenceError("Prompt limit must be between 1 and 200.")
         if isinstance(offset, bool) or not isinstance(offset, int) or not 0 <= offset <= 100000:
             raise PromptIntelligenceError("Prompt offset is outside the supported range.")
-        return self.store.list_active_prompts(query=query.strip(), category_id=category,
-                                              limit=limit, offset=offset)
+        items, total = self.store.list_active_prompts(query=query.strip(), category_id=category,
+                                                       limit=limit, offset=offset)
+        for item in items:
+            item["id"] = item["prompt_id"]
+            item["agent_id"] = item.get("mapped_agent_id")
+        return items, total
 
     def list_categories(self) -> list[dict[str, Any]]:
         return self.store.list_active_prompt_categories()
@@ -489,7 +495,10 @@ class PromptIntelligence:
     def review_queue(self, limit: int = 100) -> list[dict[str, Any]]:
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
             raise PromptIntelligenceError("Prompt review queue limit must be between 1 and 200.")
-        return self.store.list_prompt_versions(statuses=("staged", "ready_for_activation", "rejected"), limit=limit)
+        items = self.store.list_prompt_versions(statuses=("staged", "ready_for_activation", "rejected"), limit=limit)
+        for item in items:
+            item.pop("body", None)
+        return items
 
     def seed_catalog(self) -> int:
         # The source ID is reserved for the immutable, metadata-only bundled seed.
