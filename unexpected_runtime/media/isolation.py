@@ -160,6 +160,7 @@ class PodmanIsolation:
             str(self.config.podman_path), "run", "--rm",
             "--network=none", "--read-only", "--cap-drop=ALL",
             "--security-opt=no-new-privileges",
+            "--userns=keep-id:uid=10001,gid=10001",
             "--pids-limit", str(limits.pids_limit),
             "--memory", str(limits.memory_bytes),
             "--cpus", str(limits.cpu_limit),
@@ -243,6 +244,9 @@ class PodmanIsolation:
     ) -> tuple[list[str], dict[str, Any]]:
         limits.validate(self.config)
         project = Path(project_root).resolve(strict=True)
+        cache_root = project / ".film"
+        if cache_root.is_symlink() or not cache_root.is_dir() or cache_root.resolve(strict=True).parent != project:
+            raise IsolationError("OpenFilm cache mount must be a real .film directory inside the staged project.")
         attempt = Path(attempt_root).resolve(strict=True)
         job_dir = attempt.parent
         job_id = job_dir.name
@@ -261,6 +265,7 @@ class PodmanIsolation:
         command = self._base_run_args(limits)
         command.extend([
             "--mount", f"type=bind,src={project},dst=/source,ro=true,rprivate",
+            "--mount", f"type=bind,src={cache_root.resolve(strict=True)},dst=/source/.film,rw=true,rprivate",
             "--mount", f"type=bind,src={job_dir},dst=/artifacts/{job_id},rw=true,rprivate",
             self.config.image,
             self.config.node_path,
