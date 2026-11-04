@@ -138,7 +138,7 @@ class PodmanIsolation:
     def _env(self) -> dict[str, str]:
         env = {
             "PATH": "/usr/bin:/bin",
-            "HOME": "/tmp",
+            "HOME": str(Path.home()),
             "TMPDIR": "/tmp",
             "LANG": "C.UTF-8",
             "LC_ALL": "C.UTF-8",
