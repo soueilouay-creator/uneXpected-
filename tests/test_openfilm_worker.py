@@ -15,6 +15,7 @@ class FakeIsolation:
         self.cancel_hook = cancel_hook
         self.result_status = result_status
         self.calls = 0
+        self.requests = []
 
     def self_test(self):
         return {
@@ -25,6 +26,7 @@ class FakeIsolation:
     def run_fixed_runner(self, request, project_root, attempt_root, limits, timeout_seconds,
                          *, on_phase, cancel_check):
         self.calls += 1
+        self.requests.append(request)
         on_phase("inspecting")
         if self.cancel_hook:
             self.cancel_hook()
@@ -52,9 +54,11 @@ class FakeQA:
     def __init__(self, passed=True):
         self.passed = passed
         self.calls = 0
+        self.last_profile = None
 
     def run(self, *, snapshot, output_path, profile, max_output_bytes, caption_tracks=None):
         self.calls += 1
+        self.last_profile = profile
         output = Path(output_path)
         return {
             "passed": self.passed,
@@ -142,6 +146,43 @@ class OpenFilmWorkerTests(unittest.TestCase):
         self.assertEqual(result["manifest"]["qa"]["status"], "passed")
         self.assertEqual(result["manifest"]["campaign_id"], "MAINTENANCE_TRACKER_GROWTH")
         self.assertNotEqual(result["status"], "published")
+
+    def test_runner_receives_only_renderer_profile_while_qa_keeps_full_thresholds(self):
+        profile = {
+            "platform": "youtube_shorts", "width": 1080, "height": 1920,
+            "fps": 30, "audio_required": True,
+            "max_duration_seconds": 180,
+            "black_frame_min_duration_seconds": 0.1,
+            "black_frame_pixel_threshold": 0.1,
+            "max_black_duration_seconds": 0.5,
+            "freeze_frame_noise": "-50dB",
+            "freeze_frame_min_duration_seconds": 0.5,
+            "max_freeze_duration_seconds": 0.5,
+            "audio_coverage_tolerance_seconds": 0.1,
+            "audio_loudness_target_lufs": -16,
+            "audio_true_peak_ceiling_dbfs": -1,
+            "audio_loudness_tolerance_lu": 1,
+            "captions_required": True,
+        }
+        created = self.jobs.create(
+            task_id="task-profile", idempotency_key="profile-filter",
+            request={
+                "project_path": "pilot", "campaign_id": "MAINTENANCE_TRACKER_GROWTH",
+                "content_id": "YT-TRACKER-PROFILE", "synthetic_data": True,
+                "rights_manifest": {"sources": [{"kind": "original"}]},
+                "variants": [profile], "caption_tracks": [],
+            },
+        )
+        isolation, qa = FakeIsolation(), FakeQA()
+        worker = MediaWorker(self.jobs, isolation, self.config, qa=qa)
+        result = worker.run_once()
+        self.assertEqual(result["status"], "ready_for_human_review")
+        self.assertEqual(isolation.requests[0]["profile"], {
+            "platform": "youtube_shorts", "width": 1080, "height": 1920,
+            "fps": 30, "audio_required": True,
+        })
+        self.assertEqual(qa.last_profile, profile)
+        self.assertEqual(self.jobs.get(created["job_id"])["state"], "ready_for_human_review")
 
     def test_automated_qa_failure_blocks_the_artifact(self):
         created = self.create_job("task-a", "key-a")
