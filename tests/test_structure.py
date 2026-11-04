@@ -136,7 +136,11 @@ class StructureTests(unittest.TestCase):
     digest,rel=line.split('  ',1); expected[rel]=digest
   actual={str(p.relative_to(ROOT)) for p in ROOT.rglob('*') if p.is_file() and p!=inv and '.git' not in p.parts and '__pycache__' not in p.parts and 'state' not in p.parts and p.suffix not in {'.pyc','.sqlite3'}}
   self.assertEqual(set(expected),actual)
-  for rel,digest in expected.items(): self.assertEqual(hashlib.sha256((ROOT/rel).read_bytes()).hexdigest(),digest,rel)
+  mismatches=[]
+  for rel,digest in expected.items():
+   actual_digest=hashlib.sha256((ROOT/rel).read_bytes()).hexdigest()
+   if actual_digest != digest: mismatches.append(f"{rel}: expected {digest}, got {actual_digest}")
+  self.assertEqual(mismatches,[], "\\n".join(mismatches))
  def test_consolidated_agent_index_covers_all_specs(self):
   manifest=json.loads((ROOT/'agent_manifest.json').read_text())
   index=(ROOT/'ALL_AGENTS.md').read_text()
