@@ -53,7 +53,7 @@ class OpenFilmAdapterTests(unittest.TestCase):
         self.capabilities.transition(
             self.record.capability_id, "installed", reason="fixture adapter package"
         )
-        self.adapter = OpenFilmAdapter(self.jobs, self.record)
+        self.adapter = OpenFilmAdapter(self.jobs, self.record, worker_ready=lambda: True)
         self.gateway = MCPToolGateway(
             store=self.store,
             capabilities=self.capabilities,
@@ -155,9 +155,16 @@ class OpenFilmAdapterTests(unittest.TestCase):
             self.adapter.call(TOOL_CREATE, args, None)
 
     def test_create_requires_a_fresh_worker_preflight_callback(self):
-        blocked = OpenFilmAdapter(self.jobs, self.record, worker_ready=lambda: False)
-        with self.assertRaises(OpenFilmAdapterError):
-            blocked.call(TOOL_CREATE, self.create_args(), None)
+        callbacks = (
+            None,
+            lambda: False,
+            lambda: (_ for _ in ()).throw(RuntimeError("stale preflight state")),
+        )
+        for callback in callbacks:
+            blocked = OpenFilmAdapter(self.jobs, self.record, worker_ready=callback)
+            with self.subTest(callback=callback), self.assertRaises(OpenFilmAdapterError):
+                blocked.call(TOOL_CREATE, self.create_args(), None)
+        self.assertEqual(self.jobs.list(state="queued"), [])
 
     def test_unknown_fields_and_unknown_job_ids_fail_closed(self):
         args = self.create_args()
