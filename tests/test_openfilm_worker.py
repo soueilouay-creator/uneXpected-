@@ -186,7 +186,7 @@ class OpenFilmWorkerTests(unittest.TestCase):
         self.assertEqual(result["status"], "ready_for_human_review")
         self.assertEqual(isolation.requests[0]["profile"], {
             "platform": "youtube_shorts", "width": 1080, "height": 1920,
-            "fps": 30, "audio_required": True,
+            "fps": 30, "audio_required": True, "captions_required": True,
         })
         self.assertEqual(qa.last_profile, profile)
         self.assertEqual(self.jobs.get(created["job_id"])["state"], "ready_for_human_review")
@@ -223,7 +223,7 @@ class OpenFilmWorkerTests(unittest.TestCase):
         self.assertEqual(result["status"], "ready_for_human_review")
         self.assertEqual(isolation.requests[0]["profile"], {
             "platform": "youtube_shorts", "width": 1080, "height": 1920,
-            "fps": 30, "audio_required": True,
+            "fps": 30, "audio_required": True, "captions_required": True,
         })
         self.assertEqual(qa.last_profile, profile)
         self.assertEqual(self.jobs.get(created["job_id"])["state"], "ready_for_human_review")
