@@ -6,6 +6,7 @@ from typing import Any
 import json
 import math
 import os
+import shutil
 import time
 
 from .isolation import WorkerResourceLimits
@@ -199,10 +200,19 @@ class MediaWorker:
                 "audio_required": profile.get("audio_required", False),
             }
             attempt_root = self.paths.prepare_attempt(job["job_id"], job["attempt_count"])
+            staged_project = attempt_root / "source"
+            shutil.copytree(snapshot.project_root, staged_project, symlinks=True)
+            staged_snapshot = self.paths.inspect_project(attempt_root, "source")
+            if staged_snapshot.sha256 != snapshot.sha256:
+                raise MediaWorkerError("Staged project did not match the validated source snapshot.")
+            # OpenFilm look/render writes internal caches below <project>/.film.
+            # Keep the source files immutable in the container and mount only this
+            # per-attempt cache directory writable.
+            (staged_project / ".film").mkdir(mode=0o700, exist_ok=False)
             output_path = attempt_root / "master.mp4"
             runner_request = {
                 "job_id": job["job_id"],
-                "project_root": str(snapshot.project_root),
+                "project_root": str(staged_project),
                 "entrypoint": "film.html",
                 "artifact_root": str(self.config.artifact_root),
                 "attempt_root": str(attempt_root),
@@ -231,15 +241,18 @@ class MediaWorker:
                 current = self.jobs.get(job["job_id"])
                 return not current or current["state"] in {"cancel_requested", "cancelled"}
 
-            runner_result = self.isolation.run_fixed_runner(
-                runner_request,
-                snapshot.project_root,
-                attempt_root,
-                limits,
-                self.config.timeout_seconds,
-                on_phase=on_phase,
-                cancel_check=cancel_check,
-            )
+            try:
+                runner_result = self.isolation.run_fixed_runner(
+                    runner_request,
+                    staged_project,
+                    attempt_root,
+                    limits,
+                    self.config.timeout_seconds,
+                    on_phase=on_phase,
+                    cancel_check=cancel_check,
+                )
+            finally:
+                shutil.rmtree(staged_project)
             current = self.jobs.get(job["job_id"])
             if not current:
                 return {"job_id": job["job_id"], "status": "failed", "failure_category": "job_record_missing"}
