@@ -86,7 +86,7 @@ class NativeOpenFilmEndToEndTests(unittest.TestCase):
     <iframe src="scene.html#t=0,8" style="left: 0; top: 0; width: 1080px; height: 1920px"></iframe>
   </section>
   <section>
-    <audio src="assets/bed.wav" volume="0.7"></audio>
+    <audio src="assets/bed.wav" volume="1"></audio>
   </section>
 </body>
 </html>
