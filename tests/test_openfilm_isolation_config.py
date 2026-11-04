@@ -2,7 +2,10 @@ import os
 import unittest
 from unittest.mock import patch
 
-from unexpected_runtime.media.isolation import IsolationError, PodmanIsolationConfig, WorkerResourceLimits
+from pathlib import Path
+import tempfile
+
+from unexpected_runtime.media.isolation import IsolationError, PodmanIsolation, PodmanIsolationConfig, WorkerResourceLimits
 
 
 class PodmanIsolationConfigTests(unittest.TestCase):
@@ -45,6 +48,39 @@ class PodmanIsolationConfigTests(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             limits.validate(config)
+
+
+    def test_renderer_cache_is_a_separate_writable_mount_under_read_only_project(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            (project / ".film").mkdir(parents=True)
+            attempt = root / "artifacts" / "job-1" / "attempt-1"
+            attempt.mkdir(parents=True)
+            config = PodmanIsolationConfig(
+                podman_path=Path("/usr/bin/podman"),
+                image="sha256:" + "c" * 64,
+            )
+            isolation = PodmanIsolation(config)
+            limits = WorkerResourceLimits(
+                memory_bytes=512 * 1024 * 1024, cpu_limit=1.0, pids_limit=64,
+                tmpfs_bytes=256 * 1024 * 1024, max_output_bytes=2 * 1024 * 1024,
+            )
+            command, request = isolation.build_command(
+                project, attempt,
+                {"job_id": "job-1", "profile": {"platform": "youtube_shorts"}},
+                limits,
+            )
+            mounts = [command[index + 1] for index, value in enumerate(command[:-1]) if value == "--mount"]
+            self.assertIn(
+                f"type=bind,src={project.resolve()},dst=/source,ro=true,rprivate",
+                mounts,
+            )
+            self.assertIn(
+                f"type=bind,src={(project / '.film').resolve()},dst=/source/.film,rw=true,rprivate",
+                mounts,
+            )
+            self.assertEqual(request["project_root"], "/source")
 
 
 if __name__ == "__main__":
