@@ -20,6 +20,17 @@ export class RunnerError extends Error {
   }
 }
 
+export function encodeEvent(event) {
+  if (!event || typeof event !== "object" || Array.isArray(event)) {
+    throw new RunnerError("Worker event must be a JSON object.");
+  }
+  const encoded = JSON.stringify(event);
+  if (typeof encoded !== "string" || Buffer.byteLength(encoded, "utf8") > 16 * 1024) {
+    throw new RunnerError("Worker event exceeded the fixed output byte limit.", "result_too_large");
+  }
+  return encoded + String.fromCharCode(10);
+}
+
 function requireString(value, name, maxLength = 1024) {
   if (typeof value !== "string" || !value.trim() || value.length > maxLength || value.includes("\0")) {
     throw new RunnerError(`${name} must be a non-empty string no longer than ${maxLength} characters.`);
@@ -158,6 +169,12 @@ async function sha256File(file) {
 
 export async function executeJob(value, api = { look: openFilmLook, render: openFilmRender }) {
   const request = await parseRequest(value);
+  const emit = typeof api.emit === "function" ? api.emit : () => {};
+  const finish = (result) => {
+    emit({ event: "result", result });
+    return result;
+  };
+  emit({ event: "phase", phase: "inspecting" });
   const inspected = await api.look([request.entrypoint], {
     root: request.projectRoot,
     offline: true,
@@ -166,31 +183,32 @@ export async function executeJob(value, api = { look: openFilmLook, render: open
   });
   const inspectedLines = diagnostics(inspected?.lines, [request.projectRoot, request.artifactRoot]);
   if (!inspected || inspected.ok !== true) {
-    return {
+    return finish({
       status: "qa_blocked",
       job_id: request.jobId,
       failure_category: "openfilm_look_failed",
       diagnostics: inspectedLines
-    };
+    });
   }
   const dimensions = dimensionsFromLook(inspected.lines);
   if (!dimensions || dimensions[0] !== request.profile.width || dimensions[1] !== request.profile.height) {
-    return {
+    return finish({
       status: "qa_blocked",
       job_id: request.jobId,
       failure_category: "variant_dimensions_mismatch",
       diagnostics: inspectedLines
-    };
+    });
   }
   if (request.profile.audio_required && !/\b[1-9]\d* sounds?\b/i.test(inspectedLines[0] ?? "")) {
-    return {
+    return finish({
       status: "qa_blocked",
       job_id: request.jobId,
       failure_category: "required_audio_missing",
       diagnostics: inspectedLines
-    };
+    });
   }
 
+  emit({ event: "phase", phase: "rendering" });
   // Network denial is enforced by the worker's host container, not by OpenFilm's render() options.
   const rendered = await api.render([request.entrypoint], {
     root: request.projectRoot,
@@ -211,7 +229,7 @@ export async function executeJob(value, api = { look: openFilmLook, render: open
     throw new RunnerError("Rendered output exceeded the host-supplied byte limit.", "output_too_large");
   }
   const outputSha256 = await sha256File(request.outputPath);
-  return {
+  return finish({
     status: "rendered",
     job_id: request.jobId,
     openfilm_version: OPENFILM_VERSION,
@@ -220,7 +238,7 @@ export async function executeJob(value, api = { look: openFilmLook, render: open
     profile: request.profile,
     look_diagnostics: inspectedLines,
     render_diagnostics: diagnostics(rendered.lines, [request.projectRoot, request.artifactRoot])
-  };
+  });
 }
 
 async function readStdin(limit) {
@@ -241,12 +259,11 @@ async function main() {
     let value;
     try { value = JSON.parse(input); }
     catch { throw new RunnerError("stdin was not valid JSON."); }
-    const result = await executeJob(value);
-    const encoded = JSON.stringify(result);
-    if (Buffer.byteLength(encoded, "utf8") > 16 * 1024) {
-      throw new RunnerError("Runner result exceeded the fixed JSON output byte limit.");
-    }
-    process.stdout.write(`${encoded}\\n`);
+    const result = await executeJob(value, {
+      look: openFilmLook,
+      render: openFilmRender,
+      emit: (event) => process.stdout.write(encodeEvent(event))
+    });
     if (result.status === "qa_blocked") process.exitCode = 3;
   } catch (error) {
     const result = {
@@ -254,7 +271,7 @@ async function main() {
       failure_category: error instanceof RunnerError ? error.code : "renderer_error",
       message: error instanceof RunnerError ? error.message : "OpenFilm runner failed."
     };
-    process.stdout.write(`${JSON.stringify(result)}\\n`);
+    process.stdout.write(encodeEvent({ event: "result", result }));
     process.exitCode = error instanceof RunnerError ? 2 : 1;
   }
 }

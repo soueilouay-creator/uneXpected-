@@ -5,7 +5,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import test from "node:test";
 
-import { executeJob, parseRequest, RunnerError } from "../run-job.mjs";
+import { encodeEvent, executeJob, parseRequest, RunnerError } from "../run-job.mjs";
 
 async function workspace() {
   const base = await mkdtemp(path.join(os.tmpdir(), "openfilm-runner-"));
@@ -147,4 +147,8 @@ test("executeJob emits the newline-delimited events required by the host worker"
     { event: "phase", phase: "rendering" },
     { event: "result", result }
   ]);
+  assert.equal(
+    encodeEvent(events[0]),
+    '{"event":"phase","phase":"inspecting"}' + String.fromCharCode(10)
+  );
 });

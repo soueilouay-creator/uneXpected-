@@ -191,6 +191,13 @@ class MediaWorker:
             if not isinstance(variants, list) or len(variants) != 1 or not isinstance(variants[0], dict):
                 return self._finish_failure(job, state, "invalid_variant_count", "Each media job must contain exactly one render variant.")
             profile = variants[0]
+            renderer_profile = {
+                "platform": profile.get("platform"),
+                "width": profile.get("width"),
+                "height": profile.get("height"),
+                "fps": profile.get("fps"),
+                "audio_required": profile.get("audio_required", False),
+            }
             attempt_root = self.paths.prepare_attempt(job["job_id"], job["attempt_count"])
             output_path = attempt_root / "master.mp4"
             runner_request = {
@@ -200,7 +207,7 @@ class MediaWorker:
                 "artifact_root": str(self.config.artifact_root),
                 "attempt_root": str(attempt_root),
                 "output_path": str(output_path),
-                "profile": profile,
+                "profile": renderer_profile,
                 "max_output_bytes": self.config.max_output_bytes,
             }
 
