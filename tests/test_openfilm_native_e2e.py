@@ -127,9 +127,10 @@ class NativeOpenFilmEndToEndTests(unittest.TestCase):
 </body>
 </html>
 """, encoding="utf-8")
-        (self.project / "captions.srt").write_text(
-            "1\n00:00:00,000 --> 00:00:04,000\nNative uneXpected video engine.\n\n"
-            "2\n00:00:04,000 --> 00:00:08,000\nRendered locally and checked.\n",
+        (self.project / "assets" / "bed.vtt").write_text(
+            "WEBVTT\n\n"
+            "00:00:00.000 --> 00:00:04.000\nNative uneXpected video engine.\n\n"
+            "00:00:04.000 --> 00:00:08.000\nRendered locally and checked.\n",
             encoding="utf-8",
         )
         subprocess.run([
@@ -191,7 +192,7 @@ class NativeOpenFilmEndToEndTests(unittest.TestCase):
                 "sources": [{"kind": "original", "owner": "uneXpected", "notes": "Synthetic CI fixture"}]
             },
             "variants": [profile],
-            "caption_tracks": [{"path": "captions.srt", "language": "en"}],
+            "caption_tracks": [{"path": "assets/bed.vtt", "language": "en"}],
         }
         queued = self._cli("enqueue", "--request-json", json.dumps(request))
         self.assertEqual(queued["state"], "queued")
