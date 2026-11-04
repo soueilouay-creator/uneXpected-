@@ -101,6 +101,8 @@ class CommandCenterAPITests(unittest.TestCase):
             "/v1/approvals",
             "/v1/resources",
             "/v1/quality-evaluations",
+            "/v1/media/status",
+            "/v1/media/jobs",
         )
         for route in routes:
             with self.subTest(route=route):
@@ -190,6 +192,58 @@ class CommandCenterAPITests(unittest.TestCase):
             "approval_ledger_path",
         ):
             self.assertNotIn(forbidden, serialized)
+
+    def test_native_video_read_apis_are_authenticated_and_show_discovered_blocker(self):
+        status, body = self.request("GET", "/v1/media/status", token=self.token)
+        self.assertEqual(status, 200)
+        self.assertEqual(body["media"]["capability_status"], "discovered")
+        self.assertFalse(body["media"]["available"])
+        self.assertFalse(body["media"]["worker_ready"])
+        self.assertTrue(body["media"]["job_store_ready"])
+        self.assertEqual(body["media"]["provider"], "openfilm")
+
+        jobs_status, jobs = self.request("GET", "/v1/media/jobs?limit=20", token=self.token)
+        self.assertEqual(jobs_status, 200)
+        self.assertEqual(jobs["count"], 0)
+        self.assertEqual(jobs["items"], [])
+
+    def test_native_video_queue_and_cancel_apis_fail_closed_until_worker_is_enabled(self):
+        request = {
+            "task_id": "api-media-task",
+            "idempotency_key": "api-media-request",
+            "project_path": "YT-TRACKER-03",
+            "campaign_id": "MAINTENANCE_TRACKER_GROWTH",
+            "content_id": "YT-TRACKER-03",
+            "synthetic_data": True,
+            "rights_manifest": {"sources": [{"kind": "original"}]},
+            "variants": [{
+                "platform": "youtube_shorts", "width": 1080, "height": 1920,
+                "fps": 30, "max_duration_seconds": 180,
+                "black_frame_min_duration_seconds": 0.1, "black_frame_pixel_threshold": 0.1,
+                "max_black_duration_seconds": 0.5, "freeze_frame_noise": "-50dB",
+                "freeze_frame_min_duration_seconds": 0.5, "max_freeze_duration_seconds": 0.5,
+            }],
+        }
+        self.assertEqual(self.request("POST", "/v1/media/jobs", body=request)[0], 401)
+        status, body = self.request("POST", "/v1/media/jobs", body=request, token=self.token)
+        self.assertEqual(status, 409, body)
+        self.assertIn("not enabled", body.get("error", "").lower())
+        cancel_status, cancel = self.request(
+            "POST", "/v1/media/jobs/not-a-real-job/cancel", body={}, token=self.token
+        )
+        self.assertEqual(cancel_status, 409, cancel)
+
+    def test_video_engine_view_is_present_but_queue_is_disabled_by_default(self):
+        html_status, html = self.request("GET", "/")
+        self.assertEqual(html_status, 200)
+        self.assertIn('data-view="media"', html)
+        self.assertIn('id="view-media"', html)
+        self.assertIn('id="media-queue-form"', html)
+        self.assertIn('id="media-queue-submit" disabled', html)
+        js_status, js = self.request("GET", "/assets/app.js")
+        self.assertEqual(js_status, 200)
+        self.assertIn("/v1/media/status", js)
+        self.assertIn("/v1/media/jobs", js)
 
     def test_agent_registry_reports_exactly_38_roles(self):
         status, body = self.request("GET", "/v1/agents", token=self.token)

@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const state = { token: "", agents: [], providers: [], status: null, traceTaskId: null, traceCursor: 0, promptSources: [], promptQueue: [], promptActivation: null };
+  const state = { token: "", agents: [], providers: [], status: null, traceTaskId: null, traceCursor: 0, promptSources: [], promptQueue: [], promptActivation: null, mediaStatus: null, mediaJobs: [] };
   const $ = (id) => document.getElementById(id);
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const time = (v) => { if (!v) return "—"; const n=Number(v); const d=new Date(n>1e12?n:n*1000); return Number.isNaN(d.getTime())?String(v):d.toLocaleString(); };
@@ -96,10 +96,44 @@
       : "Full verified lifecycle (requires a live AI provider)";
     if(!hasConfiguredLiveProvider&&$("task-mode").value==="lifecycle")$("task-mode").value="invoke";
   }
+  function renderMedia(status, jobs) {
+    state.mediaStatus=status||{};
+    state.mediaJobs=jobs||[];
+    const ready=state.mediaStatus.available===true;
+    $("media-status").innerHTML=[
+      readiness("Capability lifecycle",state.mediaStatus.capability_status||"unknown",state.mediaStatus.capability_status==="enabled"),
+      readiness("Shared job store",state.mediaStatus.job_store_ready?"ready":"unavailable",state.mediaStatus.job_store_ready===true),
+      readiness("Existing MCP gateway",state.mediaStatus.adapter_registered?"registered":"not registered",state.mediaStatus.adapter_registered===true),
+      readiness("Local worker host",state.mediaStatus.worker_ready?"preflight passed":"not verified",state.mediaStatus.worker_ready===true),
+      readiness("Queue availability",ready?"available":"blocked",ready)
+    ].join("");
+    $("media-blocker").textContent=state.mediaStatus.reason||"No worker readiness evidence is available.";
+    $("media-queue-submit").disabled=!ready;
+    $("media-job-list").innerHTML=state.mediaJobs.length?state.mediaJobs.map(job=>{
+      const detail=[job.campaign_id,job.content_id,job.state,"attempt "+job.attempt_count].filter(Boolean).join(" · ");
+      const cancelable=["queued","claimed","inspecting","rendering","post_render_qa","cancel_requested"].includes(job.state);
+      return '<div class="list-row"><div><div class="list-title">'+esc(job.content_id||job.job_id)+'</div><div class="list-detail">'+esc(detail)+'</div></div><div class="list-meta"><div>'+esc(time(job.updated_at||job.created_at))+'</div>'+(cancelable?'<button class="button secondary media-cancel" data-media-cancel="'+esc(job.job_id)+'" type="button">Cancel</button>':'')+'</div></div>';
+    }).join(""):'<div class="empty">No native render jobs have been queued.</div>';
+  }
+  async function loadMedia() {
+    try {
+      const status=await api("/v1/media/status");
+      renderMedia(status.media,[]);
+      try {
+        const jobs=await api("/v1/media/jobs?limit=30");
+        renderMedia(status.media,jobs.items||[]);
+      } catch(error) {
+        $("media-job-list").textContent="Media job history unavailable: "+error.message;
+      }
+    } catch(error) {
+      $("media-status").textContent="Native video status unavailable: "+error.message;
+      $("media-queue-submit").disabled=true;
+    }
+  }
   async function refresh() {
     $("refresh").disabled=true;
     try {
-      const [status,agents,tasks,events,providers,caps,improvements,approvals,resources,qualityRuns]=await Promise.all([
+      const [status,agents,tasks,events,providers,caps,improvements,approvals,resources,qualityRuns,mediaStatus,mediaJobs]=await Promise.all([
         api("/v1/status"),api("/v1/agents"),api("/v1/tasks?limit=8"),api("/v1/events?limit=8"),
         api("/v1/providers"),api("/v1/capabilities"),api("/v1/improvements"),api("/v1/approvals"),
         api("/v1/resources?limit=100"),api("/v1/quality-evaluations?limit=20")
@@ -118,7 +152,8 @@
         readiness("Agent registry",String(agents.count??0)+" roles",agents.count===38),
         readiness("State store",status.storage?.status||"local adapter",status.storage?.healthy===true),
         readiness("Provider route",provider.verified?"verified":provider.configured?"configured only":"unavailable",provider.verified===true),
-        readiness("Privileged actions",status.governance?.privileged_actions||"disabled",false)
+        readiness("Privileged actions",status.governance?.privileged_actions||"disabled",false),
+        readiness("Native video engine",mediaStatus.media?.available?"ready":mediaStatus.media?.capability_status||"not ready",mediaStatus.media?.available===true)
       ].join("");
       $("recent-events").innerHTML=(events.items||[]).length?events.items.map(e=>row(e.event_type,e.agent_id||e.task_id||"",time(e.ts))).join(""):'<div class="empty">No events recorded yet.</div>';
       $("audit-events").innerHTML=$("recent-events").innerHTML;
@@ -137,6 +172,7 @@
       $("updated").textContent="Updated "+new Date().toLocaleTimeString();
       renderAgents(); renderProviders(providers.providers||[]); setConnected(true);
       if ($("view-prompts").classList.contains("active")) await loadPromptIntelligence();
+      if ($("view-media").classList.contains("active")) await loadMedia();
     } catch(error) {
       setConnected(false);
       if (error.message==="Unauthorized."||error.message==="Unauthorized") {
@@ -237,14 +273,38 @@
   function showView(name) {
     document.querySelectorAll(".view").forEach(v=>v.classList.toggle("active",v.id==="view-"+name));
     document.querySelectorAll(".nav").forEach(v=>v.classList.toggle("active",v.dataset.view===name));
-    const titles={overview:"System overview",agents:"Agent registry",tasks:"Tasks & workflows",prompts:"Prompt Intelligence",providers:"AI providers",capabilities:"Capabilities",intelligence:"Resource & AI quality",governance:"Governance",audit:"Audit & learning"};
+    const titles={overview:"System overview",agents:"Agent registry",tasks:"Tasks & workflows",prompts:"Prompt Intelligence",media:"Video Engine",providers:"AI providers",capabilities:"Capabilities",intelligence:"Resource & AI quality",governance:"Governance",audit:"Audit & learning"};
     $("page-title").textContent=titles[name]||"System overview";
     if (name==="tasks"||name==="audit"||name==="governance"||name==="intelligence") refresh();
     if (name==="prompts") loadPromptIntelligence();
+    if (name==="media") loadMedia();
   }
   document.querySelectorAll("[data-view]").forEach(link=>link.addEventListener("click",e=>{e.preventDefault();const name=link.dataset.view;showView(name);history.replaceState(null,"","#"+name);}));
   $("refresh").addEventListener("click",refresh);
   $("prompt-intelligence-refresh").addEventListener("click",loadPromptIntelligence);
+  $("media-refresh").addEventListener("click",loadMedia);
+  $("media-queue-form").addEventListener("submit",async e=>{
+    e.preventDefault();
+    const button=$("media-queue-submit");button.disabled=true;
+    const output=$("media-queue-result");output.textContent="Validating and queueing one local render job…";
+    let payload;
+    try{payload=JSON.parse($("media-request-json").value);}catch(error){output.textContent="Invalid render request JSON: "+error.message;button.disabled=!state.mediaStatus?.available;return;}
+    try{
+      const response=await api("/v1/media/jobs",{method:"POST",body:JSON.stringify(payload)});
+      output.textContent="Render job "+response.job.job_id+" · "+response.job.state+(response.job.replayed?" · idempotent replay":"");
+      toast("Native render job queued");await loadMedia();
+    }catch(error){output.textContent="Render request blocked: "+error.message;toast(error.message);}
+    finally{button.disabled=!state.mediaStatus?.available;}
+  });
+  $("media-job-list").addEventListener("click",async e=>{
+    const button=e.target.closest("[data-media-cancel]");
+    if(!button)return;
+    button.disabled=true;
+    try{
+      await api("/v1/media/jobs/"+encodeURIComponent(button.dataset.mediaCancel)+"/cancel",{method:"POST",body:JSON.stringify({})});
+      toast("Media cancellation requested");await loadMedia();
+    }catch(error){toast(error.message);button.disabled=false;}
+  });
   $("prompt-source-register-form").addEventListener("submit",async e=>{
     e.preventDefault();const button=$("prompt-source-register-submit");button.disabled=true;
     const result=$("prompt-source-register-result");result.textContent="Registering source metadata…";

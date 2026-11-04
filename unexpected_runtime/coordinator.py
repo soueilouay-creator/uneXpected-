@@ -10,10 +10,12 @@ from .permissions import PermissionPolicy
 from .approvals import ApprovalVerifier, approval_verifier_from_env
 from .storage import StateStore
 from .skills import SkillRegistry, SkillRegistryError
-from .capabilities import CapabilityRegistry
+from .capabilities import CapabilityRecord, CapabilityRegistry, CapabilityRegistryError
 from .mcp_gateway import MCPToolGateway
 from .subagents import SubagentRunner
 from .prompt_intelligence import PromptIntelligence
+from .media.jobs import MediaJobService, MediaJobError
+from .media.openfilm_adapter import OpenFilmAdapter, SOURCE_URL, SOURCE_PUBLISHER, OPENFILM_VERSION, TOOL_CREATE, TOOL_STATUS, TOOL_CANCEL
 
 class Coordinator:
     def __init__(self, manifest_path=None, state_dir=None, provider=None, max_workers=None, max_retries=None, skill_manifest_path=None, skill_package_root=None, approval_verifier:ApprovalVerifier|None=None):
@@ -42,6 +44,7 @@ class Coordinator:
         self.subagents=SubagentRunner(self)
         self.prompt_intelligence=PromptIntelligence(store=self.store,agent_registry=self.registry,permission_policy=self.permissions)
         self.prompt_intelligence.seed_catalog()
+        self._initialize_openfilm_capability()
         self.max_workers=workers; self.max_retries=retries
         self.task_pool=ThreadPoolExecutor(max_workers=workers,thread_name_prefix='unexpected-task')
         self.provider_pool=ThreadPoolExecutor(max_workers=workers,thread_name_prefix='unexpected-provider')
@@ -56,7 +59,246 @@ class Coordinator:
         return {'ecosystem_version':'8.0.0-preview','registered_agents':len(self.registry),'provider':getattr(self.provider,'name',type(self.provider).__name__),
                 'mode':'local-runtime-scaffold','max_workers':self.max_workers,'max_retries':self.max_retries,
                 'state_db':str(getattr(self.store,'path','managed-postgres')),'background_service':'not running unless separately hosted','external_connectors':'not configured',
-                'approval_verifier':'github-pr-review' if self.approval_verifier else 'not configured (privileged actions fail closed)'}
+                'approval_verifier':'github-pr-review' if self.approval_verifier else 'not configured (privileged actions fail closed)', 'media':self.media_status()}
+
+    @staticmethod
+    def _openfilm_bundle_digest():
+        media_root = Path(__file__).resolve().parent / "media"
+        digest = hashlib.sha256()
+        for relative in ("jobs.py", "openfilm_adapter.py"):
+            path = media_root / relative
+            digest.update(relative.encode("utf-8") + b"\\0")
+            digest.update(path.read_bytes())
+        return digest.hexdigest()
+
+    def _initialize_openfilm_capability(self):
+        self.media_jobs = None
+        self.openfilm_adapter = None
+        self._openfilm_error = None
+        try:
+            digest = self._openfilm_bundle_digest()
+        except OSError as exc:
+            self._openfilm_error = f"OpenFilm adapter source unavailable ({type(exc).__name__})."
+            return
+        try:
+            self.media_jobs = MediaJobService(self.store)
+        except Exception as exc:
+            self._openfilm_error = f"Media-job storage unavailable ({type(exc).__name__})."
+        record = CapabilityRecord(
+            capability_id="media.openfilm.render",
+            name="OpenFilm local video renderer",
+            category="media-production",
+            purpose="Queue and inspect local OpenFilm film renders through the governed runtime.",
+            source_url=SOURCE_URL,
+            source_publisher=SOURCE_PUBLISHER,
+            discovered_at=time.time(),
+            verified_at=None,
+            evidence_refs=(
+                "https://github.com/openfilm/openfilm/tree/v0.2.7",
+                "https://github.com/openfilm/openfilm/commit/b7673b585e3e9c3b434fe663e68619cc1984ae8b",
+            ),
+            reviewer=None,
+            adapter_type="mcp",
+            provider="openfilm",
+            required_permissions=("media.local_render",),
+            dependencies=("node>=22.18", "openfilm@0.2.7", "ffmpeg", "playwright-chromium", "rootless-podman"),
+            cost_notes="Local rendering only; no paid generation provider is enabled.",
+            risk_notes="Untrusted project HTML/JavaScript requires offline sandbox isolation.",
+            data_access=("configured-project-root", "configured-artifact-root"),
+            version=OPENFILM_VERSION,
+            content_sha256=digest,
+            status="discovered",
+        )
+        try:
+            existing = self.capabilities.get(record.capability_id)
+        except CapabilityRegistryError:
+            existing = None
+        if existing is None:
+            try:
+                self.capabilities.register(record)
+                existing = record
+            except Exception as exc:
+                self._openfilm_error = f"OpenFilm capability registration failed ({type(exc).__name__})."
+                return
+        if (
+            existing.content_sha256 != digest
+            or existing.source_url != SOURCE_URL
+            or existing.version != OPENFILM_VERSION
+        ):
+            self._openfilm_error = "Stored OpenFilm capability provenance differs from the current pinned adapter."
+            return
+        if self.media_jobs is not None:
+            self.openfilm_adapter = OpenFilmAdapter(self.media_jobs, existing, worker_ready=self.media_worker_preflight_ready)
+            if existing.status in {"installed", "enabled"}:
+                try:
+                    self.media_register_adapter()
+                except Exception as exc:
+                    self._openfilm_error = f"OpenFilm adapter registration failed ({type(exc).__name__})."
+
+    def media_register_adapter(self):
+        if self.openfilm_adapter is None:
+            raise MediaJobError(self._openfilm_error or "OpenFilm adapter is unavailable.")
+        record = self.capabilities.get("media.openfilm.render")
+        if record.status not in {"installed", "enabled"}:
+            raise MediaJobError("OpenFilm must be reviewed and installed before its adapter can be registered.")
+        registered = {item["tool_id"] for item in self.mcp_gateway.list_tools()}
+        if TOOL_CREATE not in registered:
+            self.mcp_gateway.register_adapter(record.capability_id, self.openfilm_adapter)
+        return self.mcp_gateway.list_tools()
+
+    @staticmethod
+    def media_worker_config_fingerprint():
+        names = (
+            "UNEXPECTED_OPENFILM_PODMAN_PATH", "UNEXPECTED_OPENFILM_WORKER_IMAGE",
+            "UNEXPECTED_OPENFILM_HOST_MAX_MEMORY_BYTES", "UNEXPECTED_OPENFILM_HOST_MAX_CPU_LIMIT",
+            "UNEXPECTED_OPENFILM_HOST_MAX_PIDS", "UNEXPECTED_OPENFILM_HOST_TMPFS_BYTES",
+            "UNEXPECTED_OPENFILM_WORKER_ID", "UNEXPECTED_OPENFILM_PROJECT_ROOT",
+            "UNEXPECTED_OPENFILM_ARTIFACT_ROOT", "UNEXPECTED_OPENFILM_TIMEOUT_SECONDS",
+            "UNEXPECTED_OPENFILM_LEASE_SECONDS", "UNEXPECTED_OPENFILM_MAX_PROJECT_BYTES",
+            "UNEXPECTED_OPENFILM_MAX_ASSET_COUNT", "UNEXPECTED_OPENFILM_MAX_FILE_BYTES",
+            "UNEXPECTED_OPENFILM_MAX_OUTPUT_BYTES", "UNEXPECTED_OPENFILM_MEMORY_BYTES",
+            "UNEXPECTED_OPENFILM_CPU_LIMIT", "UNEXPECTED_OPENFILM_PIDS_LIMIT",
+            "UNEXPECTED_OPENFILM_TMPFS_BYTES", "UNEXPECTED_OPENFILM_FFPROBE_PATH",
+            "UNEXPECTED_OPENFILM_FFMPEG_PATH", "UNEXPECTED_OPENFILM_QA_TIMEOUT_SECONDS",
+            "XDG_RUNTIME_DIR",
+        )
+        values = {name: os.environ.get(name, "").strip() for name in names}
+        required = [name for name in names if name != "XDG_RUNTIME_DIR"]
+        if any(not values[name] for name in required):
+            return None
+        encoded = json.dumps(values, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def media_worker_preflight(self):
+        fingerprint = self.media_worker_config_fingerprint()
+        if not fingerprint:
+            return {"ready": False, "tested_at": None}
+        try:
+            for event in self.store.events(limit=100):
+                if event.get("event_type") not in {"media_worker_preflight_passed", "media_worker_preflight_failed"}:
+                    continue
+                payload = json.loads(event.get("payload_json") or "{}")
+                tested_at = float(payload.get("tested_at", 0))
+                matches = payload.get("config_sha256") == fingerprint
+                fresh = 0 <= time.time() - tested_at <= 3600
+                return {
+                    "ready": event.get("event_type") == "media_worker_preflight_passed" and matches and fresh,
+                    "tested_at": tested_at if matches and fresh and event.get("event_type") == "media_worker_preflight_passed" else None,
+                }
+        except Exception:
+            return {"ready": False, "tested_at": None}
+        return {"ready": False, "tested_at": None}
+
+    def media_worker_preflight_ready(self):
+        return self.media_worker_preflight()["ready"]
+
+    def media_status(self):
+        try:
+            record = self.capabilities.get("media.openfilm.render")
+            capability_status = record.status
+        except Exception:
+            capability_status = "unavailable"
+        registered = {item["tool_id"] for item in self.mcp_gateway.list_tools()}
+        adapter_registered = TOOL_CREATE in registered and TOOL_STATUS in registered and TOOL_CANCEL in registered
+        job_store_ready = self.media_jobs is not None
+        queued_jobs = 0
+        total_jobs = 0
+        if self.media_jobs is not None:
+            try:
+                queued_jobs = len(self.media_jobs.list(limit=200, state="queued"))
+                total_jobs = len(self.media_jobs.list(limit=200))
+            except Exception:
+                job_store_ready = False
+        preflight = self.media_worker_preflight()
+        worker_ready = preflight["ready"]
+        available = bool(job_store_ready and adapter_registered and worker_ready and capability_status == "enabled")
+        reason = self._openfilm_error or "Worker host is not configured; rendering remains disabled until rootless isolation and resource limits pass."
+        if capability_status == "discovered":
+            reason = "OpenFilm source is recorded but awaits human review and installation."
+        elif capability_status == "reviewed":
+            reason = "OpenFilm source is reviewed but the pinned local worker image is not installed."
+        elif capability_status == "installed":
+            reason = "Adapter is installed; run local worker preflight and explicitly enable the capability."
+        elif capability_status == "enabled" and not worker_ready:
+            reason = "Worker preflight is missing, failed, expired or no longer matches the current host configuration."
+        elif available:
+            reason = "Local worker preflight passed for the current configuration. Rendering is available; publishing remains separate."
+        return {
+            "capability_id": "media.openfilm.render",
+            "provider": "openfilm",
+            "version": OPENFILM_VERSION,
+            "capability_status": capability_status,
+            "job_store_ready": job_store_ready,
+            "adapter_registered": adapter_registered,
+            "worker_ready": worker_ready,
+            "worker_preflight_at": preflight["tested_at"],
+            "available": available,
+            "queued_jobs": queued_jobs,
+            "total_jobs": total_jobs,
+            "reason": reason,
+            "tools": [item for item in (TOOL_CREATE, TOOL_STATUS, TOOL_CANCEL) if item in registered],
+        }
+
+    def media_list_jobs(self, limit=50, state=None):
+        if self.media_jobs is None:
+            raise MediaJobError(self._openfilm_error or "Media-job storage is unavailable.")
+        items = self.media_jobs.list(limit=limit, state=state)
+        public = []
+        for job in items:
+            result = {}
+            if job.get("result_json"):
+                try:
+                    parsed = json.loads(job["result_json"])
+                    if isinstance(parsed, dict):
+                        result = {
+                            "qa_status": parsed.get("qa_status"),
+                            "failure_category": parsed.get("failure_category"),
+                            "artifact_hashes": parsed.get("artifact_hashes", {}),
+                        }
+                except (TypeError, ValueError):
+                    result = {"failure_category": "stored_result_invalid"}
+            request = {}
+            try:
+                request = json.loads(job.get("request_json") or "{}")
+            except (TypeError, ValueError):
+                request = {}
+            public.append({
+                "job_id": job["job_id"],
+                "task_id": job["task_id"],
+                "campaign_id": request.get("campaign_id"),
+                "content_id": request.get("content_id"),
+                "state": job["state"],
+                "attempt_count": job["attempt_count"],
+                "cancel_requested": job["cancel_requested"],
+                "created_at": job["created_at"],
+                "updated_at": job["updated_at"],
+                **({"result": result} if result else {}),
+            })
+        return public
+
+    def media_create_job(self, arguments):
+        if not self.media_status()["available"]:
+            raise MediaJobError("Native rendering is unavailable until the worker preflight and capability enablement are current.")
+        self.media_register_adapter()
+        task_id = arguments.get("task_id") if isinstance(arguments, dict) else None
+        if not task_id:
+            raise MediaJobError("task_id is required.")
+        return self.mcp_gateway.call(
+            agent_id="orchestrator",
+            task_id=task_id,
+            tool_id=TOOL_CREATE,
+            arguments=arguments,
+        )
+
+    def media_cancel_job(self, job_id, task_id="media-operator"):
+        self.media_register_adapter()
+        return self.mcp_gateway.call(
+            agent_id="orchestrator",
+            task_id=task_id,
+            tool_id=TOOL_CANCEL,
+            arguments={"job_id": job_id},
+        )
+
     def list_agents(self):
         return [{'id':a.id,'name':a.name,'version':a.version,'capability_label':a.capability_label,'status':a.status} for a in self.registry.list()]
     def enqueue(self, request:TaskRequest):

@@ -159,3 +159,20 @@ The original AI Studio repository and both old Render services remain untouched 
 The versioned catalog in `unexpected_runtime/data/resource_catalog.json` indexes [sindresorhus/awesome](https://github.com/sindresorhus/awesome) as a permanent discovery source. Linked repositories are separate candidates: their license, maintenance, dependencies and security posture are not inherited from the list. Catalog states distinguish discovered, triaged, verified, approved and integrated. No catalog read installs or authorizes a tool.
 
 The authenticated command center exposes `GET /v1/resources`, `GET /v1/quality-evaluations` and the owner-initiated `POST /v1/quality-evaluations`. The CLI exposes `resources` and `quality-eval`. Quality runs are bounded to the versioned scenario set, use only a configured and verified non-mock provider, and request no privileged permissions. Reports retain case outcomes and output digests rather than duplicating raw output. Fixture/offline CI tests are labelled separately from live provider runs. There is no background catalog crawler, package installer, LLM-as-judge or automatic improvement promotion.
+
+
+## Native uneXpected Video Engine (draft PR #20)
+
+The native Video Engine is part of the existing Python runtime. It reuses the existing Coordinator, 38-role registry, CapabilityRegistry, MCPToolGateway and shared SQLite/PostgreSQL state. It does not add a second CRM, coordinator, agent registry, database or public video SaaS service.
+
+The current implementation includes:
+- A durable, idempotent media-job queue and additive PostgreSQL migration 004 (after Prompt Intelligence migration 003).
+- A pinned OpenFilm 0.2.7 Node runner, local worker Containerfile and rootless Podman isolation contract.
+- Relative project-path and symlink checks, per-job resource ceilings, lease fencing and one-job worker execution.
+- FFprobe/FFmpeg checks for MP4 streams/profile, duration, audio coverage/loudness/true peak when required, black frames, freezes, captions and a contact sheet.
+- A portable artifact manifest containing source/project/output hashes, renderer version, rights-manifest hash and QA results.
+- Authenticated media status/job APIs, cancellation, CLI lifecycle/preflight/one-shot worker commands and a Video Engine command-center view.
+
+The capability starts as discovered. It is not automatically installed or enabled. To use it, review the pinned source, build the local worker image, set the explicit host/job limits from .env.example, run the local media preflight, then explicitly review/install/enable it. The full procedure is in workers/openfilm/WORKER-SETUP.md. Do not use the Render Free service as the Chromium/FFmpeg worker host.
+
+**Important limits:** no live render or final MP4 is verified yet; the local worker host is not configured by this repository change. The renderer composes supplied project assets—it does not yet provide built-in realistic TTS, licensed music, original footage generation or publishing. Every final master still requires human playback/listening review and a separate publishing approval. Everygen is not a required dependency; external generation providers remain optional adapters.
