@@ -34,6 +34,7 @@ jobs:
               "tests/test_openfilm_worker.py",
               "tests/test_openfilm_isolation_config.py",
               "tests/test_openfilm_native_e2e.py",
+              "tests/test_structure.py",
           ]
           for name in paths:
               print(f"{hashlib.sha256(Path(name).read_bytes()).hexdigest()}  {name}")
