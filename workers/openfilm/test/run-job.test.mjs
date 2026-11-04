@@ -128,3 +128,23 @@ test("renderer output mismatch fails and never substitutes a different artifact"
     render: async () => ({ out: path.join(w.attemptRoot, "wrong.mp4"), lines: [] })
   }), RunnerError);
 });
+
+test("executeJob emits the newline-delimited events required by the host worker", async (t) => {
+  const w = await workspace();
+  t.after(() => rm(w.base, { recursive: true, force: true }));
+  const events = [];
+  const result = await executeJob(w.request, {
+    emit: (event) => events.push(event),
+    look: async () => ({ ok: true, lines: ["film 1080×1920 · 10s · 1 sound"], files: [] }),
+    render: async (_args, opts) => {
+      await writeFile(opts.out, Buffer.from("synthetic-mp4"), { flag: "wx" });
+      return { out: opts.out, lines: ["rendered"] };
+    }
+  });
+  assert.equal(result.status, "rendered");
+  assert.deepEqual(events, [
+    { event: "phase", phase: "inspecting" },
+    { event: "phase", phase: "rendering" },
+    { event: "result", result }
+  ]);
+});
