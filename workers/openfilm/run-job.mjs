@@ -115,7 +115,7 @@ export async function parseRequest(value) {
   }
 
   const profile = value.profile;
-  const profileFields = new Set(["platform", "width", "height", "fps", "audio_required"]);
+  const profileFields = new Set(["platform", "width", "height", "fps", "audio_required", "captions_required"]);
   if (!profile || typeof profile !== "object" || Array.isArray(profile) ||
       Object.keys(profile).some((key) => !profileFields.has(key)) ||
       [...profileFields].some((key) => !Object.hasOwn(profile, key))) {
@@ -129,7 +129,8 @@ export async function parseRequest(value) {
   const expected = dimensions[profile.platform];
   if (!expected || profile.width !== expected[0] || profile.height !== expected[1] ||
       !Number.isFinite(profile.fps) || profile.fps < 1 || profile.fps > 60 ||
-      typeof profile.audio_required !== "boolean") {
+      typeof profile.audio_required !== "boolean" ||
+      (Object.hasOwn(profile, "captions_required") && typeof profile.captions_required !== "boolean")) {
     throw new RunnerError("profile does not match a supported platform render variant.");
   }
   if (!Number.isSafeInteger(value.max_output_bytes) || value.max_output_bytes < 1) {
