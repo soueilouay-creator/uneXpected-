@@ -199,6 +199,8 @@ class MediaWorker:
                 "fps": profile.get("fps"),
                 "audio_required": profile.get("audio_required", False),
             }
+            if profile.get("captions_required") is True:
+                renderer_profile["captions_required"] = True
             attempt_root = self.paths.prepare_attempt(job["job_id"], job["attempt_count"])
             staged_project = attempt_root / "source"
             shutil.copytree(snapshot.project_root, staged_project, symlinks=True)
