@@ -212,6 +212,7 @@ jobs:
           if ! grep -q "^${user}:" /etc/subgid; then echo "${user}:100000:65536" | sudo tee -a /etc/subgid; fi
           runtime="/run/user/$(id -u)"
           sudo install -d -m 700 -o "$(id -u)" -g "$(id -g)" "$runtime"
+          export XDG_RUNTIME_DIR="$runtime"
           echo "XDG_RUNTIME_DIR=$runtime" >> "$GITHUB_ENV"
           podman info --format json > "$RUNNER_TEMP/podman-info.json"
           python - <<'PY'
