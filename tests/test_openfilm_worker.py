@@ -16,6 +16,7 @@ class FakeIsolation:
         self.result_status = result_status
         self.calls = 0
         self.requests = []
+        self.project_snapshots = []
 
     def self_test(self):
         return {
@@ -27,6 +28,12 @@ class FakeIsolation:
                          *, on_phase, cancel_check):
         self.calls += 1
         self.requests.append(request)
+        source = Path(project_root)
+        self.project_snapshots.append({
+            "path": source,
+            "cache_exists": (source / ".film").is_dir(),
+            "film_html": (source / "film.html").read_text(encoding="utf-8"),
+        })
         on_phase("inspecting")
         if self.cancel_hook:
             self.cancel_hook()
@@ -253,6 +260,22 @@ class OpenFilmWorkerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertEqual(self.jobs.get(first["job_id"])["state"], "failed")
         self.assertEqual(self.jobs.get(second["job_id"])["state"], "queued")
+
+
+    def test_worker_stages_a_verified_project_and_keeps_openfilm_cache_out_of_source(self):
+        created = self.create_job("task-stage", "key-stage")
+        original_html = (self.project / "film.html").read_text(encoding="utf-8")
+        isolation, qa = FakeIsolation(), FakeQA()
+        worker = MediaWorker(self.jobs, isolation, self.config, qa=qa)
+        result = worker.run_once()
+        self.assertEqual(result["status"], "ready_for_human_review")
+        staged = isolation.project_snapshots[0]
+        self.assertNotEqual(staged["path"], self.project)
+        self.assertTrue(staged["cache_exists"])
+        self.assertEqual(staged["film_html"], original_html)
+        self.assertFalse((self.project / ".film").exists())
+        self.assertFalse(staged["path"].exists())
+        self.assertEqual(self.jobs.get(created["job_id"])["state"], "ready_for_human_review")
 
 
 if __name__ == "__main__":
