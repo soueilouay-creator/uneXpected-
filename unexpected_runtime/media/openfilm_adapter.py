@@ -151,6 +151,14 @@ class OpenFilmAdapter:
             raise OpenFilmAdapterError("Tool arguments must be a JSON object.")
         if tool_id == TOOL_CREATE:
             request = self._create_arguments(arguments)
+            try:
+                worker_ready = callable(self.worker_ready) and self.worker_ready() is True
+            except Exception:
+                worker_ready = False
+            if not worker_ready:
+                raise OpenFilmAdapterError(
+                    "Local worker preflight is missing, expired or does not match this host."
+                )
             job = self.jobs.create(
                 task_id=request["task_id"],
                 idempotency_key=request["idempotency_key"],
