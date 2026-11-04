@@ -118,8 +118,8 @@ export async function parseRequest(value) {
   const profileFields = new Set(["platform", "width", "height", "fps", "audio_required", "captions_required"]);
   if (!profile || typeof profile !== "object" || Array.isArray(profile) ||
       Object.keys(profile).some((key) => !profileFields.has(key)) ||
-      [...profileFields].some((key) => !Object.hasOwn(profile, key))) {
-    throw new RunnerError("profile must contain only platform, width, height, fps and audio_required.");
+      ["platform", "width", "height", "fps", "audio_required"].some((key) => !Object.hasOwn(profile, key))) {
+    throw new RunnerError("profile requires platform, width, height, fps and audio_required; captions_required is optional.");
   }
   const dimensions = {
     youtube_shorts: [1080, 1920],
@@ -217,7 +217,8 @@ export async function executeJob(value, api = { look: openFilmLook, render: open
     fps: request.profile.fps,
     workers: 1,
     hardware: false,
-    samples: 1
+    samples: 1,
+    subtitles: request.profile.captions_required === true
   });
   if (!rendered || path.resolve(String(rendered.out ?? "")) !== request.outputPath) {
     throw new RunnerError("OpenFilm renderer returned a different output path.", "output_path_mismatch");
