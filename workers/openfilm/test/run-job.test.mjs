@@ -120,6 +120,23 @@ test("successful look renders exactly once to unique requested output and return
   assert.equal((await readFile(w.request.output_path)).length, bytes.length);
 });
 
+test("executeJob burns OpenFilm subtitles when the render profile requires captions", async (t) => {
+  const w = await workspace();
+  t.after(() => rm(w.base, { recursive: true, force: true }));
+  const request = { ...w.request, profile: { ...w.request.profile, captions_required: true } };
+  let subtitles = false;
+  const result = await executeJob(request, {
+    look: async () => ({ ok: true, lines: ["film 1080×1920 · 10s · 1 sound"], files: [] }),
+    render: async (_args, options) => {
+      subtitles = options.subtitles;
+      await writeFile(options.out, Buffer.from("synthetic-mp4-with-subtitles"), { flag: "wx" });
+      return { out: options.out, lines: ["rendered with subtitles"] };
+    }
+  });
+  assert.equal(result.status, "rendered");
+  assert.equal(subtitles, true);
+});
+
 test("renderer output mismatch fails and never substitutes a different artifact", async (t) => {
   const w = await workspace();
   t.after(() => rm(w.base, { recursive: true, force: true }));
