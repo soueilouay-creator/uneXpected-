@@ -83,5 +83,15 @@ class PodmanIsolationConfigTests(unittest.TestCase):
             self.assertEqual(request["project_root"], "/source")
 
 
+    def test_podman_host_environment_uses_the_host_home_for_its_local_image_store(self):
+        config = PodmanIsolationConfig(
+            podman_path=Path("/usr/bin/podman"),
+            image="sha256:" + "d" * 64,
+        )
+        with patch("pathlib.Path.home", return_value=Path("/home/ci-runner")):
+            environment = PodmanIsolation(config)._env()
+        self.assertEqual(environment["HOME"], "/home/ci-runner")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
