@@ -3,6 +3,18 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 REQUIRED=['skill_manifest.json','workflow_profiles/creative-media-studio.md','workflow_profiles/skill-engineering.md','skills/creative-media/WORKFLOW.md','skills/skill-engineering/SKILL.md','unexpected_runtime/skills.py','unexpected_runtime/capabilities.py','unexpected_runtime/approvals.py','tests/test_skills.py','tests/test_capabilities.py','tests/test_approvals.py','agent_manifest.json','AGENT_CATALOG.md','AGENT_CATALOG.csv','AGENT_CATALOG.json','ALL_AGENTS.md','MIGRATION_CROSSWALK_V6_TO_V7.md','MIGRATION_CROSSWALK_V6_TO_V7.csv','MIGRATION_CROSSWALK_V6_TO_V7.json','CORE_ROUTER.md','EXISTING_37_CROSSWALK.md','CAPABILITY_MATRIX.md','SOURCE_MANIFEST.md','GLOBAL_CUSTOM_INSTRUCTION_V7.md','PROJECT_INSTRUCTIONS_V7.md','ARCHITECTURE.md','THREAT_MODEL.md','INSTALL.md','DEPLOY.md','UPGRADE_MIGRATION.md','ROLLBACK_UNINSTALL.md','EVALS.md','TEST_RESULTS.md','PACKAGE_STATUS.md','INSTALL_TESTS_STATUS.md','self_improvement/SKILL.md','self_improvement/EVAL_PROTOCOL.md','tests/scenarios.json','unexpected_runtime/benchmark.py','tests/test_runtime.py','tests/test_structure.py','unexpected_runtime/resource_intelligence.py','unexpected_runtime/data/resource_catalog.json','unexpected_runtime/quality_evaluation.py','unexpected_runtime/data/quality_scenarios.json','tests/test_resource_intelligence.py','tests/test_quality_evaluation.py']
 class StructureTests(unittest.TestCase):
+ def test_first_operating_rule_is_in_global_and_project_instructions(self):
+  global_rules=(ROOT/'GLOBAL_CUSTOM_INSTRUCTION_V7.md').read_text()
+  project_rules=(ROOT/'PROJECT_INSTRUCTIONS_V7.md').read_text()
+  router=(ROOT/'CORE_ROUTER.md').read_text()
+  improvement=(ROOT/'self_improvement/SKILL.md').read_text()
+  self.assertTrue(global_rules.startswith('# RULE 1 — INVESTIGATE BEFORE DECLARING BLOCKED'))
+  self.assertTrue(project_rules.startswith('# RULE 1 — INVESTIGATE BEFORE DECLARING BLOCKED'))
+  self.assertIn('A blocker is the beginning of an investigation, not the end of the task.',global_rules)
+  self.assertIn('## Rule 1 — Investigate before declaring blocked',router)
+  self.assertIn('## First rule: investigate before declaring blocked',improvement)
+  for required in ('root cause','alternatives','bounded','approval','regression'):
+   self.assertIn(required,global_rules.lower())
  def test_required_files_exist_nonempty(self):
   for rel in REQUIRED:
    p=ROOT/rel; self.assertTrue(p.is_file(),rel); self.assertGreater(p.stat().st_size,0,rel)
