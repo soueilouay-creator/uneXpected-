@@ -195,6 +195,7 @@ class CoordinatorLifecycleTests(unittest.TestCase):
         class LifecycleProvider:
             name = "test-lifecycle-provider"
             configured = True
+            verified = True
             retry_safe = False
             def __init__(self):
                 self.review_calls = 0
@@ -295,6 +296,46 @@ class CoordinatorLifecycleTests(unittest.TestCase):
             server.server_close()
             thread.join(timeout=2)
 
+    def test_authenticated_http_lifecycle_endpoint_rejects_unverified_live_provider(self):
+        import json
+        import threading
+        import urllib.error
+        import urllib.request
+        from unexpected_runtime.http_api import create_server
+
+        coordinator, provider = self._coordinator(["PASS", "PASS"])
+        provider.verified = False
+        token = "u" * 40
+        server = create_server(coordinator=coordinator, api_token=token,
+                               host="127.0.0.1", port=0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            url = "http://127.0.0.1:{}/v1/lifecycle".format(server.server_address[1])
+            body = json.dumps({
+                "agent_id": "research-scout",
+                "objective": "Reject an unverified live provider",
+                "inputs": {},
+                "max_corrections": 0,
+                "max_improvements": 1,
+                "deadline_seconds": 5,
+            }).encode("utf-8")
+            request = urllib.request.Request(
+                url, data=body,
+                headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
+                method="POST",
+            )
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                urllib.request.urlopen(request, timeout=10)
+            self.assertEqual(caught.exception.code, 409)
+            payload = json.loads(caught.exception.read().decode("utf-8"))
+            self.assertIn("Test connection", payload["error"])
+            self.assertEqual(provider.review_calls, 0)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
     def test_lifecycle_concurrency_guard_preserves_capacity_for_invoke(self):
         import json
         import threading
@@ -310,6 +351,7 @@ class CoordinatorLifecycleTests(unittest.TestCase):
 
         class BlockingCoordinator:
             max_workers = 2
+            provider = type("VerifiedProvider", (), {"name": "test-live-provider", "verified": True})()
             def __init__(self):
                 self.started = threading.Event()
                 self.release = threading.Event()

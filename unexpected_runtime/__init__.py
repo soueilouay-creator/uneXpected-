@@ -1,4 +1,4 @@
-"""uneXpected v7.3.1 governed runtime scaffold."""
-__version__ = '7.3.1'
+"""uneXpected v8 unified governed runtime."""
+__version__ = '8.0.0-preview'
 
 from .workflow import WorkflowRunner, WorkflowResult
